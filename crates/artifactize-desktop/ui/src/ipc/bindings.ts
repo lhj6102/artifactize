@@ -40,8 +40,7 @@ branch: string } |
 	target: ChatTarget | null,
 	createdAt: string,
 	updatedAt: string,
-	running: boolean,
-	waitingPermission: boolean,
+	activity: ChatActivity,
 	legacyMigrationNotice: boolean,
 	outcome: ChatOutcome | null,
 	unseen: boolean,
@@ -509,6 +508,15 @@ export type CardView = {
 	model: string | null,
 };
 
+/**  What a chat's turn is doing now. */
+export type ChatActivity = 
+/**  No turn runs. */
+"idle" | 
+/**  A turn runs. */
+"running" | 
+/**  A turn runs and waits for an answer to a permission request. */
+"waitingPermission";
+
 export type ChatAgentAvailability = { kind: "ready"; executable: PathKey; version: string | null; models: ChatAgentModel[]; configOptions: ChatConfigOption[] } | { kind: "notSetUp"; executable: PathKey | null; version: string | null; reason: string; loginAction: string } | { kind: "missing"; reason: string } | { kind: "tooOld"; executable: PathKey; version: string; requiredVersion: string; reason: string } | { kind: "failed"; executable: PathKey | null; version: string | null; error: string };
 
 export type ChatAgentCatalogEntry = {
@@ -658,8 +666,7 @@ export type ChatSession = {
 	target: ChatTarget | null,
 	createdAt: string,
 	updatedAt: string,
-	running: boolean,
-	waitingPermission: boolean,
+	activity: ChatActivity,
 	legacyMigrationNotice: boolean,
 	outcome: ChatOutcome | null,
 	unseen: boolean,
@@ -718,8 +725,7 @@ export type ChatVerifyBridgeState = "notConnected" | "connected";
 
 export type ChatView = {
 	session: ChatSession,
-	running: boolean,
-	waitingPermission: boolean,
+	activity: ChatActivity,
 	turns: ChatTurn[],
 	liveConfigOptions: ChatConfigOption[],
 	verifyBridgeState: ChatVerifyBridgeState,
@@ -776,7 +782,7 @@ export type CodexStatus =
 /**  artifactize's own sign-in. */
 { state: "stored"; expiry: Expiry } | 
 /**  A read-only Codex auth file from ARTIFACTIZE_CODEX_AUTH_FILE; never written here. */
-{ state: "file"; path: string; expiry: FileExpiry } | 
+{ state: "file"; path: PathKey; expiry: FileExpiry } | 
 /**  Tokens cannot be stored where this state lives, and why. */
 { state: "refused"; reason: string };
 
@@ -815,13 +821,10 @@ export type CurrentView = {
 	fingerprint: string,
 	/**  Grows with each step: the graph and an open Detail read again when it does. */
 	revision: ScanId,
-	/**  The branch's scan is still running. */
-	scanning: boolean,
+	scan: ScanStatus,
 	/**  How many Artifacts are still being checked, of how many. */
 	checking: number,
 	artifacts: number,
-	/**  Why the branch's last scan failed; what it published before stays shown. */
-	failure: string | null,
 };
 
 export type CustomProvider = {
@@ -838,7 +841,7 @@ export type DefinitionKind = "folder" | "file" | "aspect" | "graph" |
 export type DefinitionNode = {
 	name: string,
 	/**  The file that binds it, relative to the project, with `/`, and the binding's line. */
-	definition: string,
+	definition: PathKey,
 	line: number,
 	/**  The macro its binding calls, as `rust-crate!`; none for one written out. */
 	macroName: string | null,
@@ -855,7 +858,7 @@ export type DefinitionNode = {
 /**  The code that binds one Artifact: as written, and, for a macro call, what it expands to. */
 export type DefinitionSource = {
 	/**  Its file, relative to the project, with `/`, and the line the code starts at. */
-	file: string,
+	file: PathKey,
 	line: number,
 	authored: string,
 	/**
@@ -1085,7 +1088,7 @@ export type KeyedLog = {
 /**  What the frontend needs to know about this launch. */
 export type LaunchView = {
 	mode: Mode,
-	state: string,
+	state: PathKey,
 	reviewer: string,
 	request: string | null,
 	/**  The recorded branch for a Graph launch on a checkout that no longer exists. */
@@ -1433,6 +1436,15 @@ export type RunStep =
  *  one has a higher number.
  */
 export type ScanId = number;
+
+/**  How the branch's scan is doing. */
+export type ScanStatus = 
+/**  It still runs. */
+{ state: "scanning" } | 
+/**  It ended; its last step is shown. */
+{ state: "scanned" } | 
+/**  It failed, and why; what it published before stays shown. */
+{ state: "failed"; reason: string };
 
 export type SectionName = "outcome" | "waits" | "what" | "provenance" | "technical";
 

@@ -238,6 +238,29 @@ impl From<acp::VerifyBridgeState> for ChatVerifyBridgeState {
     }
 }
 
+/// What a chat's turn is doing now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ChatActivity {
+    /// No turn runs.
+    Idle,
+    /// A turn runs.
+    Running,
+    /// A turn runs and waits for an answer to a permission request.
+    WaitingPermission,
+}
+
+impl ChatActivity {
+    /// From the library's live flags; a permission waits only while its turn runs.
+    fn new(running: bool, waiting_permission: bool) -> Self {
+        match (running, waiting_permission) {
+            (false, _) => Self::Idle,
+            (true, false) => Self::Running,
+            (true, true) => Self::WaitingPermission,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum ChatSessionView {
@@ -259,8 +282,7 @@ pub struct ChatSession {
     pub target: Option<ChatTarget>,
     pub created_at: String,
     pub updated_at: String,
-    pub running: bool,
-    pub waiting_permission: bool,
+    pub activity: ChatActivity,
     pub legacy_migration_notice: bool,
     pub outcome: Option<ChatOutcome>,
     pub unseen: bool,
@@ -287,8 +309,7 @@ impl From<chat::Session> for ChatSession {
             target: session.target.map(Into::into),
             created_at: session.created_at.to_string(),
             updated_at: session.updated_at.to_string(),
-            running: session.running,
-            waiting_permission: session.waiting_permission,
+            activity: ChatActivity::new(session.running, session.waiting_permission),
             legacy_migration_notice: session.legacy_migration_notice,
             outcome,
             unseen,
@@ -715,8 +736,7 @@ pub struct ChatTurn {
 #[serde(rename_all = "camelCase")]
 pub struct ChatView {
     pub session: ChatSession,
-    pub running: bool,
-    pub waiting_permission: bool,
+    pub activity: ChatActivity,
     pub turns: Vec<ChatTurn>,
     pub live_config_options: Vec<ChatConfigOption>,
     pub verify_bridge_state: ChatVerifyBridgeState,
@@ -1025,8 +1045,7 @@ pub async fn chat_open(app: tauri::State<'_, App>, id: SessionKey) -> Result<Cha
                 .watch(std::slice::from_ref(&view.session));
             ChatView {
                 session: view.session.into(),
-                running: view.running,
-                waiting_permission: view.waiting_permission,
+                activity: ChatActivity::new(view.running, view.waiting_permission),
                 turns: view
                     .turns
                     .into_iter()

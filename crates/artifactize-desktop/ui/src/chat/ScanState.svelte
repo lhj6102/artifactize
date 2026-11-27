@@ -13,7 +13,7 @@
   /** When it was scanned: the instant, and its local time. */
   const scanned = $derived(view?.scannedAt ? { at: new Date(view.scannedAt).toISOString(), local: new Date(view.scannedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }) } : null);
   /** How many Artifacts are still being checked while the scan runs. */
-  const left = $derived(current.scanning ? (view?.scanning ? view.checking : null) : null);
+  const left = $derived(current.scanning ? (view?.scan.state === "scanning" ? view.checking : null) : null);
 </script>
 
 <span class="scan" role="status">

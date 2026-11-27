@@ -65,8 +65,7 @@ const session: ChatSession = {
   target: DEFAULT_TARGET,
   createdAt: "2026-11-21T00:00:00Z",
   updatedAt: "2026-11-21T00:00:00Z",
-  running: false,
-  waitingPermission: false,
+  activity: "idle",
   legacyMigrationNotice: false,
   outcome: null,
   unseen: false,
@@ -91,8 +90,7 @@ const AGY_ENTRY: ChatAgentCatalogEntry = {
 function chatViewOf(s: ChatSession, running: boolean, turns: ChatTurn[]): ChatView {
   return {
     session: s,
-    running,
-    waitingPermission: s.waitingPermission,
+    activity: !running ? "idle" : s.activity === "waitingPermission" ? "waitingPermission" : "running",
     turns,
     liveConfigOptions: [],
     verifyBridgeState: "notConnected",
@@ -163,10 +161,9 @@ function backend() {
             scannedAt: 1,
             fingerprint: "",
             revision: 1,
-            scanning: false,
+            scan: { state: "scanned" },
             checking: 0,
             artifacts: 0,
-            failure: null,
           };
         case "graph":
           return {
@@ -621,7 +618,7 @@ it("says why a session whose branch cannot be worked on now sends nothing, its c
 it("delegates search to the library, clears it with Esc, and acknowledges an unseen outcome only when shown", async () => {
   const { calls, state } = backend();
   state.session = { ...session, outcome: "completed", unseen: true };
-  state.other = { ...session, id: "chat-2", title: "Another chat", outcome: "running", running: true };
+  state.other = { ...session, id: "chat-2", title: "Another chat", outcome: "running", activity: "running" };
   show();
   await screen.findByRole("button", { name: "Fix checkout rounding fix/rounding finished" });
   expect(screen.getByRole("button", { name: "Another chat fix/rounding running" })).toBeTruthy();
@@ -1066,8 +1063,7 @@ it("renders rich ACP blocks, interactive permission cards with always-persistenc
   state.running = true;
   state.session = {
     ...session,
-    running: true,
-    waitingPermission: true,
+    activity: "waitingPermission",
     target: { engine: "acp", agent: "antigravity", config: [] },
   };
   state.turns = [
@@ -1121,8 +1117,7 @@ it("renders rich ACP blocks, interactive permission cards with always-persistenc
   state.running = false;
   state.session = {
     ...session,
-    running: false,
-    waitingPermission: false,
+    activity: "idle",
     legacyMigrationNotice: true,
     target: { engine: "legacyClaudeAgent", model: "sonnet", effort: null },
   };

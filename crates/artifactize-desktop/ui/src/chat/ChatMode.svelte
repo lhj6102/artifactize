@@ -54,7 +54,7 @@
   const mainMin = $derived(graph ? mainSplitMinimum(app.windowWidth) : 30);
   const live = $derived(graph && session?.unavailable === null);
   const mainNotice = $derived((live ? c.graph?.graph.error : null) ?? c.error);
-  const running = $derived(view?.running ?? false);
+  const running = $derived((view?.activity ?? "idle") !== "idle");
   const stopping = $derived(session !== null && c.stopping.has(session.id));
   const submitting = $derived(session !== null && (c.sending.has(session.id) || c.choosing.has(session.id)));
   const rejected = $derived(session === null ? undefined : c.rejected.get(session.id));
@@ -85,8 +85,8 @@
   const ages = $derived(new Map(c.sessions.map((item) => [item.id, age(item.updatedAt, app.now)])));
 
   function sessionState(item: ChatSession) {
-    if (item.waitingPermission) return "waiting";
-    if (item.outcome === "running" || item.running) return "running";
+    if (item.activity === "waitingPermission") return "waiting";
+    if (item.outcome === "running" || item.activity === "running") return "running";
     return item.unseen ? (item.outcome === "completed" ? "finished" : item.outcome) : null;
   }
 

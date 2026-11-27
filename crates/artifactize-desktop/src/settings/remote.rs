@@ -66,7 +66,7 @@ pub enum RemoteStatus {
 /// A push that sent records: when, in milliseconds since the Unix epoch, and how many.
 #[derive(Debug, Clone, Copy, Serialize, Type)]
 pub struct Push {
-    pub at: f64,
+    pub at: crate::ids::EpochMillis,
     pub count: u32,
 }
 
@@ -117,11 +117,7 @@ impl RemoteStatus {
                 .recent
                 .into_iter()
                 .map(|pushed| Push {
-                    #[expect(
-                        clippy::cast_precision_loss,
-                        reason = "milliseconds since 1970 fit an f64 exactly"
-                    )]
-                    at: pushed.unix_millis() as f64,
+                    at: pushed.at.time().into(),
                     count: u32::try_from(pushed.count).unwrap_or(u32::MAX),
                 })
                 .collect(),

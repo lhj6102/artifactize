@@ -2212,7 +2212,7 @@ fn scan_current(window: &WebviewWindow<MockRuntime>, branch: &Value) -> (Value, 
     .unwrap();
     let deadline = std::time::Instant::now() + JOB_TIMEOUT;
     let mut view = first.clone();
-    while view["scanning"] == json!(true) {
+    while view["scan"]["state"] == json!("scanning") {
         assert!(
             std::time::Instant::now() < deadline,
             "the scan did not end: {view}"
@@ -2776,7 +2776,7 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     assert_eq!(first["artifacts"], 3);
     assert!(scanned["revision"].as_u64() >= first["revision"].as_u64());
     assert_eq!(scanned["checking"], 0);
-    assert_eq!(scanned["failure"], Value::Null);
+    assert_eq!(scanned["scan"], json!({"state": "scanned"}));
     // Never verified: the Human eval would run; the Artifacts without evals are reused, app
     // since its part lib is. lib is drawn inside app, by no edge.
     let source = json!({"kind": "current", "branch": branch});

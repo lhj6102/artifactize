@@ -2,7 +2,10 @@
 //! transcript. Each kind is its own type, so one cannot be passed for another.
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::{
+    sync::atomic::{AtomicU32, Ordering},
+    time::Duration,
+};
 
 macro_rules! numbered {
     ($(#[$meta:meta])* $name:ident) => {
@@ -153,6 +156,93 @@ macro_rules! key {
         }
     };
 }
+
+/// Nanoseconds in a millisecond: the wire counts instants in the milliseconds a JavaScript
+/// `Date` takes.
+const NANOS_PER_MILLISECOND: i128 = 1_000_000;
+
+/// An instant on the wire: milliseconds since the Unix epoch, the number a JavaScript `Date`
+/// takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(into = "f64")]
+pub struct EpochMillis(time::OffsetDateTime);
+
+impl From<time::OffsetDateTime> for EpochMillis {
+    fn from(at: time::OffsetDateTime) -> Self {
+        Self(at)
+    }
+}
+
+impl From<EpochMillis> for f64 {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "milliseconds since 1970 fit an f64 exactly"
+    )]
+    fn from(at: EpochMillis) -> Self {
+        (at.0.unix_timestamp_nanos() / NANOS_PER_MILLISECOND) as f64
+    }
+}
+
+/// A number on the wire.
+impl Type for EpochMillis {
+    fn definition(types: &mut specta::Types) -> specta::datatype::DataType {
+        f64::definition(types)
+    }
+}
+
+macro_rules! duration {
+    ($(#[$meta:meta])* $name:ident, $count:ident, $from:ident) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+        #[serde(into = "u32", from = "u32")]
+        pub struct $name(Duration);
+
+        impl From<Duration> for $name {
+            fn from(duration: Duration) -> Self {
+                Self(duration)
+            }
+        }
+
+        impl From<$name> for Duration {
+            fn from(duration: $name) -> Self {
+                duration.0
+            }
+        }
+
+        /// The app's durations are at most a day; a longer one reads as the most a `u32` holds.
+        impl From<$name> for u32 {
+            fn from(duration: $name) -> Self {
+                u32::try_from(duration.0.$count()).unwrap_or(u32::MAX)
+            }
+        }
+
+        impl From<u32> for $name {
+            fn from(count: u32) -> Self {
+                Self(Duration::$from(count.into()))
+            }
+        }
+
+        /// A number on the wire.
+        impl Type for $name {
+            fn definition(types: &mut specta::Types) -> specta::datatype::DataType {
+                u32::definition(types)
+            }
+        }
+    };
+}
+
+duration!(
+    /// A duration on the wire in whole seconds.
+    WholeSeconds,
+    as_secs,
+    from_secs
+);
+duration!(
+    /// A duration on the wire in whole milliseconds, as JavaScript timers take it.
+    WholeMillis,
+    as_millis,
+    from_millis
+);
 
 key!(
     /// A request id as an IPC argument, checked where it arrives.

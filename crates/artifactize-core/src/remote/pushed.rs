@@ -17,12 +17,6 @@ pub struct Pushed {
     pub at: Timestamp,
     pub count: usize,
 }
-impl Pushed {
-    /// Numeric timestamp for a JSON presentation boundary, not for time arithmetic.
-    pub fn unix_millis(self) -> i128 {
-        self.at.time().unix_timestamp_nanos() / NANOS_PER_MILLISECOND
-    }
-}
 mod milliseconds {
     use super::*;
     use serde::{Deserializer, Serializer};

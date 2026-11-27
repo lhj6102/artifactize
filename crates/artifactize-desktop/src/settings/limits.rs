@@ -1,6 +1,6 @@
 //! How long a Run with only unclaimed sign-offs left stays open, as `artifactize limits` shows
 //! and sets it in the state's limits.json.
-use crate::{App, Failure};
+use crate::{App, Failure, ids::WholeSeconds};
 use artifactize_core::limits::{Limits, MAX_SIGNOFF_IDLE_GRACE};
 use serde::Serialize;
 use specta::Type;
@@ -10,16 +10,15 @@ use std::time::Duration;
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SignoffGrace {
-    pub seconds: u32,
-    pub max_seconds: u32,
+    pub seconds: WholeSeconds,
+    pub max_seconds: WholeSeconds,
 }
 
 impl From<&Limits> for SignoffGrace {
     fn from(limits: &Limits) -> Self {
-        let seconds = |grace: Duration| u32::try_from(grace.as_secs()).expect("a day fits u32");
         Self {
-            seconds: seconds(limits.signoff_idle_grace()),
-            max_seconds: seconds(MAX_SIGNOFF_IDLE_GRACE),
+            seconds: limits.signoff_idle_grace().into(),
+            max_seconds: MAX_SIGNOFF_IDLE_GRACE.into(),
         }
     }
 }
@@ -38,9 +37,9 @@ pub fn signoff_grace(app: tauri::State<'_, App>) -> Result<SignoffGrace, Failure
 #[specta::specta]
 pub fn signoff_grace_set(
     app: tauri::State<'_, App>,
-    seconds: u32,
+    seconds: WholeSeconds,
 ) -> Result<SignoffGrace, Failure> {
-    Limits::set_signoff_idle_grace(&app.launch.state, Duration::from_secs(seconds.into()))
+    Limits::set_signoff_idle_grace(&app.launch.state, Duration::from(seconds))
         .map(|limits| (&limits).into())
         .map_err(Failure::Setting)
 }

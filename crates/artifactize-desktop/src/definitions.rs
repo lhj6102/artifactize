@@ -1,7 +1,10 @@
 //! A branch's definitions as its `.artf` code declares them now, read-only: the Current draws
 //! them and its Detail shows where each Artifact is bound and the code that binds it. The code
 //! changes only by editing its files, in Chat or anywhere else.
-use crate::{App, Failure, browse::BranchKey};
+use crate::{
+    App, Failure,
+    browse::{BranchKey, PathKey},
+};
 use artifactize_core::types::ArtifactName;
 use serde::Serialize;
 use specta::Type;
@@ -12,7 +15,7 @@ use specta::Type;
 pub struct DefinitionNode {
     pub name: String,
     /// The file that binds it, relative to the project, with `/`, and the binding's line.
-    pub definition: String,
+    pub definition: PathKey,
     pub line: u32,
     /// The macro its binding calls, as `rust-crate!`; none for one written out.
     pub macro_name: Option<String>,
@@ -63,7 +66,7 @@ pub struct DefinitionsView {
 #[serde(rename_all = "camelCase")]
 pub struct DefinitionSource {
     /// Its file, relative to the project, with `/`, and the line the code starts at.
-    pub file: String,
+    pub file: PathKey,
     pub line: u32,
     pub authored: String,
     /// The declaration a macro call expands to; none for an Artifact written out, whose code
@@ -92,7 +95,7 @@ pub async fn definitions(
                 .values()
                 .map(|artifact| DefinitionNode {
                     name: artifact.name.to_string(),
-                    definition: artifactize_tools::files::path_text(&artifact.definition),
+                    definition: PathKey::new(&artifact.definition),
                     line: line(artifact.binding.as_ref().map_or(1, |binding| binding.line)),
                     macro_name: artifact
                         .binding
@@ -128,7 +131,7 @@ pub async fn definition_source(
                 .try_into()
                 .map_err(|_| Failure::Read(format!("Unknown Artifact {artifact}.")))?;
             Ok(DefinitionSource {
-                file: artifactize_tools::files::path_text(&expansion.file),
+                file: PathKey::new(&expansion.file),
                 line: line(expansion.line),
                 expanded: expansion.macro_name.is_some().then_some(expansion.expanded),
                 authored: expansion.authored,

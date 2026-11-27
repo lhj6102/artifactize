@@ -51,10 +51,9 @@ const current = (revision: number, checking = 0): CurrentView => ({
   scannedAt: scannedAt(revision),
   fingerprint: `graph:revision-${revision}`,
   revision,
-  scanning: checking > 0,
+  scan: { state: checking > 0 ? "scanning" : "scanned" },
   checking,
   artifacts: 2,
-  failure: null,
 });
 
 /** The time a Current's header shows for a scan, as the app writes it. */
@@ -65,7 +64,7 @@ const saved = {
   branchKey: branchKey("main"), view: "conversation", unavailable: null,
   target: { engine: "direct", backend: { kind: "custom", name: "fixture" }, model: "small", effort: null },
   createdAt: "2026-11-21T00:00:00Z", updatedAt: "2026-11-21T00:00:00Z",
-  running: false, waitingPermission: false, legacyMigrationNotice: false, outcome: null, unseen: false,
+  activity: "idle", legacyMigrationNotice: false, outcome: null, unseen: false,
 } satisfies ChatSession;
 
 /** The backend: `snapshot` answers every browse; the calls are recorded. */
@@ -101,7 +100,7 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
           chat = chat && { ...chat, view: (args as { view: ChatSessionView }).view };
           return chat;
         case "chat_open":
-          return { session: chat, running: false, turns: [] };
+          return { session: chat, activity: "idle", turns: [] };
         case "chat_branches":
           return [branch("other", []), branch("main", [])];
         case "chat_default_target":
@@ -244,7 +243,7 @@ it("draws a Current's graph at once, counting the Artifacts still being checked 
   expect(screen.getByRole("button", { name: /^Refresh/ }).hasAttribute("disabled")).toBe(false);
   await publish(current(2, 1));
   await waitFor(() => expect(screen.getByLabelText("Checking, 1 Artifacts left").textContent?.trim()).toBe("1 left"));
-  await publish({ ...current(3), failure: "Fingerprint script for Artifact app failed." });
+  await publish({ ...current(3), scan: { state: "failed", reason: "Fingerprint script for Artifact app failed." } });
   await waitFor(() => expect(screen.getByText("Fingerprint script for Artifact app failed.")).toBeTruthy());
   // The graph stays.
   expect(screen.getByLabelText("app: reused")).toBeTruthy();

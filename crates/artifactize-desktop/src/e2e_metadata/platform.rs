@@ -1,9 +1,14 @@
 //! Native desktop observation for an E2E-owned window.
 
+/// How often the window's image is written: a failed case's image is at most this old, and a
+/// capture a second costs the WebKit main thread little.
+#[cfg(target_os = "macos")]
+const WINDOW_IMAGE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
 /// Keep a recent image of the fixture's own main window, even before WebDriver can connect.
 #[cfg(target_os = "macos")]
 pub fn arm_window_image<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-    use std::{ffi::CString, os::unix::ffi::OsStrExt, sync::Arc, time::Duration};
+    use std::{ffi::CString, os::unix::ffi::OsStrExt, sync::Arc};
     use tauri::Manager;
 
     unsafe extern "C" {
@@ -22,7 +27,7 @@ pub fn arm_window_image<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     };
     let path = Arc::new(path);
     tauri::async_runtime::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        let mut interval = tokio::time::interval(WINDOW_IMAGE_INTERVAL);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
