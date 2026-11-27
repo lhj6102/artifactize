@@ -149,7 +149,9 @@ mod tests {
 
     #[test]
     fn declaration_ids_validate_at_json_boundary_and_keep_string_forms() {
-        for invalid in ["", " ", "bad/name", "_bad", "a\nb", "a.", ".a", "a..b", "1a.b"] {
+        for invalid in [
+            "", " ", "bad/name", "_bad", "a\nb", "a.", ".a", "a..b", "1a.b",
+        ] {
             assert!(serde_json::from_value::<ProfileName>(json!(invalid)).is_err());
             assert!(serde_json::from_value::<ToolFqn>(json!(invalid)).is_err());
         }
@@ -194,10 +196,16 @@ impl ToolFqn {
     /// `a.b.c`: dot-separated identifiers, each starting with a letter.
     pub fn namespace(value: &str) -> Result<(), String> {
         if value.is_empty() || value.len() > MAX_TOOL_FQN_BYTES {
-            return Err(format!("A tool name is 1–{MAX_TOOL_FQN_BYTES} bytes: {value:?}."));
+            return Err(format!(
+                "A tool name is 1–{MAX_TOOL_FQN_BYTES} bytes: {value:?}."
+            ));
         }
         for segment in value.split('.') {
-            if !segment.as_bytes().first().is_some_and(u8::is_ascii_alphabetic) {
+            if !segment
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_alphabetic)
+            {
                 return Err(format!(
                     "Each part of a tool name starts with a letter: {value:?}."
                 ));
@@ -209,7 +217,9 @@ impl ToolFqn {
 
     /// The namespace of `ns.tool`: everything before its last dot.
     pub fn namespace_part(&self) -> &str {
-        self.0.rsplit_once('.').map_or("", |(namespace, _)| namespace)
+        self.0
+            .rsplit_once('.')
+            .map_or("", |(namespace, _)| namespace)
     }
 
     /// The name a provider sees: `{fqn with . as _}_{artifact}`. Registries reject two tools

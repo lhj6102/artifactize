@@ -119,7 +119,8 @@ fn openai_review_calls_tools_against_the_fake_and_passes_reasoning_exactly() {
                 openai::usage(40, 8),
             )
         } else {
-            let call = openai::function_call("call_1", "spec_read_spec", &json!({"path":"spec.md"}));
+            let call =
+                openai::function_call("call_1", "spec_read_spec", &json!({"path":"spec.md"}));
             openai::completed(request, vec![call], openai::usage(30, 5))
         }
     });
@@ -386,10 +387,7 @@ fn the_repair_turn_names_the_failing_schema_paths() {
                 json!({"issues":[{"priority":"P2","reason":"R1 is covered."}]}),
             )
         } else {
-            reply(
-                request,
-                json!({"issues":[{"priority":"P5","reason":"R1"}]}),
-            )
+            reply(request, json!({"issues":[{"priority":"P5","reason":"R1"}]}))
         }
     });
     let run = parsed(
@@ -416,10 +414,7 @@ fn the_repair_turn_names_the_failing_schema_paths() {
 
     // A second invalid result ends the review; the saved error stays the bare code.
     let stubborn = FakeProvider::start(move |request| {
-        reply(
-            request,
-            json!({"issues":[{"priority":"P5","reason":"R1"}]}),
-        )
+        reply(request, json!({"issues":[{"priority":"P5","reason":"R1"}]}))
     });
     let run = parsed(
         project
@@ -474,7 +469,9 @@ fn fixed_builtin_tools_have_closed_schemas_and_return_content_in_offline_agent_t
         let call = match turn {
             0 => openai::function_call("fixed", "spec_fixed_spec", &json!({})),
             1 => openai::function_call("section", "spec_section_spec", &json!({"heading":"First"})),
-            2 => openai::function_call("missing", "spec_section_spec", &json!({"heading":"Absent"})),
+            2 => {
+                openai::function_call("missing", "spec_section_spec", &json!({"heading":"Absent"}))
+            }
             3 => openai::function_call("help", "spec_help_spec", &json!({})),
             _ => {
                 return openai::completed(
@@ -500,7 +497,11 @@ fn fixed_builtin_tools_have_closed_schemas_and_return_content_in_offline_agent_t
     assert_eq!(run["requests"][0]["status"], "GREEN");
     let requests = provider.requests();
     let tools = requests[0].body["tools"].as_array().unwrap();
-    for name in ["spec_fixed_spec", "spec_fixed_section_spec", "spec_help_spec"] {
+    for name in [
+        "spec_fixed_spec",
+        "spec_fixed_section_spec",
+        "spec_help_spec",
+    ] {
         let tool = tools.iter().find(|tool| tool["name"] == name).unwrap();
         assert_eq!(tool["parameters"]["properties"], json!({}));
     }

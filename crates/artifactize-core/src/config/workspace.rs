@@ -219,7 +219,10 @@ impl RepoConfig {
                 .unwrap_or_default();
             return ConfigError::new(self.root.join(definition), message);
         };
-        let lowered = program.artifacts.iter().find(|lowered| lowered.name == artifact.as_str());
+        let lowered = program
+            .artifacts
+            .iter()
+            .find(|lowered| lowered.name == artifact.as_str());
         let Some(lowered) = lowered else {
             return ConfigError::new(&self.root, message);
         };

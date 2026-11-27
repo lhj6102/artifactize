@@ -117,7 +117,10 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
         ];
         fields.retain(|(key, _)| *key != field);
         fields.push((field, value));
-        let fields: Vec<_> = fields.iter().map(|(key, value)| format!("{key} = {value}")).collect();
+        let fields: Vec<_> = fields
+            .iter()
+            .map(|(key, value)| format!("{key} = {value}"))
+            .collect();
         let text = format!(
             "tool t = {{\n  human inspect = command(kind = \"launch\", {})\n}}\nartf a : t = {{ path = \"./\" }}\n",
             fields.join(", ")
@@ -243,7 +246,10 @@ async fn catalog_is_human_only_scoped_and_collision_checked() {
     )
     .unwrap();
     let error = read_workspace_config(repo.path()).unwrap_err().to_string();
-    assert!(error.contains("are both offered as x_y_b_collide"), "{error}");
+    assert!(
+        error.contains("are both offered as x_y_b_collide"),
+        "{error}"
+    );
 }
 
 #[tokio::test]

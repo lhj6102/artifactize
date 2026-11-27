@@ -857,7 +857,9 @@ fn recursive_selection_includes_dependencies_and_rebuilds_scope() {
     let fixture = Fixture::runtime_fixture();
     // The red check passes here, so the Artifact that names it can run after it.
     let red = fixture.repo.join(".artifactize/red.artf");
-    let text = support::declaration::read_text(&red).unwrap().replace("exit 7", "exit 0");
+    let text = support::declaration::read_text(&red)
+        .unwrap()
+        .replace("exit 7", "exit 0");
     fs::write(&red, text).unwrap();
     let recursive = fixture.verify(&["blocked", "--recursive"], 0);
     let requests = recursive["requests"].as_array().unwrap();
@@ -906,12 +908,15 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
         let mut declaration: Value =
             support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
         // Written first, so its request comes first: evals keep their written order.
-        declaration["evals"].as_array_mut().unwrap().insert(0, json!({
-            "id":"agent",
-            "title":"Agent",
-            "profile":{"kind":"agent","backend":backend,"model":"exact-model"},
-            "payload":{"instruction":"Review."},
-        }));
+        declaration["evals"].as_array_mut().unwrap().insert(
+            0,
+            json!({
+                "id":"agent",
+                "title":"Agent",
+                "profile":{"kind":"agent","backend":backend,"model":"exact-model"},
+                "payload":{"instruction":"Review."},
+            }),
+        );
         support::declaration::write(&(fixture.repo), path, declaration.to_string()).unwrap();
         let output = fixture
             .command()

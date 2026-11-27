@@ -95,4 +95,3 @@ pub(crate) fn optional_pair<S: Serializer>(
         .map(|(from, to)| (super::path_text(from), super::path_text(to)))
         .serialize(serializer)
 }
-

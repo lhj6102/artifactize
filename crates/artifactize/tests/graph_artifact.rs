@@ -64,8 +64,21 @@ fn ordinary_definition_reviews_reuse_only_while_their_inputs_stay_unchanged() {
         first["requests"][0]["executionId"]
     );
     // A comment is a note, not meaning: the definitions review is reused.
-    fs::write(&app, "// The project folder.\nartf app = {\n  path = \"./\"\n  basis = true\n}\n").unwrap();
-    let commented = invoke(&["verify", "--wait", "project-graph", "--reuse-only", "runtime"], 0);
+    fs::write(
+        &app,
+        "// The project folder.\nartf app = {\n  path = \"./\"\n  basis = true\n}\n",
+    )
+    .unwrap();
+    let commented = invoke(
+        &[
+            "verify",
+            "--wait",
+            "project-graph",
+            "--reuse-only",
+            "runtime",
+        ],
+        0,
+    );
     assert_eq!(commented["executionsStarted"], 0);
     // What an Artifact targets is what the definitions declare.
     fs::write(&app, "artf app = { path = \"data.txt\", basis = true }\n").unwrap();
@@ -93,7 +106,11 @@ fn ordinary_definition_reviews_reuse_only_while_their_inputs_stay_unchanged() {
             .any(|eval| eval["id"] == "project-graph/check"
                 && eval["key"] == changed["requests"][0]["key"])
     );
-    fs::write(&graph_file, "artf project-graph = { path = \".artifactize/\", basis = true }\n").unwrap();
+    fs::write(
+        &graph_file,
+        "artf project-graph = { path = \".artifactize/\", basis = true }\n",
+    )
+    .unwrap();
     let basis = invoke(&["verify", "--wait", "--all"], 0);
     assert_eq!(basis["validation"]["satisfied"], true);
     assert_eq!(basis["executionsStarted"], 0);

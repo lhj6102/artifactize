@@ -19,7 +19,11 @@ pub(crate) fn artifact(artifact: &LoweredArtifact) -> String {
         field(&mut out, 1, "basis", &basis.to_string());
     }
     if !artifact.parts.is_empty() {
-        let parts: Vec<_> = artifact.parts.iter().map(|(part, _)| part.as_str()).collect();
+        let parts: Vec<_> = artifact
+            .parts
+            .iter()
+            .map(|(part, _)| part.as_str())
+            .collect();
         field(&mut out, 1, "parts", &format!("[{}]", parts.join(", ")));
     }
     if let Some((select, _)) = &artifact.select {
@@ -51,9 +55,23 @@ fn render_eval(out: &mut String, eval: &LoweredEval) {
     let profile = match (&eval.profile_name, &eval.profile) {
         (Some(name), _) => name.clone(),
         (None, Profile::Human {}) => "human".into(),
-        (None, Profile::Runtime { command, args, timeout_ms }) => {
-            let args: Vec<_> = args.iter().map(|arg| quote_argument(&arg.to_string())).collect();
-            let mut call = format!("runtime(command = {}, args = [{}]", quote(command), args.join(", "));
+        (
+            None,
+            Profile::Runtime {
+                command,
+                args,
+                timeout_ms,
+            },
+        ) => {
+            let args: Vec<_> = args
+                .iter()
+                .map(|arg| quote_argument(&arg.to_string()))
+                .collect();
+            let mut call = format!(
+                "runtime(command = {}, args = [{}]",
+                quote(command),
+                args.join(", ")
+            );
             if let Some(timeout) = timeout_ms {
                 write!(call, ", timeout_ms = {}", timeout.as_millis()).expect("write to String");
             }
@@ -68,14 +86,22 @@ fn render_eval(out: &mut String, eval: &LoweredEval) {
         field(out, 2, "red_at", &quote(red_at.as_str()));
     }
     if !eval.mutex.is_empty() {
-        let tags: Vec<_> = eval.mutex.iter().map(|tag| tag.as_str().to_owned()).collect();
+        let tags: Vec<_> = eval
+            .mutex
+            .iter()
+            .map(|tag| tag.as_str().to_owned())
+            .collect();
         field(out, 2, "mutex", &strings(&tags));
     }
     if let Some((pieces, _)) = &eval.instruction {
         field(out, 2, "instruction", &template(pieces, 2));
     }
     if !eval.inputs.is_empty() {
-        let inputs: Vec<_> = eval.inputs.iter().map(|(input, _)| input.as_str()).collect();
+        let inputs: Vec<_> = eval
+            .inputs
+            .iter()
+            .map(|(input, _)| input.as_str())
+            .collect();
         field(out, 2, "inputs", &format!("[{}]", inputs.join(", ")));
     }
     writeln!(out, "{INDENT}}}").expect("write to String");
@@ -98,7 +124,10 @@ fn render_fingerprint(fingerprint: &Fingerprint) -> String {
             files,
             timeout_ms,
         } => {
-            let args: Vec<_> = args.iter().map(|arg| quote_argument(&arg.to_string())).collect();
+            let args: Vec<_> = args
+                .iter()
+                .map(|arg| quote_argument(&arg.to_string()))
+                .collect();
             let files: Vec<_> = files.iter().map(|file| file.as_str().to_owned()).collect();
             let mut call = format!(
                 "script(command = {}, args = [{}], files = {}",
@@ -136,7 +165,11 @@ fn quote_argument(text: &str) -> String {
 
 pub(crate) fn escape(text: &str, one_line: bool) -> String {
     let out = escape_characters(text, one_line).replace("@{", "@@{");
-    if one_line { out } else { out.replace("\"\"\"", "\\\"\"\"") }
+    if one_line {
+        out
+    } else {
+        out.replace("\"\"\"", "\\\"\"\"")
+    }
 }
 
 fn escape_characters(text: &str, one_line: bool) -> String {
@@ -186,9 +219,19 @@ pub(crate) fn template(pieces: &[Piece], depth: usize) -> String {
     let indent = INDENT.repeat(depth + 1);
     let body: Vec<String> = text_of(false)
         .split('\n')
-        .map(|line| if line.is_empty() { String::new() } else { format!("{indent}{line}") })
+        .map(|line| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                format!("{indent}{line}")
+            }
+        })
         .collect();
-    format!("\"\"\"\n{}\n{}\"\"\"", body.join("\n"), INDENT.repeat(depth))
+    format!(
+        "\"\"\"\n{}\n{}\"\"\"",
+        body.join("\n"),
+        INDENT.repeat(depth)
+    )
 }
 
 fn slot_text(slot: &SlotRef) -> String {
@@ -198,10 +241,14 @@ fn slot_text(slot: &SlotRef) -> String {
     };
     match slot {
         SlotRef::Artf { target: name, .. } => format!("@{{artf {}}}", target(name)),
-        SlotRef::Path { target: name, path, .. } if path.is_empty() => {
+        SlotRef::Path {
+            target: name, path, ..
+        } if path.is_empty() => {
             format!("@{{path {}}}", target(name))
         }
-        SlotRef::Path { target: name, path, .. } => format!("@{{path {}/{path}}}", target(name)),
+        SlotRef::Path {
+            target: name, path, ..
+        } => format!("@{{path {}/{path}}}", target(name)),
         SlotRef::Tool {
             target: name,
             audience,

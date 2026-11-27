@@ -16,8 +16,8 @@ use crate::{
 };
 
 mod budgets;
-mod issues;
 mod follow_up;
+mod issues;
 mod repair;
 mod tool_sessions;
 

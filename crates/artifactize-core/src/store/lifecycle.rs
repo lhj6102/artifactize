@@ -396,7 +396,8 @@ mod tests {
         )
         .unwrap();
         assert!(GreenResult::try_from(red).is_err());
-        let expected = json!({"verdict":"GREEN","kind":"agent","issues":[{"priority":"P3","reason":"a nit"}]});
+        let expected =
+            json!({"verdict":"GREEN","kind":"agent","issues":[{"priority":"P3","reason":"a nit"}]});
         let green = ExecutionResult::try_from(expected.clone()).unwrap();
         let provisional = RequestState::Provisional {
             result: green.try_into().unwrap(),

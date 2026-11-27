@@ -160,8 +160,7 @@ pub struct Submission {
 }
 
 /// The refusal for GREEN with issues: approval lists none.
-pub const GREEN_WITH_ISSUES: &str =
-    "GREEN takes no issues: remove them, or submit RED with them.";
+pub const GREEN_WITH_ISSUES: &str = "GREEN takes no issues: remove them, or submit RED with them.";
 /// The refusal for RED without an issue.
 pub const RED_WITHOUT_ISSUE: &str = "RED needs at least one issue.";
 

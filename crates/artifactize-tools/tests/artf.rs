@@ -15,8 +15,14 @@ artf app : files = {
 #[test]
 fn file_tools_show_definitions_without_comments_on_the_same_lines() {
     let viewed = String::from_utf8(definition(COMMENTED).into_owned()).unwrap();
-    assert!(!viewed.contains("Reviewers") && !viewed.contains("where it lives"), "{viewed}");
-    assert!(viewed.contains("Keep // in strings and https://example.com."), "{viewed}");
+    assert!(
+        !viewed.contains("Reviewers") && !viewed.contains("where it lives"),
+        "{viewed}"
+    );
+    assert!(
+        viewed.contains("Keep // in strings and https://example.com."),
+        "{viewed}"
+    );
     assert_eq!(viewed.lines().count(), 8);
     assert_eq!(viewed.lines().nth(2), Some("  path = \"src/\""));
     let plain = b"artf app = { path = \"src/\" }\n";
@@ -27,7 +33,11 @@ fn file_tools_show_definitions_without_comments_on_the_same_lines() {
 fn fingerprints_ignore_comments_and_layout_but_not_tokens() {
     let relaid = br#"artf app : files = { path = "src/"
 eval check : reviewer = { title = "Check", instruction = "Keep // in strings and https://example.com." } }"#;
-    assert_ne!(fingerprinted(COMMENTED), fingerprinted(relaid), "a comma is a token");
+    assert_ne!(
+        fingerprinted(COMMENTED),
+        fingerprinted(relaid),
+        "a comma is a token"
+    );
     let relaid = br#"artf app : files = { path = "src/"
 eval check : reviewer = { title = "Check" instruction = "Keep // in strings and https://example.com." } }"#;
     assert_eq!(fingerprinted(COMMENTED), fingerprinted(relaid));

@@ -34,9 +34,9 @@ pub use crate::types::{ArtifactName, EvalId};
 pub use artifactize_tools::scope::{ArtifactKind, Target, Uri};
 pub use backend::{Backend, CustomBackendName, DirectBackend, HttpProvider, Provider};
 pub use declaration::{Fingerprint, Views};
+use discovery::logical_join;
 pub use discovery::read_workspace_config;
 pub(crate) use discovery::read_workspace_declarations;
-use discovery::logical_join;
 pub use eval::{
     Audience, EvalDeclaration, EvalPayload, InstructionSlot, LocalEvalId, Priority, Slot,
 };
@@ -110,15 +110,19 @@ pub fn parse_declaration(text: &str) -> Result<ParsedDeclaration, String> {
     let catalog = plugins::builtin_catalog();
     let program =
         discovery::program(&root, &sources, &catalog).map_err(|error| error.to_string())?;
-    let config = discovery::build_program(root, program, catalog)
-        .map_err(|error| error.to_string())?;
+    let config =
+        discovery::build_program(root, program, catalog).map_err(|error| error.to_string())?;
     let artifact = config
         .artifacts
         .into_values()
         .next()
         .ok_or("The text declares no Artifact.")?;
     Ok(ParsedDeclaration {
-        evals: config.evals.into_iter().map(|eval| eval.declaration).collect(),
+        evals: config
+            .evals
+            .into_iter()
+            .map(|eval| eval.declaration)
+            .collect(),
         views: artifact.views,
         tags: artifact.tags,
         basis: artifact.basis,

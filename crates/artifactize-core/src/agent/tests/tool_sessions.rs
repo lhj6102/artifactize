@@ -193,7 +193,12 @@ async fn concurrent_first_bound_calls_share_one_session_start() {
         .unwrap()
         .with_sessions(&sessions);
     let (first, second) = tokio::join!(
-        registry.call("a_probe_a", json!({}), &fixture.output, cancellation.clone()),
+        registry.call(
+            "a_probe_a",
+            json!({}),
+            &fixture.output,
+            cancellation.clone()
+        ),
         registry.call("a_probe_a", json!({}), &fixture.output, cancellation),
     );
     assert!(!first.is_error(), "{first:?}");

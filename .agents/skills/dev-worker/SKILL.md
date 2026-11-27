@@ -111,7 +111,7 @@ How to resolve a RED:
   match docs. If a docs finding reveals a real code bug, report it instead of
   changing behavior silently.
 - **A conflicting parent may change.** When a parent Artifact the eval depends
-  on (a `{name}` it references, such as a spec or a rule document) conflicts
+  on (an input it names, such as a spec or a rule document) conflicts
   with your task's goal, you may update that parent instead. A parent with a
   Human eval follows the sign-off order in step 2.
 - **Never weaken the check.** Do not loosen eval instructions, schemas, rule

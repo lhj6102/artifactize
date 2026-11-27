@@ -210,13 +210,12 @@ artf design-definitions : artifactize = {
         text.contains("inside [File]") && !text.contains("outside"),
         "{text}"
     );
-    let viewer =
-        crate::viewer::Session::open(
-            repo.path(),
-            &"design-definitions".parse().unwrap(),
-            &"artifactize.view".parse().unwrap(),
-        )
-        .unwrap();
+    let viewer = crate::viewer::Session::open(
+        repo.path(),
+        &"design-definitions".parse().unwrap(),
+        &"artifactize.view".parse().unwrap(),
+    )
+    .unwrap();
     let graph = viewer.declarations().unwrap();
     assert_eq!(
         graph
@@ -231,5 +230,8 @@ artf design-definitions : artifactize = {
     assert_eq!(wire["artifacts"]["inside"]["toolsets"], json!(["markdown"]));
     assert_eq!(wire["artifacts"]["plain"]["toolsets"], json!([]));
     let whole = serde_json::to_value(extract(&config)).unwrap();
-    assert_eq!(whole["artifacts"]["inside"]["toolsets"], json!(["markdown"]));
+    assert_eq!(
+        whole["artifacts"]["inside"]["toolsets"],
+        json!(["markdown"])
+    );
 }

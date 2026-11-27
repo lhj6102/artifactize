@@ -252,7 +252,10 @@ fn parts_reject_cycles_unknown_names_and_invalid_names() {
     )
     .unwrap();
     let error = fixture.error(&["config", "check"]);
-    assert!(error.contains("bad.artf") && error.contains("line 1"), "{error}");
+    assert!(
+        error.contains("bad.artf") && error.contains("line 1"),
+        "{error}"
+    );
 }
 
 #[test]

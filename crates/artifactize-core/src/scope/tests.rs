@@ -546,7 +546,10 @@ fn invalid_runtime_references_fail_statically_but_literals_stay_literal() {
         assert!(read_workspace_config(&fixture.0).is_err(), "{argument}");
     }
     // A runtime instruction is not hashed: it names no Artifact.
-    fixture.write("review/index.artf", &review(r#""x""#, "Unknown @{artf missing}."));
+    fixture.write(
+        "review/index.artf",
+        &review(r#""x""#, "Unknown @{artf missing}."),
+    );
     let error = fixture.error();
     assert!(error.contains("names no Artifact"), "{error}");
     fixture.write(
@@ -560,6 +563,10 @@ fn invalid_runtime_references_fail_statically_but_literals_stay_literal() {
     let crate::config::Profile::Runtime { args, .. } = config.evals[0].declaration.profile() else {
         panic!("a runtime eval");
     };
-    let literals: Vec<_> = args.iter().skip(1).filter_map(|arg| arg.literal()).collect();
+    let literals: Vec<_> = args
+        .iter()
+        .skip(1)
+        .filter_map(|arg| arg.literal())
+        .collect();
     assert_eq!(literals, ["@{path review}", "{review}", "${review}"]);
 }

@@ -356,10 +356,7 @@ async fn saved_definitions_and_paged_runs_survive_repository_removal() {
             assert_eq!(shown["result"], request["result"]);
         }
     }
-    assert_eq!(
-        selected["requests"][0]["result"]["kind"],
-        "runtime"
-    );
+    assert_eq!(selected["requests"][0]["result"]["kind"], "runtime");
     assert_eq!(query(&second, &state, &["run", "list"], 0), json!([all[1]]));
     assert_eq!(
         query(&first, &state, &["run", "list", "--repo-only"], 0),

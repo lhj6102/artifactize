@@ -74,7 +74,10 @@ pub(super) async fn tool(
             match content {
                 Content::Text { text } => writeln!(out, "{text}"),
                 Content::Viewer { artifact, tool } => {
-                    writeln!(out, "Open {artifact} with {tool} in the Artifactize desktop.")
+                    writeln!(
+                        out,
+                        "Open {artifact} with {tool} in the Artifactize desktop."
+                    )
                 }
                 Content::Launch { launched } => writeln!(
                     out,

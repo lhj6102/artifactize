@@ -255,7 +255,10 @@ fn status_refuses_an_unknown_profile_without_creating_state() {
     let fixture = Fixture::new("runtime");
     let refused = fixture.json(&["status", "red", "--profile", "unknown"], 2);
     assert!(
-        refused["error"].as_str().unwrap().contains("Unknown profile unknown"),
+        refused["error"]
+            .as_str()
+            .unwrap()
+            .contains("Unknown profile unknown"),
         "{refused}"
     );
     assert!(!fixture.state.exists());

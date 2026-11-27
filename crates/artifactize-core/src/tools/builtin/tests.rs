@@ -303,7 +303,13 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
     let special_files = crate::test_os::special_files(&a);
     paths.extend(special_files.paths().iter().copied());
     for path in paths {
-        for tool in ["a_read_a", "a_list_a", "a_glob_a", "a_grep_a", "a_view_image_a"] {
+        for tool in [
+            "a_read_a",
+            "a_list_a",
+            "a_glob_a",
+            "a_grep_a",
+            "a_view_image_a",
+        ] {
             let mut args = json!({"path":path});
             if tool == "a_glob_a" || tool == "a_grep_a" {
                 args["pattern"] = json!(".*");
@@ -390,7 +396,11 @@ async fn missing_paths_and_links_report_their_cause() {
             "{tool} {path}"
         );
     }
-    let message = error(fixture.call("a_read_a", json!({"path":"data/file/x"})).await);
+    let message = error(
+        fixture
+            .call("a_read_a", json!({"path":"data/file/x"}))
+            .await,
+    );
     if let Some(cause) = crate::test_os::not_a_directory_error() {
         assert_eq!(message, format!("Cannot open Artifact input: {cause}"));
     }
@@ -443,7 +453,10 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
         ("a_read_a", json!({"path":"x","offset":null})),
         ("a_read_a", json!({"path":"x","limit":null})),
         ("a_read_a", json!({"path":"x","offset":1.5})),
-        ("a_read_a", json!({"path":"x","offset":9007199254740992_u64})),
+        (
+            "a_read_a",
+            json!({"path":"x","offset":9007199254740992_u64}),
+        ),
         ("a_list_a", json!({"path":null})),
         ("a_list_a", json!({"offset":null})),
         ("a_list_a", json!({"limit":0})),
@@ -474,7 +487,13 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
             .list()
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>(),
-        ["a_glob_a", "a_grep_a", "a_list_a", "a_read_a", "a_view_image_a"]
+        [
+            "a_glob_a",
+            "a_grep_a",
+            "a_list_a",
+            "a_read_a",
+            "a_view_image_a"
+        ]
     );
     for tool in registry.list() {
         assert!(!tool.description.contains("not yet implemented"));
@@ -561,7 +580,9 @@ async fn listing_pages_are_sorted_and_reach_referenced_nested_artifacts() {
             .await["resolvedArtifactId"],
         "b"
     );
-    let data = fixture.data("a_glob_a", json!({"pattern":"**/*.txt"})).await;
+    let data = fixture
+        .data("a_glob_a", json!({"pattern":"**/*.txt"}))
+        .await;
     assert_eq!(
         data["files"],
         json!(["nested/cases/input.txt", "source/input.txt"])

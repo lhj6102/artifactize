@@ -3,7 +3,10 @@
 
 use super::{
     authored_target::AuthoredTarget,
-    lang::{self, LangError, LoweredArtifact, LoweredEval, LoweredFingerprint, Piece, SlotRef, SlotTarget},
+    lang::{
+        self, LangError, LoweredArtifact, LoweredEval, LoweredFingerprint, Piece, SlotRef,
+        SlotTarget,
+    },
     *,
 };
 use std::{io::Read, sync::Arc};
@@ -201,7 +204,10 @@ pub(crate) fn located(
     let mut error = LangError::new(span, message);
     let binding = artifact.binding;
     if binding.file != span.file || span.start < binding.start || span.end > binding.end {
-        error = error.note(binding, format!("in the expansion of `artf {}`", artifact.name));
+        error = error.note(
+            binding,
+            format!("in the expansion of `artf {}`", artifact.name),
+        );
     }
     let mut located = program.sources.error(error);
     located.path = root.join(&located.path);
@@ -219,7 +225,8 @@ fn artifact(
         .name
         .parse()
         .map_err(|error: String| fail(lowered.name_span, error))?;
-    artifact_name(&lowered.name, "Artifact name").map_err(|error| fail(lowered.name_span, error))?;
+    artifact_name(&lowered.name, "Artifact name")
+        .map_err(|error| fail(lowered.name_span, error))?;
     let (path_text, path_span) = &lowered.path;
     let (authored, target) = path_text
         .parse::<AuthoredTarget>()
@@ -232,13 +239,19 @@ fn artifact(
                 || select.len() > MAX_DECLARED_ITEMS
                 || select.iter().collect::<BTreeSet<_>>().len() != select.len()
             {
-                return Err(fail(*span, "select must contain 1–64 unique paths relative to the folder.".into()));
+                return Err(fail(
+                    *span,
+                    "select must contain 1–64 unique paths relative to the folder.".into(),
+                ));
             }
             select
                 .iter()
                 .map(|selected| {
-                    validation::path(selected).map_err(|message| fail(*span, format!("select: {message}")))?;
-                    selected.parse::<LogicalPath>().map_err(|message| fail(*span, format!("select: {message}")))
+                    validation::path(selected)
+                        .map_err(|message| fail(*span, format!("select: {message}")))?;
+                    selected
+                        .parse::<LogicalPath>()
+                        .map_err(|message| fail(*span, format!("select: {message}")))
                 })
                 .collect::<Result<_, _>>()?
         }
@@ -246,10 +259,16 @@ fn artifact(
     let kind = match (target.kind(), lowered.select.as_ref()) {
         (ArtifactKind::Folder, Some(_)) => ArtifactKind::Aspect,
         (ArtifactKind::Live, Some((_, span))) => {
-            return Err(fail(*span, "select is not supported on a Live target.".into()));
+            return Err(fail(
+                *span,
+                "select is not supported on a Live target.".into(),
+            ));
         }
         (ArtifactKind::File, Some((_, span))) => {
-            return Err(fail(*span, "select requires a folder path ending in /.".into()));
+            return Err(fail(
+                *span,
+                "select requires a folder path ending in /.".into(),
+            ));
         }
         (kind, _) => kind,
     };
@@ -275,21 +294,40 @@ fn artifact(
             }),
         },
         LoweredFingerprint::Declared(declared, ignore_written) => {
-            declared.check().map_err(|message| fail(fingerprint_span, message))?;
+            declared
+                .check()
+                .map_err(|message| fail(fingerprint_span, message))?;
             match (kind, declared) {
                 (ArtifactKind::Live, Fingerprint::Artifactsum { .. }) => {
-                    return Err(fail(fingerprint_span, "A Live Artifact uses a fingerprint script or none, never artifactsum.".into()));
+                    return Err(fail(
+                        fingerprint_span,
+                        "A Live Artifact uses a fingerprint script or none, never artifactsum."
+                            .into(),
+                    ));
                 }
                 (ArtifactKind::File, Fingerprint::Artifactsum { files, ignore }) => {
                     if *ignore_written || !ignore.patterns().is_empty() {
-                        return Err(fail(fingerprint_span, "fingerprint.ignore is not supported for a file Artifact.".into()));
+                        return Err(fail(
+                            fingerprint_span,
+                            "fingerprint.ignore is not supported for a file Artifact.".into(),
+                        ));
                     }
                     let own = file_name(&target);
                     if files.is_empty() {
-                        return Err(fail(fingerprint_span, format!("fingerprint.files for a file Artifact names its target {own}.")));
+                        return Err(fail(
+                            fingerprint_span,
+                            format!(
+                                "fingerprint.files for a file Artifact names its target {own}."
+                            ),
+                        ));
                     }
                     if let Some(other) = files.iter().find(|input| input.as_str() != own) {
-                        return Err(fail(fingerprint_span, format!("fingerprint.files for a file Artifact may name only its target {own}, not {other}.")));
+                        return Err(fail(
+                            fingerprint_span,
+                            format!(
+                                "fingerprint.files for a file Artifact may name only its target {own}, not {other}."
+                            ),
+                        ));
                     }
                 }
                 (ArtifactKind::Aspect, Fingerprint::Artifactsum { files, .. }) => {
@@ -301,7 +339,12 @@ fn artifact(
                         })
                     };
                     if let Some(outside) = files.iter().find(|input| !within(input)) {
-                        return Err(fail(fingerprint_span, format!("fingerprint.files for an aspect must lie in its selection: {outside}.")));
+                        return Err(fail(
+                            fingerprint_span,
+                            format!(
+                                "fingerprint.files for an aspect must lie in its selection: {outside}."
+                            ),
+                        ));
                     }
                 }
                 _ => {}
@@ -310,28 +353,47 @@ fn artifact(
         }
     };
     if lowered.basis == Some(true) && !lowered.evals.is_empty() {
-        return Err(fail(lowered.name_span, format!("Basis Artifact {name} cannot own evals.")));
+        return Err(fail(
+            lowered.name_span,
+            format!("Basis Artifact {name} cannot own evals."),
+        ));
     }
     validation::tags(&lowered.tags).map_err(|message| fail(lowered.binding, message))?;
     let mut parts = BTreeSet::new();
     if lowered.parts.len() > MAX_DECLARED_ITEMS {
-        return Err(fail(lowered.parts[0].1, "parts must name at most 64 Artifacts.".into()));
+        return Err(fail(
+            lowered.parts[0].1,
+            "parts must name at most 64 Artifacts.".into(),
+        ));
     }
     for (part, span) in &lowered.parts {
         if *part == lowered.name {
             return Err(fail(*span, format!("{name} cannot be a part of itself.")));
         }
-        if !parts.insert(part.parse::<ArtifactName>().expect("a declared Artifact name")) {
+        if !parts.insert(
+            part.parse::<ArtifactName>()
+                .expect("a declared Artifact name"),
+        ) {
             return Err(fail(*span, format!("parts names {part} twice.")));
         }
     }
     let mut views = lowered.views.clone();
     views.share(schemas);
     views.check(schemas).map_err(|(table, tool, message)| {
-        fail(lang::span_of(lowered, &["views", table, tool.as_str()]), message)
+        fail(
+            lang::span_of(lowered, &["views", table, tool.as_str()]),
+            message,
+        )
     })?;
-    composed_targets(&views, &lowered.toolsets, kind, &target)
-        .map_err(|message| fail(lowered.tools.as_ref().map_or(lowered.binding, |tools| tools.1), message))?;
+    composed_targets(&views, &lowered.toolsets, kind, &target).map_err(|message| {
+        fail(
+            lowered
+                .tools
+                .as_ref()
+                .map_or(lowered.binding, |tools| tools.1),
+            message,
+        )
+    })?;
     let definition = program.sources.file(lowered.binding.file).path.clone();
     Ok(Artifact {
         definition,
@@ -374,7 +436,8 @@ fn composed_targets(
     kind: ArtifactKind,
     target: &Target,
 ) -> Result<(), String> {
-    let file_builtin = |builtin: Builtin| !matches!(builtin, Builtin::Graph | Builtin::Help | Builtin::Open);
+    let file_builtin =
+        |builtin: Builtin| !matches!(builtin, Builtin::Graph | Builtin::Help | Builtin::Open);
     if kind == ArtifactKind::Live
         && (views
             .agent_tools
@@ -436,11 +499,15 @@ fn declaration(
                         }
                     }
                     SlotRef::Path { path, span, .. } => {
-                        let suffix: crate::scope::LogicalTarget = path
-                            .parse()
-                            .map_err(|error: crate::scope::ScopeError| fail(*span, error.to_string()))?;
+                        let suffix: crate::scope::LogicalTarget =
+                            path.parse().map_err(|error: crate::scope::ScopeError| {
+                                fail(*span, error.to_string())
+                            })?;
                         if artifact.file_name().is_some() && !path.is_empty() {
-                            return Err(fail(*span, format!("File Artifact {name} cannot have a /path suffix.")));
+                            return Err(fail(
+                                *span,
+                                format!("File Artifact {name} cannot have a /path suffix."),
+                            ));
                         }
                         text.push_str(&shown_path(artifact, path));
                         eval::Slot::Path {
@@ -449,22 +516,36 @@ fn declaration(
                         }
                     }
                     SlotRef::Tool {
-                        audience, tool, span, ..
+                        audience,
+                        tool,
+                        span,
+                        ..
                     } => {
                         let fqn: ToolFqn = tool
                             .parse()
                             .map_err(|message: String| fail(*span, message))?;
-                        let (audience, known): (eval::Audience, Vec<&ToolFqn>) = if audience == "agent" {
-                            (eval::Audience::Agent, artifact.views.agent_tools.keys().collect())
-                        } else {
-                            (eval::Audience::Human, artifact.views.human_tools.keys().collect())
-                        };
+                        let (audience, known): (eval::Audience, Vec<&ToolFqn>) =
+                            if audience == "agent" {
+                                (
+                                    eval::Audience::Agent,
+                                    artifact.views.agent_tools.keys().collect(),
+                                )
+                            } else {
+                                (
+                                    eval::Audience::Human,
+                                    artifact.views.human_tools.keys().collect(),
+                                )
+                            };
                         if !known.contains(&&fqn) {
                             return Err(fail(
                                 *span,
                                 format!(
                                     "Artifact {name} has no {} tool `{fqn}`; it has {}.",
-                                    if audience == eval::Audience::Agent { "agent" } else { "human" },
+                                    if audience == eval::Audience::Agent {
+                                        "agent"
+                                    } else {
+                                        "human"
+                                    },
                                     lang_names(&known)
                                 ),
                             ));

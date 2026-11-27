@@ -89,10 +89,14 @@ impl<'a> Expander<'a> {
                                     let bound = env.get(&name).cloned().ok_or_else(|| {
                                         self.error(
                                             name_span,
-                                            format!("`@{{param {name}}}` names no parameter in scope."),
+                                            format!(
+                                                "`@{{param {name}}}` names no parameter in scope."
+                                            ),
                                         )
                                     })?;
-                                    pieces.extend(self.spliced(bound.expr, &bound.env, &name, name_span)?);
+                                    pieces.extend(
+                                        self.spliced(bound.expr, &bound.env, &name, name_span)?,
+                                    );
                                 }
                                 SlotKind::Artf => {
                                     let (target, target_span) = word(0);
@@ -111,9 +115,14 @@ impl<'a> Expander<'a> {
                                             format!("`@{{path {text}}}`: write the Artifact as `@{{path {target}}}`, or a path after the `/`."),
                                         ));
                                     }
-                                    artifactize_tools::scope::logical_path(path).map_err(|error| {
-                                        self.error(target_span, format!("`@{{path {text}}}`: {error}"))
-                                    })?;
+                                    artifactize_tools::scope::logical_path(path).map_err(
+                                        |error| {
+                                            self.error(
+                                                target_span,
+                                                format!("`@{{path {text}}}`: {error}"),
+                                            )
+                                        },
+                                    )?;
                                     let start = target_span.range().start;
                                     let name_span =
                                         Span::new(target_span.file, start..start + target.len());
@@ -167,7 +176,10 @@ impl<'a> Expander<'a> {
             }
             Expr::Ident(global) => Ok(vec![Piece::Text(global.text.clone())]),
             other => Err(self
-                .error(span, format!("`@{{param {name}}}` is not text, so it cannot fill a string."))
+                .error(
+                    span,
+                    format!("`@{{param {name}}}` is not text, so it cannot fill a string."),
+                )
                 .note(other.span(), "its value")),
         }
     }
@@ -188,7 +200,12 @@ impl<'a> Expander<'a> {
     }
 
     /// Text without slots other than parameters.
-    pub(super) fn text(&self, expr: &'a Expr, env: &Rc<Env<'a>>, what: &str) -> Result<String, LangError> {
+    pub(super) fn text(
+        &self,
+        expr: &'a Expr,
+        env: &Rc<Env<'a>>,
+        what: &str,
+    ) -> Result<String, LangError> {
         let pieces = self.template(expr, env, what)?;
         self.plain(pieces, what)
     }
@@ -216,7 +233,12 @@ impl<'a> Expander<'a> {
         Ok((!matches!(expr, Expr::None(_))).then_some((expr, env)))
     }
 
-    pub(super) fn boolean(&self, expr: &'a Expr, env: &Rc<Env<'a>>, what: &str) -> Result<bool, LangError> {
+    pub(super) fn boolean(
+        &self,
+        expr: &'a Expr,
+        env: &Rc<Env<'a>>,
+        what: &str,
+    ) -> Result<bool, LangError> {
         match self.chase(expr, env.clone())?.0 {
             Expr::Bool(value, _) => Ok(*value),
             other => Err(self.error(other.span(), format!("{what} takes `true` or `false`."))),
@@ -244,7 +266,12 @@ impl<'a> Expander<'a> {
         Ok(items)
     }
 
-    pub(super) fn texts(&self, expr: &'a Expr, env: &Rc<Env<'a>>, what: &str) -> Result<Vec<String>, LangError> {
+    pub(super) fn texts(
+        &self,
+        expr: &'a Expr,
+        env: &Rc<Env<'a>>,
+        what: &str,
+    ) -> Result<Vec<String>, LangError> {
         self.list(expr, env, what)?
             .into_iter()
             .map(|(item, env)| self.text(item, &env, what))
@@ -285,7 +312,12 @@ impl<'a> Expander<'a> {
 
     /// JSON for a constructor's arguments or a schema: blocks are objects and `none` leaves a
     /// field out.
-    pub(super) fn json(&self, expr: &'a Expr, env: &Rc<Env<'a>>, strings: Strings) -> Result<Value, LangError> {
+    pub(super) fn json(
+        &self,
+        expr: &'a Expr,
+        env: &Rc<Env<'a>>,
+        strings: Strings,
+    ) -> Result<Value, LangError> {
         let (expr, env) = self.chase(expr, env.clone())?;
         Ok(match expr {
             Expr::Str(..) => Value::String(self.string(expr, &env, strings)?),
@@ -296,7 +328,10 @@ impl<'a> Expander<'a> {
             ),
             Expr::Bool(value, _) => Value::Bool(*value),
             Expr::None(span) => {
-                return Err(self.error(*span, "`none` leaves a field out; it is not a value in a list."));
+                return Err(self.error(
+                    *span,
+                    "`none` leaves a field out; it is not a value in a list.",
+                ));
             }
             Expr::Array(..) => Value::Array(
                 self.list(expr, &env, "This value")?
@@ -310,34 +345,49 @@ impl<'a> Expander<'a> {
                     let Entry::Field { key, value } = entry else {
                         return Err(self.error(block.span, "An object holds `key = value` fields."));
                     };
-                    if let Some((value, env)) = self.optional(value, &env)? {
-                        if object
+                    if let Some((value, env)) = self.optional(value, &env)?
+                        && object
                             .insert(key.text.clone(), self.json(value, &env, strings)?)
                             .is_some()
-                        {
-                            return Err(self.error(key.span, format!("Field `{}` is given twice.", key.text)));
-                        }
+                    {
+                        return Err(
+                            self.error(key.span, format!("Field `{}` is given twice.", key.text))
+                        );
                     }
                 }
                 Value::Object(object)
             }
             Expr::Ident(name) => Value::String(name.text.clone()),
             other => {
-                return Err(self.error(other.span(), "Expected a string, number, boolean, list or object."));
+                return Err(self.error(
+                    other.span(),
+                    "Expected a string, number, boolean, list or object.",
+                ));
             }
         })
     }
 
     /// A string as a constructor argument: an `Argument` keeps its one path slot in the
     /// `@{path NAME/…}` form the declaration types parse.
-    pub(super) fn string(&self, expr: &'a Expr, env: &Rc<Env<'a>>, strings: Strings) -> Result<String, LangError> {
+    pub(super) fn string(
+        &self,
+        expr: &'a Expr,
+        env: &Rc<Env<'a>>,
+        strings: Strings,
+    ) -> Result<String, LangError> {
         let pieces = self.template(expr, env, "This value")?;
         let mut text = String::new();
         for piece in pieces {
             match (piece, strings) {
                 (Piece::Text(part), Strings::Argument) => text.push_str(&part.replace("@{", "@@{")),
                 (Piece::Text(part), _) => text.push_str(&part),
-                (Piece::Slot(SlotRef::Artf { target: target @ SlotTarget::SelfRef, span }), Strings::Described) => {
+                (
+                    Piece::Slot(SlotRef::Artf {
+                        target: target @ SlotTarget::SelfRef,
+                        span,
+                    }),
+                    Strings::Described,
+                ) => {
                     text.push_str(&self.bound(&target, span)?);
                 }
                 (Piece::Slot(SlotRef::Path { target, path, span }), Strings::Argument) => {
@@ -354,9 +404,15 @@ impl<'a> Expander<'a> {
                     return Err(self.error(
                         slot.span(),
                         match strings {
-                            Strings::Argument => "An argument takes a `@{path …}` slot, not this one.",
-                            Strings::Described => "A description may name its Artifact with `@{artf self}` only.",
-                            Strings::Plain => "This value takes text; slots belong in instructions and arguments.",
+                            Strings::Argument => {
+                                "An argument takes a `@{path …}` slot, not this one."
+                            }
+                            Strings::Described => {
+                                "A description may name its Artifact with `@{artf self}` only."
+                            }
+                            Strings::Plain => {
+                                "This value takes text; slots belong in instructions and arguments."
+                            }
                         },
                     ));
                 }
@@ -369,9 +425,12 @@ impl<'a> Expander<'a> {
     pub(super) fn bound(&self, target: &SlotTarget, span: Span) -> Result<String, LangError> {
         match target {
             SlotTarget::Named(name, _) => Ok(name.clone()),
-            SlotTarget::SelfRef => self
-                .current()
-                .ok_or_else(|| self.error(span, "`self` names the Artifact being declared; there is none here.")),
+            SlotTarget::SelfRef => self.current().ok_or_else(|| {
+                self.error(
+                    span,
+                    "`self` names the Artifact being declared; there is none here.",
+                )
+            }),
         }
     }
 
@@ -384,13 +443,18 @@ impl<'a> Expander<'a> {
     ) -> Result<Map<String, Value>, LangError> {
         let mut object = Map::new();
         for arg in args {
-            if let Some((value, env)) = self.optional(&arg.value, env)? {
-                if object
-                    .insert(arg.name.text.clone(), self.json(value, &env, strings(&arg.name.text))?)
+            if let Some((value, env)) = self.optional(&arg.value, env)?
+                && object
+                    .insert(
+                        arg.name.text.clone(),
+                        self.json(value, &env, strings(&arg.name.text))?,
+                    )
                     .is_some()
-                {
-                    return Err(self.error(arg.name.span, format!("Argument `{}` is given twice.", arg.name.text)));
-                }
+            {
+                return Err(self.error(
+                    arg.name.span,
+                    format!("Argument `{}` is given twice.", arg.name.text),
+                ));
             }
         }
         Ok(object)

@@ -2926,7 +2926,9 @@ pub fn port_fixture(path: &Path) {
                 ported.push_str(before);
                 let end = after.find('"').expect("a command string ends");
                 let command = &after[..end];
-                if command.starts_with("/bin/") || command.starts_with("/usr/bin/") || command == "sh"
+                if command.starts_with("/bin/")
+                    || command.starts_with("/usr/bin/")
+                    || command == "sh"
                 {
                     let resolved = path_text(Path::new(&bin(command)));
                     ported.push_str(&resolved.replace('\\', "\\\\").replace('"', "\\\""));

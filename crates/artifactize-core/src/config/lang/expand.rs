@@ -161,7 +161,10 @@ impl Drop for Frame<'_, '_> {
     }
 }
 
-pub(super) fn expand(sources: &Sources, parsed: &[(FileId, Vec<Item>)]) -> Result<Expanded, LangError> {
+pub(super) fn expand(
+    sources: &Sources,
+    parsed: &[(FileId, Vec<Item>)],
+) -> Result<Expanded, LangError> {
     let globals = Globals::collect(sources, parsed)?;
     let expander = Expander {
         globals,
@@ -202,7 +205,10 @@ pub(super) fn expand(sources: &Sources, parsed: &[(FileId, Vec<Item>)]) -> Resul
     }
     let symbols = expander.symbols();
     for artifact in &artifacts {
-        expander.names.borrow_mut().insert((artifact.name_span, artifact.name.clone()));
+        expander
+            .names
+            .borrow_mut()
+            .insert((artifact.name_span, artifact.name.clone()));
     }
     let names = expander.names.take().into_iter().collect();
     Ok(Expanded {
@@ -229,7 +235,10 @@ impl<'a> Expander<'a> {
 
     fn enter(&self, call: Span, name: &str) -> Result<Frame<'_, 'a>, LangError> {
         if self.frames.borrow().len() >= MAX_DEPTH {
-            return Err(self.error(call, format!("Macros nest more than {MAX_DEPTH} calls deep.")));
+            return Err(self.error(
+                call,
+                format!("Macros nest more than {MAX_DEPTH} calls deep."),
+            ));
         }
         self.frames.borrow_mut().push((call, name.to_owned()));
         Ok(Frame {
@@ -244,7 +253,10 @@ impl<'a> Expander<'a> {
         if self.visiting.borrow().contains(&key) {
             return Err(self.error(
                 span,
-                format!("`{} {name}` refers to itself through its own definition.", kind.keyword()),
+                format!(
+                    "`{} {name}` refers to itself through its own definition.",
+                    kind.keyword()
+                ),
             ));
         }
         self.visiting.borrow_mut().push(key);
@@ -276,7 +288,10 @@ impl<'a> Expander<'a> {
                 let frame = self.enter(*span, &name.text)?;
                 let env = bind(definition.item, args, &root, *span)?;
                 let Expr::Block(block) = &definition.item.body else {
-                    return Err(self.error(definition.item.body.span(), "An `artf!` macro's body is a block `{ … }`."));
+                    return Err(self.error(
+                        definition.item.body.span(),
+                        "An `artf!` macro's body is a block `{ … }`.",
+                    ));
                 };
                 (
                     definition.item.header.as_ref(),
@@ -321,13 +336,22 @@ impl<'a> Expander<'a> {
         }
         self.artifact_body(block, &env, &mut artifact)?;
         if artifact.path.0.is_empty() {
-            return Err(self.error(item.name.span, format!("Artifact `{}` needs a `path`.", item.name.text)));
+            return Err(self.error(
+                item.name.span,
+                format!("Artifact `{}` needs a `path`.", item.name.text),
+            ));
         }
         let mut ids: BTreeMap<&str, Span> = BTreeMap::new();
         for eval in &artifact.evals {
             if let Some(previous) = ids.insert(&eval.id, eval.id_span) {
                 return Err(self
-                    .error(eval.id_span, format!("Artifact `{}` declares eval `{}` twice.", artifact.name, eval.id))
+                    .error(
+                        eval.id_span,
+                        format!(
+                            "Artifact `{}` declares eval `{}` twice.",
+                            artifact.name, eval.id
+                        ),
+                    )
                     .note(previous, "first declared here"));
             }
         }
@@ -335,19 +359,28 @@ impl<'a> Expander<'a> {
     }
 
     fn macro_decl(&self, kind: ItemKind, name: &Name) -> Result<Decl<'a>, LangError> {
-        self.globals.kind(kind).macros.get(name.text.as_str()).copied().ok_or_else(|| {
-            let mut error = self.error(
-                name.span,
-                format!("Unknown `{}!` macro `{}`.", kind.keyword(), name.text),
-            );
-            if let Some(concrete) = self.globals.kind(kind).concrete.get(name.text.as_str()) {
-                error = error.note(
-                    concrete.item.name.span,
-                    format!("`{}` is a concrete `{}`; refer to it without `!(…)`", name.text, kind.keyword()),
+        self.globals
+            .kind(kind)
+            .macros
+            .get(name.text.as_str())
+            .copied()
+            .ok_or_else(|| {
+                let mut error = self.error(
+                    name.span,
+                    format!("Unknown `{}!` macro `{}`.", kind.keyword(), name.text),
                 );
-            }
-            error
-        })
+                if let Some(concrete) = self.globals.kind(kind).concrete.get(name.text.as_str()) {
+                    error = error.note(
+                        concrete.item.name.span,
+                        format!(
+                            "`{}` is a concrete `{}`; refer to it without `!(…)`",
+                            name.text,
+                            kind.keyword()
+                        ),
+                    );
+                }
+                error
+            })
     }
 
     fn artifact_body(
@@ -361,7 +394,9 @@ impl<'a> Expander<'a> {
             match entry {
                 Entry::Field { key, value } => {
                     if let Some(previous) = seen.insert(&key.text, key.span) {
-                        return Err(self.error(key.span, format!("Field `{}` is given twice.", key.text)).note(previous, "first given here"));
+                        return Err(self
+                            .error(key.span, format!("Field `{}` is given twice.", key.text))
+                            .note(previous, "first given here"));
                     }
                     self.artifact_field(key, value, env, artifact)?;
                 }
@@ -378,7 +413,9 @@ impl<'a> Expander<'a> {
                             format!("An Artifact holds fields and `eval` declarations; `{}` belongs in a `tool`.", keyword.text),
                         ));
                     }
-                    artifact.evals.push(self.eval(name, header.as_ref(), value, env, *span)?);
+                    artifact
+                        .evals
+                        .push(self.eval(name, header.as_ref(), value, env, *span)?);
                 }
                 Entry::Spread(value, _) => artifact.evals.extend(self.spread_evals(value, env)?),
             }
@@ -437,7 +474,11 @@ impl<'a> Expander<'a> {
         Ok(())
     }
 
-    fn fingerprint(&self, value: &'a Expr, env: &Rc<Env<'a>>) -> Result<LoweredFingerprint, LangError> {
+    fn fingerprint(
+        &self,
+        value: &'a Expr,
+        env: &Rc<Env<'a>>,
+    ) -> Result<LoweredFingerprint, LangError> {
         let object = match value {
             Expr::Bool(false, _) => return Ok(LoweredFingerprint::Disabled),
             Expr::Block(_) => match self.json(value, env, Strings::Plain)? {
@@ -446,7 +487,11 @@ impl<'a> Expander<'a> {
             },
             Expr::Call { name, args, .. } if name.text == "script" => {
                 let arguments = self.arguments(args, env, |field| {
-                    if field == "args" { Strings::Argument } else { Strings::Plain }
+                    if field == "args" {
+                        Strings::Argument
+                    } else {
+                        Strings::Plain
+                    }
                 })?;
                 Map::from_iter([("script".to_owned(), Value::Object(arguments))])
             }
@@ -463,10 +508,17 @@ impl<'a> Expander<'a> {
             .map_err(|error| self.error(value.span(), format!("`fingerprint`: {error}")))
     }
 
-    fn spread_evals(&self, value: &'a Expr, env: &Rc<Env<'a>>) -> Result<Vec<LoweredEval>, LangError> {
+    fn spread_evals(
+        &self,
+        value: &'a Expr,
+        env: &Rc<Env<'a>>,
+    ) -> Result<Vec<LoweredEval>, LangError> {
         let (value, env) = self.chase(value, env.clone())?;
         let Expr::Block(block) = value else {
-            return Err(self.error(value.span(), "`...` in an Artifact spreads a block of `eval` declarations."));
+            return Err(self.error(
+                value.span(),
+                "`...` in an Artifact spreads a block of `eval` declarations.",
+            ));
         };
         block
             .entries
@@ -479,8 +531,14 @@ impl<'a> Expander<'a> {
                     value,
                     span,
                 } if keyword.text == "eval" => self.eval(name, header.as_ref(), value, &env, *span),
-                Entry::Spread(value, _) => Err(self.error(value.span(), "Spread the eval blocks one by one into the Artifact.")),
-                _ => Err(self.error(block.span, "A spread eval block holds only `eval` declarations.")),
+                Entry::Spread(value, _) => Err(self.error(
+                    value.span(),
+                    "Spread the eval blocks one by one into the Artifact.",
+                )),
+                _ => Err(self.error(
+                    block.span,
+                    "A spread eval block holds only `eval` declarations.",
+                )),
             })
             .collect()
     }
@@ -493,7 +551,8 @@ impl<'a> Expander<'a> {
         env: &Rc<Env<'a>>,
         span: Span,
     ) -> Result<LoweredEval, LangError> {
-        crate::config::identifier(&id.text, "An eval id").map_err(|message| self.error(id.span, message))?;
+        crate::config::identifier(&id.text, "An eval id")
+            .map_err(|message| self.error(id.span, message))?;
         if id.text.contains('.') {
             return Err(self.error(id.span, "An eval id is one identifier."));
         }
@@ -538,17 +597,38 @@ impl<'a> Expander<'a> {
         let item = decl.item;
         let _visit = self.visit(ItemKind::Eval, &item.name.text, id.span)?;
         let Some(header) = &item.header else {
-            return Err(self.error(item.name.span, format!("Eval `{}` needs a profile: `eval {} : PROFILE = {{ … }}`.", item.name.text, item.name.text)));
+            return Err(self.error(
+                item.name.span,
+                format!(
+                    "Eval `{}` needs a profile: `eval {} : PROFILE = {{ … }}`.",
+                    item.name.text, item.name.text
+                ),
+            ));
         };
         let Expr::Block(block) = &item.body else {
-            return Err(self.error(item.body.span(), "A top-level eval's body is a block `{ … }`."));
+            return Err(self.error(
+                item.body.span(),
+                "A top-level eval's body is a block `{ … }`.",
+            ));
         };
         let root = Env::root();
         let (profile, profile_name) = self.profile(header, &root, false)?;
-        self.eval_fields(id, item.span, block, &root, profile, profile_name, header.span(), Some(item.name.text.clone()))
+        self.eval_fields(
+            id,
+            item.span,
+            block,
+            &root,
+            profile,
+            profile_name,
+            header.span(),
+            Some(item.name.text.clone()),
+        )
     }
 
-    #[expect(clippy::too_many_arguments, reason = "an eval's parts arrive from three declaration forms")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "an eval's parts arrive from three declaration forms"
+    )]
     fn eval_fields(
         &self,
         id: &Name,
@@ -581,7 +661,9 @@ impl<'a> Expander<'a> {
                 return Err(self.error(block.span, "An eval holds `key = value` fields."));
             };
             if let Some(previous) = seen.insert(&key.text, key.span) {
-                return Err(self.error(key.span, format!("Field `{}` is given twice.", key.text)).note(previous, "first given here"));
+                return Err(self
+                    .error(key.span, format!("Field `{}` is given twice.", key.text))
+                    .note(previous, "first given here"));
             }
             let Some((value, env)) = self.optional(value, env)? else {
                 continue;
@@ -593,10 +675,13 @@ impl<'a> Expander<'a> {
                         return Err(self.error(key.span, "`red_at` is for Agent evals."));
                     }
                     let text = self.text(value, &env, "`red_at`")?;
-                    eval.red_at = Some(
-                        serde_json::from_value(Value::String(text))
-                            .map_err(|_| self.error(value.span(), "`red_at` is \"P0\", \"P1\", \"P2\" or \"P3\"."))?,
-                    );
+                    eval.red_at =
+                        Some(serde_json::from_value(Value::String(text)).map_err(|_| {
+                            self.error(
+                                value.span(),
+                                "`red_at` is \"P0\", \"P1\", \"P2\" or \"P3\".",
+                            )
+                        })?);
                 }
                 "mutex" => {
                     if kind == ProfileKind::Human {
@@ -605,9 +690,13 @@ impl<'a> Expander<'a> {
                     eval.mutex = self
                         .texts(value, &env, "`mutex`")?
                         .into_iter()
-                        .map(|tag| tag.parse().map_err(|message: String| self.error(value.span(), message)))
+                        .map(|tag| {
+                            tag.parse()
+                                .map_err(|message: String| self.error(value.span(), message))
+                        })
                         .collect::<Result<_, _>>()?;
-                    crate::config::mutex::validate(&eval.mutex).map_err(|message| self.error(value.span(), message))?;
+                    crate::config::mutex::validate(&eval.mutex)
+                        .map_err(|message| self.error(value.span(), message))?;
                 }
                 "instruction" => {
                     let pieces = self.template(value, &env, "`instruction`")?;
@@ -639,10 +728,16 @@ impl<'a> Expander<'a> {
             }
         }
         if eval.title.trim().is_empty() {
-            return Err(self.error(id.span, format!("Eval `{}` needs a nonblank `title`.", id.text)));
+            return Err(self.error(
+                id.span,
+                format!("Eval `{}` needs a nonblank `title`.", id.text),
+            ));
         }
         if kind != ProfileKind::Runtime && eval.instruction.is_none() {
-            return Err(self.error(id.span, format!("Eval `{}` needs an `instruction`.", id.text)));
+            return Err(self.error(
+                id.span,
+                format!("Eval `{}` needs an `instruction`.", id.text),
+            ));
         }
         Ok(eval)
     }
@@ -658,16 +753,29 @@ impl<'a> Expander<'a> {
         let json = match expr {
             Expr::Ident(name) if name.text == "human" => json!({"kind": "human"}),
             Expr::Ident(name) => {
-                let decl = self.globals.profile.concrete.get(name.text.as_str()).copied().ok_or_else(|| {
-                    let mut error = self.error(name.span, format!("Unknown profile `{}`.", name.text));
-                    if self.globals.profile.macros.contains_key(name.text.as_str()) {
-                        error = error.note(
-                            self.globals.profile.macros[name.text.as_str()].item.name.span,
-                            format!("`{}` is a `profile!` macro: write `{}!(…)`", name.text, name.text),
-                        );
-                    }
-                    error
-                })?;
+                let decl = self
+                    .globals
+                    .profile
+                    .concrete
+                    .get(name.text.as_str())
+                    .copied()
+                    .ok_or_else(|| {
+                        let mut error =
+                            self.error(name.span, format!("Unknown profile `{}`.", name.text));
+                        if self.globals.profile.macros.contains_key(name.text.as_str()) {
+                            error = error.note(
+                                self.globals.profile.macros[name.text.as_str()]
+                                    .item
+                                    .name
+                                    .span,
+                                format!(
+                                    "`{}` is a `profile!` macro: write `{}!(…)`",
+                                    name.text, name.text
+                                ),
+                            );
+                        }
+                        error
+                    })?;
                 let (profile, _) = self.named_profile(&name.text, decl)?;
                 return Ok((profile, Some(name.text.clone())));
             }
@@ -680,7 +788,11 @@ impl<'a> Expander<'a> {
             }
             Expr::Call { name, args, .. } if name.text == "runtime" => {
                 let mut object = self.arguments(args, &env, |field| {
-                    if field == "args" { Strings::Argument } else { Strings::Plain }
+                    if field == "args" {
+                        Strings::Argument
+                    } else {
+                        Strings::Plain
+                    }
                 })?;
                 object.insert("kind".into(), json!("runtime"));
                 Value::Object(object)
@@ -705,11 +817,17 @@ impl<'a> Expander<'a> {
         };
         let profile: Profile = serde_json::from_value(json)
             .map_err(|error| self.error(expr.span(), format!("Profile: {error}")))?;
-        profile.check().map_err(|message| self.error(expr.span(), message))?;
+        profile
+            .check()
+            .map_err(|message| self.error(expr.span(), message))?;
         Ok((profile, None))
     }
 
-    fn named_profile(&self, name: &str, decl: Decl<'a>) -> Result<(Profile, Option<String>), LangError> {
+    fn named_profile(
+        &self,
+        name: &str,
+        decl: Decl<'a>,
+    ) -> Result<(Profile, Option<String>), LangError> {
         let _visit = self.visit(ItemKind::Profile, name, decl.item.name.span)?;
         if decl.item.header.is_some() {
             return Err(self.error(decl.item.name.span, "A profile has no `: …` header."));
@@ -729,20 +847,33 @@ impl<'a> Expander<'a> {
                 Ok(all)
             }
             Expr::Ident(name) => {
-                let decl = self.globals.tool.concrete.get(name.text.as_str()).copied().ok_or_else(|| {
-                    let known = self.globals.tool.concrete.keys().copied();
-                    let mut error = self.error(
-                        name.span,
-                        format!("Unknown toolset `{}`; the toolsets are {}.", name.text, names(known)),
-                    );
-                    if self.globals.tool.macros.contains_key(name.text.as_str()) {
-                        error = error.note(
-                            self.globals.tool.macros[name.text.as_str()].item.name.span,
-                            format!("`{}` is a `tool!` macro: write `{}!(…)`", name.text, name.text),
+                let decl = self
+                    .globals
+                    .tool
+                    .concrete
+                    .get(name.text.as_str())
+                    .copied()
+                    .ok_or_else(|| {
+                        let known = self.globals.tool.concrete.keys().copied();
+                        let mut error = self.error(
+                            name.span,
+                            format!(
+                                "Unknown toolset `{}`; the toolsets are {}.",
+                                name.text,
+                                names(known)
+                            ),
                         );
-                    }
-                    error
-                })?;
+                        if self.globals.tool.macros.contains_key(name.text.as_str()) {
+                            error = error.note(
+                                self.globals.tool.macros[name.text.as_str()].item.name.span,
+                                format!(
+                                    "`{}` is a `tool!` macro: write `{}!(…)`",
+                                    name.text, name.text
+                                ),
+                            );
+                        }
+                        error
+                    })?;
                 self.named_tool(&name.text, decl)
             }
             Expr::Macro { name, args, span } => {
@@ -750,7 +881,10 @@ impl<'a> Expander<'a> {
                 let frame = self.enter(*span, &name.text)?;
                 let macro_env = bind(definition.item, args, &env, *span)?;
                 let Expr::Block(block) = &definition.item.body else {
-                    return Err(self.error(definition.item.body.span(), "A `tool!` macro's body is a block `{ … }` with its `namespace`."));
+                    return Err(self.error(
+                        definition.item.body.span(),
+                        "A `tool!` macro's body is a block `{ … }` with its `namespace`.",
+                    ));
                 };
                 let namespace = block
                     .entries
@@ -759,13 +893,22 @@ impl<'a> Expander<'a> {
                         Entry::Field { key, value } if key.text == "namespace" => Some(value),
                         _ => None,
                     })
-                    .ok_or_else(|| self.error(definition.item.name.span, "A `tool!` macro sets its `namespace`."))?;
+                    .ok_or_else(|| {
+                        self.error(
+                            definition.item.name.span,
+                            "A `tool!` macro sets its `namespace`.",
+                        )
+                    })?;
                 let namespace = self.text(namespace, &macro_env, "`namespace`")?;
-                let toolset = self.toolset(&namespace, *span, block, macro_env, definition.file, true)?;
+                let toolset =
+                    self.toolset(&namespace, *span, block, macro_env, definition.file, true)?;
                 drop(frame);
                 Ok(vec![toolset])
             }
-            other => Err(self.error(other.span(), "Expected a toolset: a `tool`'s name, `name!(…)`, or `a & b`.")),
+            other => Err(self.error(
+                other.span(),
+                "Expected a toolset: a `tool`'s name, `name!(…)`, or `a & b`.",
+            )),
         }
     }
 
@@ -775,7 +918,14 @@ impl<'a> Expander<'a> {
             return Err(self.error(decl.item.name.span, "A tool has no `: …` header."));
         }
         match &decl.item.body {
-            Expr::Block(block) => Ok(vec![self.toolset(name, decl.item.name.span, block, Env::root(), decl.file, false)?]),
+            Expr::Block(block) => Ok(vec![self.toolset(
+                name,
+                decl.item.name.span,
+                block,
+                Env::root(),
+                decl.file,
+                false,
+            )?]),
             alias => self.toolsets(alias, &Env::root()),
         }
     }
@@ -799,7 +949,10 @@ impl<'a> Expander<'a> {
             match entry {
                 Entry::Field { key, .. } if key.text == "namespace" && from_macro => {}
                 Entry::Field { key, .. } if key.text == "namespace" => {
-                    return Err(self.error(key.span, "A `tool`'s name is its namespace; only a `tool!` macro sets `namespace`."));
+                    return Err(self.error(
+                        key.span,
+                        "A `tool`'s name is its namespace; only a `tool!` macro sets `namespace`.",
+                    ));
                 }
                 Entry::Declare {
                     keyword,
@@ -826,10 +979,16 @@ impl<'a> Expander<'a> {
                     ));
                 }
                 Entry::Field { key, .. } => {
-                    return Err(self.error(key.span, format!("Unknown field `{}` in a toolset.", key.text)));
+                    return Err(self.error(
+                        key.span,
+                        format!("Unknown field `{}` in a toolset.", key.text),
+                    ));
                 }
                 Entry::Spread(value, _) => {
-                    return Err(self.error(value.span(), "Compose toolsets with `&` instead of spreading them."));
+                    return Err(self.error(
+                        value.span(),
+                        "Compose toolsets with `&` instead of spreading them.",
+                    ));
                 }
             }
         }
@@ -857,24 +1016,37 @@ impl<'a> Expander<'a> {
                     Some((existing, _)) if *existing == value => continue,
                     Some((_, previous)) => {
                         return Err(self
-                            .error(member.span, format!("Two different {} tools are both named `{fqn}`.", member.audience))
+                            .error(
+                                member.span,
+                                format!(
+                                    "Two different {} tools are both named `{fqn}`.",
+                                    member.audience
+                                ),
+                            )
                             .note(*previous, "the other definition"));
                     }
                     None => {}
                 }
-                let id: ToolFqn = fqn.parse().map_err(|message: String| self.error(member.name.span, message))?;
-                let invalid = |error: serde_json::Error| self.error(member.span, format!("Tool `{fqn}`: {error}"));
+                let id: ToolFqn = fqn
+                    .parse()
+                    .map_err(|message: String| self.error(member.name.span, message))?;
+                let invalid = |error: serde_json::Error| {
+                    self.error(member.span, format!("Tool `{fqn}`: {error}"))
+                };
                 match member.audience.as_str() {
                     "agent" => {
-                        let tool: AgentTool = serde_json::from_value(value.clone()).map_err(invalid)?;
+                        let tool: AgentTool =
+                            serde_json::from_value(value.clone()).map_err(invalid)?;
                         composed.views.agent_tools.insert(id, tool);
                     }
                     "human" => {
-                        let tool: HumanTool = serde_json::from_value(value.clone()).map_err(invalid)?;
+                        let tool: HumanTool =
+                            serde_json::from_value(value.clone()).map_err(invalid)?;
                         composed.views.human_tools.insert(id, tool);
                     }
                     _ => {
-                        let session: ToolSession = serde_json::from_value(value.clone()).map_err(invalid)?;
+                        let session: ToolSession =
+                            serde_json::from_value(value.clone()).map_err(invalid)?;
                         composed.views.agent_sessions.insert(id, session);
                     }
                 }
@@ -901,14 +1073,26 @@ impl<'a> Expander<'a> {
             ("session", "session") => {
                 let mut object = Map::new();
                 for arg in args {
-                    let Expr::Call { name: command, args: command_args, .. } = self.chase(&arg.value, env.clone())?.0 else {
+                    let Expr::Call {
+                        name: command,
+                        args: command_args,
+                        ..
+                    } = self.chase(&arg.value, env.clone())?.0
+                    else {
                         return Err(self.error(arg.value.span(), "A session's `start` and `stop` are `command(command = …, args = […])`."));
                     };
                     if command.text != "command" {
-                        return Err(self.error(command.span, "A session's `start` and `stop` are `command(…)`."));
+                        return Err(self.error(
+                            command.span,
+                            "A session's `start` and `stop` are `command(…)`.",
+                        ));
                     }
                     let command = self.arguments(command_args, &env, |field| {
-                        if field == "args" { Strings::Argument } else { Strings::Plain }
+                        if field == "args" {
+                            Strings::Argument
+                        } else {
+                            Strings::Plain
+                        }
                     })?;
                     object.insert(arg.name.text.clone(), Value::Object(command));
                 }
@@ -920,22 +1104,32 @@ impl<'a> Expander<'a> {
                     "description" => Strings::Described,
                     _ => Strings::Plain,
                 })?;
-                let op = object
-                    .remove("op")
-                    .ok_or_else(|| self.error(*span, "`builtin(…)` names its operation: `op = \"read\"`."))?;
+                let op = object.remove("op").ok_or_else(|| {
+                    self.error(*span, "`builtin(…)` names its operation: `op = \"read\"`.")
+                })?;
                 object.insert("builtin".into(), op);
                 object
             }
             ("agent" | "human", "command") => {
                 let mut object = self.arguments(args, &env, strings)?;
                 if let Some(Value::String(session)) = object.get("session").cloned() {
-                    object.insert("session".into(), Value::String(format!("{}.{session}", toolset.namespace)));
+                    object.insert(
+                        "session".into(),
+                        Value::String(format!("{}.{session}", toolset.namespace)),
+                    );
                 }
                 object
             }
             ("human", "viewer") => {
-                let Some(PluginSource { namespace, viewer: true }) = &toolset.plugin else {
-                    return Err(self.error(*span, "Only a plugin with a viewer entry declares a `viewer(…)` tool."));
+                let Some(PluginSource {
+                    namespace,
+                    viewer: true,
+                }) = &toolset.plugin
+                else {
+                    return Err(self.error(
+                        *span,
+                        "Only a plugin with a viewer entry declares a `viewer(…)` tool.",
+                    ));
                 };
                 let mut object = self.arguments(args, &env, strings)?;
                 object.insert("kind".into(), json!("viewer"));
@@ -957,7 +1151,12 @@ impl<'a> Expander<'a> {
 
     fn symbols(&self) -> Vec<Symbol> {
         let mut symbols = Vec::new();
-        for kind in [ItemKind::Artf, ItemKind::Tool, ItemKind::Profile, ItemKind::Eval] {
+        for kind in [
+            ItemKind::Artf,
+            ItemKind::Tool,
+            ItemKind::Profile,
+            ItemKind::Eval,
+        ] {
             let namespace = self.globals.kind(kind);
             for (is_macro, table) in [(false, &namespace.concrete), (true, &namespace.macros)] {
                 for decl in table.values() {
@@ -971,7 +1170,9 @@ impl<'a> Expander<'a> {
                                 .iter()
                                 .map(|param| SymbolParam {
                                     name: param.name.text.clone(),
-                                    default: param.default.as_ref().map(|default| self.sources.text(default.span()).to_owned()),
+                                    default: param.default.as_ref().map(|default| {
+                                        self.sources.text(default.span()).to_owned()
+                                    }),
                                 })
                                 .collect()
                         }),

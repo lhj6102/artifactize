@@ -155,10 +155,16 @@ fn runtime_observations_receive_uris_run_from_the_project_and_never_reuse_even_w
         "from-the-terminal\nfrom-the-terminal\n"
     );
     // It ran in the project folder, as its output in the Run's logs says.
-    let id = request(&second, "service/observe")["id"].as_str().unwrap().to_owned();
+    let id = request(&second, "service/observe")["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     let logs = project.json(&["request", "logs", &id, "--stream", "stdout"], 0);
     assert_eq!(
-        logs["streams"][0]["lines"][0]["text"].as_str().unwrap().trim(),
+        logs["streams"][0]["lines"][0]["text"]
+            .as_str()
+            .unwrap()
+            .trim(),
         support::os::path_text(&support::os::canonical(&project.repo))
     );
     let saved = project.json(&["run", "show", first["id"].as_str().unwrap()], 0);

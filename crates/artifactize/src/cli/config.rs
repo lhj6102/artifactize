@@ -57,12 +57,20 @@ pub(super) fn migrate(context: Context) -> Result<u8, String> {
         return Ok(0);
     }
     for path in &report.written {
-        writeln!(output, "wrote {}", artifactize_tools::files::path_text(path))
-            .map_err(|error| error.to_string())?;
+        writeln!(
+            output,
+            "wrote {}",
+            artifactize_tools::files::path_text(path)
+        )
+        .map_err(|error| error.to_string())?;
     }
     for path in &report.removed {
-        writeln!(output, "removed {}", artifactize_tools::files::path_text(path))
-            .map_err(|error| error.to_string())?;
+        writeln!(
+            output,
+            "removed {}",
+            artifactize_tools::files::path_text(path)
+        )
+        .map_err(|error| error.to_string())?;
     }
     for warning in &report.warnings {
         writeln!(output, "Note: {warning}").map_err(|error| error.to_string())?;

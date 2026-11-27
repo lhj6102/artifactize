@@ -28,8 +28,7 @@ impl Fixture {
         fs::create_dir(root.path().join("home")).unwrap();
         let provider = FakeProvider::start(|request| {
             assert_eq!(request.path, "/v1/responses");
-            let verdict =
-                json!({"issues":[{"priority":"P3","reason":"The docs match the API."}]});
+            let verdict = json!({"issues":[{"priority":"P3","reason":"The docs match the API."}]});
             openai::completed(
                 request,
                 vec![openai::message(&verdict.to_string())],

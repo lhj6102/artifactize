@@ -526,22 +526,20 @@ fn declared(
                 .and_then(|views| views.human_tools.value())
                 .into_iter()
                 .flatten()
-                // A saved name that is not a valid tool name has no tool to run; the
-                // registry, built from the same declarations, refuses it as well.
-                .filter_map(move |(operation, tool)| {
+                .map(move |(operation, tool)| {
                     let (kind, description) = match tool {
                         HumanTool::Command(tool) => (tool.kind, &tool.description),
                         HumanTool::Builtin(tool) => (tool.kind, &tool.description),
                         HumanTool::Viewer(tool) => (HumanToolKind::Viewer, &tool.description),
                     };
-                    Some(Tool {
+                    Tool {
                         name: operation.published(id.as_str()),
                         fqn: operation.clone(),
                         artifact: id.clone(),
                         kind,
                         description: description.replace("{artifactName}", id.as_str()),
                         declared: Runs::parse(artifacts, id, tool),
-                    })
+                    }
                 })
         })
         .collect();
@@ -577,7 +575,10 @@ mod submission_tests {
     fn green_approves_without_issues_and_red_lists_them() {
         for (value, verdict) in [
             (json!({"verdict":"GREEN","issues":[]}), Verdict::Green),
-            (json!({"verdict":"RED","issues":["needs work"]}), Verdict::Red),
+            (
+                json!({"verdict":"RED","issues":["needs work"]}),
+                Verdict::Red,
+            ),
         ] {
             let submitted = Submission::try_from(value.clone()).unwrap();
             assert_eq!(submitted.verdict(), verdict);

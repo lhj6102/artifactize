@@ -84,8 +84,12 @@ pub fn convert(
             }
         }
         for comment in &old.comments {
-            writeln!(text, "//{}{comment}", if comment.is_empty() { "" } else { " " })
-                .expect("write to String");
+            writeln!(
+                text,
+                "//{}{comment}",
+                if comment.is_empty() { "" } else { " " }
+            )
+            .expect("write to String");
         }
         write!(text, "artf {}{header} = {body}", old.name).expect("write to String");
         converted.files.push((old.file.clone(), text));
@@ -103,10 +107,15 @@ pub fn convert(
         ));
     }
     if !converter.profiles.is_empty() {
-        let mut text = String::from("// The project's Agent profiles: what an Agent eval runs with.\n");
+        let mut text =
+            String::from("// The project's Agent profiles: what an Agent eval runs with.\n");
         for (name, profile) in &converter.profiles {
-            writeln!(text, "profile {name} = {}", call("agent", profile, 0, Strings::Plain))
-                .expect("write to String");
+            writeln!(
+                text,
+                "profile {name} = {}",
+                call("agent", profile, 0, Strings::Plain)
+            )
+            .expect("write to String");
         }
         converted.files.push((shared_file("profiles"), text));
     }
@@ -142,7 +151,11 @@ enum Strings {
 
 impl Converter<'_> {
     /// `(header, body)`: the toolsets after `artf NAME`, and the block.
-    fn artifact(&mut self, old: &Old, artifacts: &BTreeSet<&str>) -> Result<(String, String), String> {
+    fn artifact(
+        &mut self,
+        old: &Old,
+        artifacts: &BTreeSet<&str>,
+    ) -> Result<(String, String), String> {
         let Value::Object(table) = &old.table else {
             return Err("a declaration is a table".into());
         };
@@ -171,7 +184,9 @@ impl Converter<'_> {
                     let rendered = match value {
                         Value::Bool(false) => "false".to_owned(),
                         Value::Object(object) if object.contains_key("script") => {
-                            let script = object["script"].as_object().ok_or("fingerprint.script is a table")?;
+                            let script = object["script"]
+                                .as_object()
+                                .ok_or("fingerprint.script is a table")?;
                             call("script", script, 1, Strings::Argument)
                         }
                         other => plain(other, 1),
@@ -230,7 +245,11 @@ impl Converter<'_> {
             return Ok(None);
         }
         let own = Value::Object(own);
-        if let Some(toolset) = self.toolsets.iter_mut().find(|toolset| toolset.views == own) {
+        if let Some(toolset) = self
+            .toolsets
+            .iter_mut()
+            .find(|toolset| toolset.views == own)
+        {
             toolset.users.push(artifact.to_owned());
             return Ok(Some(toolset.namespace.clone()));
         }
@@ -239,9 +258,19 @@ impl Converter<'_> {
         while RESERVED.contains(&namespace.as_str())
             || BUILTIN_TOOLSETS.contains(&namespace.as_str())
             || self.plugins.contains(&namespace)
-            || self.toolsets.iter().any(|toolset| toolset.namespace == namespace)
+            || self
+                .toolsets
+                .iter()
+                .any(|toolset| toolset.namespace == namespace)
         {
-            namespace = format!("{artifact}-tools{}", if index == 2 { String::new() } else { index.to_string() });
+            namespace = format!(
+                "{artifact}-tools{}",
+                if index == 2 {
+                    String::new()
+                } else {
+                    index.to_string()
+                }
+            );
             index += 1;
         }
         let text = toolset_text(&namespace, &own, false)?;
@@ -272,7 +301,10 @@ impl Converter<'_> {
             .get("profile")
             .and_then(Value::as_object)
             .ok_or_else(|| format!("eval {id} has no profile"))?;
-        let kind = profile.get("kind").and_then(Value::as_str).unwrap_or_default();
+        let kind = profile
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         let instruction = eval
             .get("payload")
             .and_then(|payload| payload.get("instruction"))
@@ -320,7 +352,11 @@ impl Converter<'_> {
                 .into_iter()
                 .flatten()
                 .filter_map(Value::as_str)
-                .flat_map(|argument| reference_spans(argument).into_iter().map(|(_, _, name)| name))
+                .flat_map(|argument| {
+                    reference_spans(argument)
+                        .into_iter()
+                        .map(|(_, _, name)| name)
+                })
                 .collect();
             let inputs: BTreeSet<&str> = references
                 .iter()
@@ -328,8 +364,12 @@ impl Converter<'_> {
                 .filter(|name| *name != artifact && !argued.contains(*name))
                 .collect();
             if !inputs.is_empty() {
-                writeln!(out, "    inputs = [{}]", inputs.into_iter().collect::<Vec<_>>().join(", "))
-                    .expect("write to String");
+                writeln!(
+                    out,
+                    "    inputs = [{}]",
+                    inputs.into_iter().collect::<Vec<_>>().join(", ")
+                )
+                .expect("write to String");
             }
         }
         for (_, _, name) in &references {
@@ -364,9 +404,17 @@ impl Converter<'_> {
         for key in eval.keys() {
             if !matches!(
                 key.as_str(),
-                "id" | "title" | "red_at" | "mutex" | "profile" | "payload" | "pass_schema" | "fail_schema" | "profile_variants"
+                "id" | "title"
+                    | "red_at"
+                    | "mutex"
+                    | "profile"
+                    | "payload"
+                    | "pass_schema"
+                    | "fail_schema"
+                    | "profile_variants"
             ) {
-                self.warnings.push(format!("{artifact}/{id}: `{key}` was dropped."));
+                self.warnings
+                    .push(format!("{artifact}/{id}: `{key}` was dropped."));
             }
         }
         out.push_str("  }\n");
@@ -383,11 +431,9 @@ impl Converter<'_> {
         if profile.remove("kind").is_some_and(|kind| kind != "agent") {
             return Err("a named profile is an Agent profile".into());
         }
-        if let Some((name, _)) = self
-            .profiles
-            .iter()
-            .find(|(name, existing)| *existing == profile && wanted.is_none_or(|wanted| wanted == name))
-        {
+        if let Some((name, _)) = self.profiles.iter().find(|(name, existing)| {
+            *existing == profile && wanted.is_none_or(|wanted| wanted == name)
+        }) {
             return Ok(name.clone());
         }
         // An unnamed profile is named after its backend, the first thing an author changes.
@@ -410,17 +456,28 @@ impl Converter<'_> {
 
 /// `tool NAMESPACE = { … }` for an old `views` table. Viewer tools are a plugin's own, so only a
 /// plugin's toolset (`viewers`) writes them.
-pub(crate) fn toolset_text(namespace: &str, views: &Value, viewers: bool) -> Result<String, String> {
+pub(crate) fn toolset_text(
+    namespace: &str,
+    views: &Value,
+    viewers: bool,
+) -> Result<String, String> {
     let Value::Object(views) = views else {
         return Err("views is a table".into());
     };
     for audience in views.keys() {
-        if !matches!(audience.as_str(), "agent_tools" | "human_tools" | "agent_sessions") {
+        if !matches!(
+            audience.as_str(),
+            "agent_tools" | "human_tools" | "agent_sessions"
+        ) {
             return Err(format!("views.{audience} is not a kind of tool"));
         }
     }
     let mut text = format!("tool {namespace} = {{\n");
-    for (audience, keyword) in [("agent_tools", "agent"), ("human_tools", "human"), ("agent_sessions", "session")] {
+    for (audience, keyword) in [
+        ("agent_tools", "agent"),
+        ("human_tools", "human"),
+        ("agent_sessions", "session"),
+    ] {
         let Some(tools) = views.get(audience) else {
             continue;
         };
@@ -442,7 +499,10 @@ pub(crate) fn toolset_text(namespace: &str, views: &Value, viewers: bool) -> Res
                         let command = command
                             .as_object()
                             .ok_or_else(|| format!("views.{audience}.{name}.{side} is a table"))?;
-                        parts.push(format!("{side} = {}", call("command", command, 2, Strings::Argument)));
+                        parts.push(format!(
+                            "{side} = {}",
+                            call("command", command, 2, Strings::Argument)
+                        ));
                     }
                     format!("session({})", parts.join(", "))
                 }
@@ -480,7 +540,13 @@ pub(crate) fn toolset_text(namespace: &str, views: &Value, viewers: bool) -> Res
 fn identifier(text: &str) -> String {
     let mut name: String = text
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     if !name.starts_with(|c: char| c.is_ascii_alphabetic()) || RESERVED.contains(&name.as_str()) {
         name.insert_str(0, "p-");
@@ -489,15 +555,24 @@ fn identifier(text: &str) -> String {
     name
 }
 
+/// Old eval tables, each with its id, in their written order.
+type EvalTables = Vec<(String, Map<String, Value>)>;
+
 /// An old eval table, by id; test builders give a list of evals with ids.
-fn evals(value: Option<&Value>) -> Result<Vec<(String, Map<String, Value>)>, String> {
+fn evals(value: Option<&Value>) -> Result<EvalTables, String> {
     let entries: Vec<(String, Value)> = match value {
         None => Vec::new(),
-        Some(Value::Object(table)) => table.iter().map(|(id, eval)| (id.clone(), eval.clone())).collect(),
+        Some(Value::Object(table)) => table
+            .iter()
+            .map(|(id, eval)| (id.clone(), eval.clone()))
+            .collect(),
         Some(Value::Array(list)) => list
             .iter()
             .map(|eval| {
-                let id = eval.get("id").and_then(Value::as_str).ok_or("an eval in a list has an id")?;
+                let id = eval
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .ok_or("an eval in a list has an id")?;
                 Ok((id.to_owned(), eval.clone()))
             })
             .collect::<Result<_, String>>()?,
@@ -527,7 +602,13 @@ pub fn references(text: &str) -> Vec<String> {
 /// a `${…}`, an escaped `\{`, or JSON, nested or quoted braces stayed text.
 fn reference_spans(source: &str) -> Vec<(usize, usize, String)> {
     fn escaped(source: &[u8], index: usize) -> bool {
-        source[..index].iter().rev().take_while(|byte| **byte == b'\\').count() % 2 == 1
+        source[..index]
+            .iter()
+            .rev()
+            .take_while(|byte| **byte == b'\\')
+            .count()
+            % 2
+            == 1
     }
     fn closing(source: &[u8], start: usize) -> Option<usize> {
         let literal = escaped(source, start);
@@ -535,7 +616,10 @@ fn reference_spans(source: &str) -> Vec<(usize, usize, String)> {
         while index < source.len() {
             let character = source[index];
             if character == b'\\' {
-                if !literal || quote.is_some() || !matches!(source.get(index + 1), Some(b'{' | b'}')) {
+                if !literal
+                    || quote.is_some()
+                    || !matches!(source.get(index + 1), Some(b'{' | b'}'))
+                {
                     index += 1;
                 }
             } else if let Some(delimiter) = quote {
@@ -614,7 +698,9 @@ fn sub_path(rest: &str) -> &str {
     let end = rest
         .char_indices()
         .skip(1)
-        .find(|(_, character)| !(character.is_ascii_alphanumeric() || matches!(character, '/' | '.' | '_' | '-')))
+        .find(|(_, character)| {
+            !(character.is_ascii_alphanumeric() || matches!(character, '/' | '.' | '_' | '-'))
+        })
         .map_or(rest.len(), |(index, _)| index);
     let path = rest[..end].trim_end_matches(['.', '/']);
     if path.len() > 1 { path } else { "" }
@@ -631,12 +717,26 @@ fn argument(text: &str, human: bool) -> String {
         let prefix = &text[..*start];
         let suffix = &text[*end..];
         let flag = prefix.is_empty()
-            || prefix.strip_prefix("--").and_then(|flag| flag.strip_suffix('=')).is_some_and(|flag| {
-                !flag.is_empty() && flag.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-            });
-        let path = if suffix.is_empty() { Some("") } else { suffix.strip_prefix('/') };
+            || prefix
+                .strip_prefix("--")
+                .and_then(|flag| flag.strip_suffix('='))
+                .is_some_and(|flag| {
+                    !flag.is_empty()
+                        && flag
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+                });
+        let path = if suffix.is_empty() {
+            Some("")
+        } else {
+            suffix.strip_prefix('/')
+        };
         if flag && let Some(path) = path {
-            let target = if human && name == "artifactPath" { "self" } else { name.as_str() };
+            let target = if human && name == "artifactPath" {
+                "self"
+            } else {
+                name.as_str()
+            };
             let slot = if path.is_empty() {
                 format!("@{{path {target}}}")
             } else {
@@ -652,7 +752,10 @@ fn string(text: &str, strings: Strings) -> String {
     match strings {
         Strings::Plain => render::quote(text),
         Strings::Described => {
-            let parts: Vec<_> = text.split("{artifactName}").map(|part| render::escape(part, true)).collect();
+            let parts: Vec<_> = text
+                .split("{artifactName}")
+                .map(|part| render::escape(part, true))
+                .collect();
             format!("\"{}\"", parts.join("@{artf self}"))
         }
         Strings::Argument => argument(text, false),
@@ -672,19 +775,32 @@ fn expression(value: &Value, depth: usize, strings: Strings) -> String {
         Value::Number(number) => number.to_string(),
         Value::String(text) => string(text, strings),
         Value::Array(items) => {
-            let items: Vec<_> = items.iter().map(|item| expression(item, depth + 1, strings)).collect();
+            let items: Vec<_> = items
+                .iter()
+                .map(|item| expression(item, depth + 1, strings))
+                .collect();
             let line = format!("[{}]", items.join(", "));
             if line.len() <= 80 && !line.contains('\n') {
                 line
             } else {
                 let indent = "  ".repeat(depth + 1);
-                format!("[\n{indent}{},\n{}]", items.join(&format!(",\n{indent}")), "  ".repeat(depth))
+                format!(
+                    "[\n{indent}{},\n{}]",
+                    items.join(&format!(",\n{indent}")),
+                    "  ".repeat(depth)
+                )
             }
         }
         Value::Object(object) => {
             let fields: Vec<_> = object
                 .iter()
-                .map(|(key, value)| format!("{} = {}", key_text(key), expression(value, depth + 1, Strings::Plain)))
+                .map(|(key, value)| {
+                    format!(
+                        "{} = {}",
+                        key_text(key),
+                        expression(value, depth + 1, Strings::Plain)
+                    )
+                })
                 .collect();
             let line = format!("{{ {} }}", fields.join(", "));
             if fields.is_empty() {
@@ -693,7 +809,11 @@ fn expression(value: &Value, depth: usize, strings: Strings) -> String {
                 line
             } else {
                 let indent = "  ".repeat(depth + 1);
-                format!("{{\n{indent}{}\n{}}}", fields.join(&format!("\n{indent}")), "  ".repeat(depth))
+                format!(
+                    "{{\n{indent}{}\n{}}}",
+                    fields.join(&format!("\n{indent}")),
+                    "  ".repeat(depth)
+                )
             }
         }
     }
@@ -702,16 +822,37 @@ fn expression(value: &Value, depth: usize, strings: Strings) -> String {
 fn key_text(key: &str) -> String {
     let bare = key.len() <= 64
         && key.starts_with(|c: char| c.is_ascii_alphabetic())
-        && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
-    if bare { key.to_owned() } else { render::quote(key) }
+        && key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    if bare {
+        key.to_owned()
+    } else {
+        render::quote(key)
+    }
 }
 
 /// `name(key = value, …)`, `args` and `command` written in `strings`, a description as one.
 fn call(name: &str, fields: &Map<String, Value>, depth: usize, strings: Strings) -> String {
     // What a call is, then what it runs with: authored order, which a JSON map has lost.
-    const FIRST: [&str; 9] = ["op", "backend", "model", "command", "args", "protocol", "session", "description", "start"];
+    const FIRST: [&str; 9] = [
+        "op",
+        "backend",
+        "model",
+        "command",
+        "args",
+        "protocol",
+        "session",
+        "description",
+        "start",
+    ];
     let mut ordered: Vec<(&String, &Value)> = fields.iter().collect();
-    ordered.sort_by_key(|(key, _)| FIRST.iter().position(|first| first == key).unwrap_or(FIRST.len()));
+    ordered.sort_by_key(|(key, _)| {
+        FIRST
+            .iter()
+            .position(|first| first == key)
+            .unwrap_or(FIRST.len())
+    });
     let arguments: Vec<_> = ordered
         .into_iter()
         .map(|(key, value)| {
@@ -728,7 +869,11 @@ fn call(name: &str, fields: &Map<String, Value>, depth: usize, strings: Strings)
         line
     } else {
         let indent = "  ".repeat(depth + 1);
-        format!("{name}(\n{indent}{},\n{})", arguments.join(&format!(",\n{indent}")), "  ".repeat(depth))
+        format!(
+            "{name}(\n{indent}{},\n{})",
+            arguments.join(&format!(",\n{indent}")),
+            "  ".repeat(depth)
+        )
     }
 }
 

@@ -114,14 +114,18 @@ pub(crate) struct Plugin {
 
 impl Plugin {
     pub(super) fn source_files(&self) -> impl Iterator<Item = super::lang::SourceFile> + '_ {
-        self.sources.iter().map(|(path, text)| super::lang::SourceFile {
-            path: PathBuf::from(DIRECTORY).join(self.info.name.as_str()).join(path),
-            text: text.clone(),
-            origin: super::lang::Origin::Plugin(super::lang::PluginSource {
-                namespace: self.info.name.to_string(),
-                viewer: self.viewer.is_some(),
-            }),
-        })
+        self.sources
+            .iter()
+            .map(|(path, text)| super::lang::SourceFile {
+                path: PathBuf::from(DIRECTORY)
+                    .join(self.info.name.as_str())
+                    .join(path),
+                text: text.clone(),
+                origin: super::lang::Origin::Plugin(super::lang::PluginSource {
+                    namespace: self.info.name.to_string(),
+                    viewer: self.viewer.is_some(),
+                }),
+            })
     }
 }
 
@@ -146,16 +150,18 @@ pub(crate) fn read_document(file: File) -> Result<String, String> {
 }
 
 fn builtins() -> impl Iterator<Item = Plugin> {
-    BuiltinViewer::ALL.into_iter().map(|(viewer, name, title, source)| Plugin {
-        info: PluginInfo {
-            name: name.parse().expect("a built-in plugin name"),
-            title: title.into(),
-            builtin: true,
-            viewer: true,
-        },
-        viewer: Some(ViewerEntry::Builtin { viewer }),
-        sources: vec![(PathBuf::from(format!("{name}.artf")), source.into())],
-    })
+    BuiltinViewer::ALL
+        .into_iter()
+        .map(|(viewer, name, title, source)| Plugin {
+            info: PluginInfo {
+                name: name.parse().expect("a built-in plugin name"),
+                title: title.into(),
+                builtin: true,
+                viewer: true,
+            },
+            viewer: Some(ViewerEntry::Builtin { viewer }),
+            sources: vec![(PathBuf::from(format!("{name}.artf")), source.into())],
+        })
 }
 
 fn definitions(root: &Path) -> Result<PathBuf, ConfigError> {
@@ -177,8 +183,7 @@ pub(super) fn read(directory: &Path) -> Result<Plugin, ConfigError> {
     let manifest_path = directory.join(MANIFEST);
     let source = scope::open_scoped(directory, MANIFEST)
         .map_err(|error| ConfigError::new(&manifest_path, error))?;
-    let source =
-        read_document(source).map_err(|error| ConfigError::new(&manifest_path, error))?;
+    let source = read_document(source).map_err(|error| ConfigError::new(&manifest_path, error))?;
     let table: toml::Table =
         toml::from_str(&source).map_err(|error| ConfigError::new(&manifest_path, error))?;
     if table.contains_key("type") || table.contains_key("views") {
@@ -198,7 +203,9 @@ pub(super) fn read(directory: &Path) -> Result<Plugin, ConfigError> {
                 .extension()
                 .is_none_or(|extension| extension != "html")
             {
-                return Err("viewer.entry must name an .html file in the plugin directory.".to_owned());
+                return Err(
+                    "viewer.entry must name an .html file in the plugin directory.".to_owned(),
+                );
             }
             let file = scope::open_scoped(directory, web.entry.as_str())
                 .map_err(|error| format!("viewer.entry {}: {error}", web.entry))?;
@@ -208,8 +215,8 @@ pub(super) fn read(directory: &Path) -> Result<Plugin, ConfigError> {
         })
         .transpose()
         .map_err(|error| ConfigError::new(&manifest_path, error))?;
-    let opened = platform::open_directory(directory)
-        .map_err(|error| ConfigError::new(directory, error))?;
+    let opened =
+        platform::open_directory(directory).map_err(|error| ConfigError::new(directory, error))?;
     let mut sources = Vec::new();
     for entry in platform::read_dir(&opened).map_err(|error| ConfigError::new(directory, error))? {
         let entry = entry.map_err(|error| ConfigError::new(directory, error))?;
@@ -218,23 +225,34 @@ pub(super) fn read(directory: &Path) -> Result<Plugin, ConfigError> {
             continue;
         }
         let path = directory.join(&name);
-        if entry.file_type().map_err(|error| ConfigError::new(&path, error))?
+        if entry
+            .file_type()
+            .map_err(|error| ConfigError::new(&path, error))?
             != platform::FileKind::File
         {
-            return Err(ConfigError::new(&path, "A plugin's definition must be a regular file."));
+            return Err(ConfigError::new(
+                &path,
+                "A plugin's definition must be a regular file.",
+            ));
         }
         let text = super::discovery::read_regular_text(&path)
             .map_err(|error| ConfigError::new(&path, error))?;
         sources.push((PathBuf::from(name), text));
     }
     if sources.len() > MAX_SOURCES {
-        return Err(ConfigError::new(directory, format!("A plugin holds at most {MAX_SOURCES} .artf files.")));
+        return Err(ConfigError::new(
+            directory,
+            format!("A plugin holds at most {MAX_SOURCES} .artf files."),
+        ));
     }
     sources.sort();
     if sources.is_empty() {
         return Err(ConfigError::new(
             directory,
-            format!("Plugin {} declares no tools: add an .artf file with `tool {} = {{ … }}`.", manifest.namespace, manifest.namespace),
+            format!(
+                "Plugin {} declares no tools: add an .artf file with `tool {} = {{ … }}`.",
+                manifest.namespace, manifest.namespace
+            ),
         ));
     }
     Ok(Plugin {
@@ -329,14 +347,15 @@ fn validate(plugin: &Plugin) -> Result<(), ConfigError> {
         .flat_map(|plugin| plugin.source_files().collect::<Vec<_>>())
         .collect();
     let program = super::lang::read(files).map_err(|(sources, error)| sources.error(error))?;
-    if !program
-        .symbols
-        .iter()
-        .any(|symbol| symbol.kind == "tool" && !symbol.is_macro && symbol.name == plugin.info.name.as_str())
-    {
+    if !program.symbols.iter().any(|symbol| {
+        symbol.kind == "tool" && !symbol.is_macro && symbol.name == plugin.info.name.as_str()
+    }) {
         return Err(ConfigError::new(
             PathBuf::from(plugin.info.name.as_str()),
-            format!("Plugin {0} declares no `tool {0} = {{ … }}`.", plugin.info.name),
+            format!(
+                "Plugin {0} declares no `tool {0} = {{ … }}`.",
+                plugin.info.name
+            ),
         ));
     }
     Ok(())
@@ -464,7 +483,9 @@ pub(super) fn migrate(root: &Path) -> Result<(Catalog, Vec<(PathBuf, String)>), 
         let name = entry.file_name();
         let path = directory.join(&name);
         if name.as_encoded_bytes().starts_with(b".")
-            || entry.file_type().map_err(|error| ConfigError::new(&path, error))?
+            || entry
+                .file_type()
+                .map_err(|error| ConfigError::new(&path, error))?
                 != platform::FileKind::Directory
         {
             continue;
@@ -496,8 +517,13 @@ pub(super) fn migrate(root: &Path) -> Result<(Catalog, Vec<(PathBuf, String)>), 
             .and_then(|viewer| viewer.get("entry"))
             .and_then(toml::Value::as_str)
             .map(str::to_owned);
-        let views = serde_json::to_value(table.get("views").cloned().unwrap_or_else(|| toml::Table::new().into()))
-            .expect("TOML is JSON");
+        let views = serde_json::to_value(
+            table
+                .get("views")
+                .cloned()
+                .unwrap_or_else(|| toml::Table::new().into()),
+        )
+        .expect("TOML is JSON");
         let tools = super::convert::toolset_text(namespace.as_str(), &views, entry.is_some())
             .map_err(|error| invalid(&error))?;
         let mut manifest = toml::Table::new();

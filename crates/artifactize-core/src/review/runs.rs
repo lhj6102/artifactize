@@ -206,7 +206,10 @@ impl Target {
 /// Where an argument points: a `@{path name/rest}` slot in `name`, any other text in `owner`.
 fn logical(place: &dyn Fn(&str) -> Option<Place>, owner: &ArtifactName, arg: &str) -> Target {
     let literal;
-    let (id, rest) = match arg.strip_prefix(crate::scope::PATH_SLOT).and_then(|slot| slot.strip_suffix('}')) {
+    let (id, rest) = match arg
+        .strip_prefix(crate::scope::PATH_SLOT)
+        .and_then(|slot| slot.strip_suffix('}'))
+    {
         Some(slot) => match slot.split_once('/').unwrap_or((slot, "")) {
             ("self", rest) => (owner.as_str(), rest),
             reference => reference,

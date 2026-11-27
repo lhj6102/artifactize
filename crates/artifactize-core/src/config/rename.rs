@@ -37,11 +37,9 @@ pub fn rename(
         .iter()
         .find(|artifact| artifact.name == old.as_str())
         .ok_or_else(|| ConfigError::new(&root, format!("Unknown Artifact {old}.")))?;
-    if let Some(taken) = program
-        .artifacts
-        .iter()
-        .find(|artifact| artifact.name.eq_ignore_ascii_case(new.as_str()) && artifact.name != old.as_str())
-    {
+    if let Some(taken) = program.artifacts.iter().find(|artifact| {
+        artifact.name.eq_ignore_ascii_case(new.as_str()) && artifact.name != old.as_str()
+    }) {
         return Err(ConfigError::new(
             &root,
             format!("Artifact {} is already declared.", taken.name),
@@ -61,7 +59,10 @@ pub fn rename(
         if !matches!(source.origin, lang::Origin::Project) {
             return Err(ConfigError::new(
                 &source.path,
-                format!("Plugin {} names Artifact {old}; change the plugin instead.", crate::platform::path_text(&source.path)),
+                format!(
+                    "Plugin {} names Artifact {old}; change the plugin instead.",
+                    crate::platform::path_text(&source.path)
+                ),
             ));
         }
         ranges.sort_by_key(|range| std::cmp::Reverse(range.start));
@@ -81,15 +82,29 @@ pub fn rename(
         .filter(|artifact| artifact.binding.file == binding_file)
         .count()
         == 1;
-    let moved = (only && bound.path.file_stem().is_some_and(|stem| stem == old.as_str()))
-        .then(|| (bound.path.clone(), bound.path.with_file_name(format!("{new}.artf"))));
+    let moved = (only
+        && bound
+            .path
+            .file_stem()
+            .is_some_and(|stem| stem == old.as_str()))
+    .then(|| {
+        (
+            bound.path.clone(),
+            bound.path.with_file_name(format!("{new}.artf")),
+        )
+    });
     let mut next: BTreeMap<PathBuf, String> = sources.clone();
     next.extend(changed.clone());
     if let Some((from, to)) = &moved {
         if next.contains_key(&root.join(to)) {
-            return Err(ConfigError::new(root.join(to), "A definition file of that name exists."));
+            return Err(ConfigError::new(
+                root.join(to),
+                "A definition file of that name exists.",
+            ));
         }
-        let text = next.remove(&root.join(from)).expect("the bound file is a source");
+        let text = next
+            .remove(&root.join(from))
+            .expect("the bound file is a source");
         next.insert(root.join(to), text);
     }
     discovery::read_sources(root.clone(), &next)?;

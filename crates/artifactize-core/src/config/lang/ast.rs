@@ -16,7 +16,8 @@ pub struct Span {
 
 impl Span {
     pub fn new(file: FileId, range: std::ops::Range<usize>) -> Self {
-        let bound = |offset: usize| u32::try_from(offset).expect("a definition file is under 4 GiB");
+        let bound =
+            |offset: usize| u32::try_from(offset).expect("a definition file is under 4 GiB");
         Self {
             file,
             start: bound(range.start),
@@ -145,7 +146,10 @@ pub struct Block {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Entry {
     /// `key = value`; a key is an identifier or a string.
-    Field { key: Name, value: Expr },
+    Field {
+        key: Name,
+        value: Expr,
+    },
     /// `eval id (: profile)? = body` or `agent|human|session name = tool`.
     Declare {
         keyword: Name,

@@ -70,7 +70,10 @@ fn of(program: &lang::Program, lowered: &lang::LoweredArtifact) -> Expansion {
 /// Every Artifact's expansion, or one Artifact's.
 pub fn expand(repo: &Path, artifact: Option<&ArtifactName>) -> Result<Vec<Expansion>, ConfigError> {
     let config = discovery::read_workspace_declarations(repo)?;
-    let program = config.program.as_ref().expect("a workspace read has its program");
+    let program = config
+        .program
+        .as_ref()
+        .expect("a workspace read has its program");
     let expansions: Vec<_> = program
         .artifacts
         .iter()
@@ -88,6 +91,9 @@ pub fn expand(repo: &Path, artifact: Option<&ArtifactName>) -> Result<Vec<Expans
 /// Every global binding of the project and its plugins: kind, name, `!` and parameters.
 pub fn symbols(repo: &Path) -> Result<Vec<Symbol>, ConfigError> {
     let config = discovery::read_workspace_declarations(repo)?;
-    let program = config.program.as_ref().expect("a workspace read has its program");
+    let program = config
+        .program
+        .as_ref()
+        .expect("a workspace read has its program");
     Ok(program.symbols.clone())
 }

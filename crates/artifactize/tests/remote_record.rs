@@ -155,10 +155,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
             .unwrap()
             .contains("toolCalls")
     );
-    assert_eq!(
-        full.execution.unwrap().result().unwrap().to_json(),
-        local
-    );
+    assert_eq!(full.execution.unwrap().result().unwrap().to_json(), local);
 
     let mut stored = summary;
     stored.publisher = Some("alice-laptop".parse().unwrap());
@@ -410,7 +407,9 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
             start_time: 1,
         }),
         state: artifactize_core::store::ExecutionState::Completed {
-            result: json!({"verdict":"GREEN","kind":"agent","issues":[]}).try_into().unwrap(),
+            result: json!({"verdict":"GREEN","kind":"agent","issues":[]})
+                .try_into()
+                .unwrap(),
             at: completed,
         },
         profile: artifactize_core::config::StoredProfile::from(&variant),

@@ -1470,12 +1470,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     .unwrap();
     assert_eq!(completed.run.status().as_str(), "RED");
     assert_eq!(
-        completed.requests[0]
-            .result()
-            .as_ref()
-            .unwrap()
-            .issues()[0]
-            .reason,
+        completed.requests[0].result().as_ref().unwrap().issues()[0].reason,
         "Needs work"
     );
     assert_eq!(
@@ -1832,7 +1827,8 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
         &receipts,
         &run.requests[2].id,
         &"bob".parse().unwrap(),
-        &human::Submission::try_from(json!({"verdict":"RED","issues":["Different review"]})).unwrap(),
+        &human::Submission::try_from(json!({"verdict":"RED","issues":["Different review"]}))
+            .unwrap(),
         CancellationToken::new(),
     )
     .await

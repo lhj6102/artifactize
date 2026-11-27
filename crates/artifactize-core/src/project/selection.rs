@@ -212,7 +212,11 @@ pub fn select_profiles(
         let known: Vec<_> = config.profiles.keys().map(|name| name.as_str()).collect();
         format!(
             "Unknown profile {name}; the project's Agent profiles are {}.",
-            if known.is_empty() { "none".to_owned() } else { known.join(", ") }
+            if known.is_empty() {
+                "none".to_owned()
+            } else {
+                known.join(", ")
+            }
         )
     };
     // A name is checked even when no included eval is an Agent eval to run with it.
@@ -227,9 +231,15 @@ pub fn select_profiles(
             format!("Profile selection is outside the submitted Eval scope: {id}")
         })?;
         if !agent(eval) {
-            return Err(format!("{id} is not an Agent eval; only Agent evals run with a chosen profile."));
+            return Err(format!(
+                "{id} is not an Agent eval; only Agent evals run with a chosen profile."
+            ));
         }
-        let profile = config.profiles.get(&name).cloned().ok_or_else(|| unknown(&name))?;
+        let profile = config
+            .profiles
+            .get(&name)
+            .cloned()
+            .ok_or_else(|| unknown(&name))?;
         chosen.insert(id, (name, profile));
     }
     for eval in &mut config.evals {

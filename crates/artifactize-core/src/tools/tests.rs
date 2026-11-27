@@ -670,7 +670,9 @@ fn published_tool_name_collisions_are_rejected_when_definitions_are_read() {
     let file = fixture.repo.join(".artifactize/collide.artf");
     let read = |text: &str| {
         fs::write(&file, text).unwrap();
-        read_workspace_config(&fixture.repo).map(|_| ()).map_err(|error| error.to_string())
+        read_workspace_config(&fixture.repo)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
     };
     // `x.y_z` of `p` and `x.y` of `z_p` are both offered as `x_y_z_p`.
     let error = read(

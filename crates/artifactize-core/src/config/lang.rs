@@ -10,11 +10,7 @@ pub(crate) mod render;
 mod scope;
 mod values;
 
-use std::{
-    collections::BTreeMap,
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 pub(crate) use ast::{FileId, Span};
 pub(crate) use expand::{
@@ -83,7 +79,9 @@ impl Sources {
     /// The whole lines a span covers, for showing a declaration as written.
     pub(crate) fn lines(&self, span: Span) -> (usize, &str) {
         let text = &self.file(span.file).text;
-        let start = text[..span.start as usize].rfind('\n').map_or(0, |index| index + 1);
+        let start = text[..span.start as usize]
+            .rfind('\n')
+            .map_or(0, |index| index + 1);
         let end = text[span.end as usize..]
             .find('\n')
             .map_or(text.len(), |index| span.end as usize + index);
@@ -211,10 +209,19 @@ pub(crate) fn span_of(artifact: &LoweredArtifact, keys: &[&str]) -> Span {
     match keys {
         ["path", ..] => artifact.path.1,
         ["name", ..] => artifact.name_span,
-        ["parts", ..] => artifact.parts.first().map_or(artifact.binding, |part| part.1),
-        ["select", ..] => artifact.select.as_ref().map_or(artifact.binding, |select| select.1),
+        ["parts", ..] => artifact
+            .parts
+            .first()
+            .map_or(artifact.binding, |part| part.1),
+        ["select", ..] => artifact
+            .select
+            .as_ref()
+            .map_or(artifact.binding, |select| select.1),
         ["fingerprint", ..] => artifact.fingerprint.1.unwrap_or(artifact.binding),
-        ["tools"] | ["views"] => artifact.tools.as_ref().map_or(artifact.binding, |tools| tools.1),
+        ["tools"] | ["views"] => artifact
+            .tools
+            .as_ref()
+            .map_or(artifact.binding, |tools| tools.1),
         ["views", table, tool, ..] => {
             let audience = match *table {
                 "human_tools" => "human",
@@ -229,7 +236,10 @@ pub(crate) fn span_of(artifact: &LoweredArtifact, keys: &[&str]) -> Span {
                 .unwrap_or(artifact.binding)
         }
         ["evals", id, rest @ ..] => eval(id).map_or(artifact.binding, |eval| match rest {
-            ["instruction" | "payload", ..] => eval.instruction.as_ref().map_or(eval.id_span, |instruction| instruction.1),
+            ["instruction" | "payload", ..] => eval
+                .instruction
+                .as_ref()
+                .map_or(eval.id_span, |instruction| instruction.1),
             ["profile", ..] => eval.profile_span,
             ["inputs", ..] => eval.inputs.first().map_or(eval.id_span, |input| input.1),
             _ => eval.id_span,
@@ -237,4 +247,3 @@ pub(crate) fn span_of(artifact: &LoweredArtifact, keys: &[&str]) -> Span {
         _ => artifact.name_span,
     }
 }
-

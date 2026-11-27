@@ -25,7 +25,11 @@ fn punctuation_identifiers_numbers_and_comments() {
     let source = "artf! x-1_y(a = -1.5e3, b = [0]) : files & html.view // note\n...rest";
     let lexed = lex(source).unwrap();
     assert_eq!(
-        lexed.tokens.iter().map(|token| token.kind.clone()).collect::<Vec<_>>(),
+        lexed
+            .tokens
+            .iter()
+            .map(|token| token.kind.clone())
+            .collect::<Vec<_>>(),
         vec![
             Kind::Ident("artf".into()),
             Kind::Bang,
@@ -98,7 +102,10 @@ fn slots_are_typed_with_spans_and_double_at_escapes_them() {
         panic!("{parts:?}");
     };
     assert_eq!(
-        tool.words.iter().map(|(word, _)| word.as_str()).collect::<Vec<_>>(),
+        tool.words
+            .iter()
+            .map(|(word, _)| word.as_str())
+            .collect::<Vec<_>>(),
         ["self", "human", "html.view"]
     );
     assert_eq!(parts[0], text("Read "));
@@ -110,7 +117,14 @@ fn slots_are_typed_with_spans_and_double_at_escapes_them() {
     };
     assert_eq!(path.words.len(), 1);
     assert_eq!(&spaced[path.words[0].1.clone()], "self/open me.txt");
-    for bad in [r#""@{}""#, r#""@{name x}""#, r#""@{tool a b}""#, r#""@{artf a b}""#, r#""@{artf a""#, r#""@{path a b}""#] {
+    for bad in [
+        r#""@{}""#,
+        r#""@{name x}""#,
+        r#""@{tool a b}""#,
+        r#""@{artf a b}""#,
+        r#""@{artf a""#,
+        r#""@{path a b}""#,
+    ] {
         assert!(lex(bad).is_err(), "{bad}");
     }
 }

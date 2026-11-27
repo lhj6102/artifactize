@@ -54,8 +54,13 @@ pub fn to_artf(value: Value) -> Result<String, String> {
     let object = table.as_object_mut().ok_or("A builder is an object.")?;
     object.remove("name");
     // A builder without a target reviews the project folder.
-    object.entry("path").or_insert_with(|| Value::String("./".into()));
-    let kinds: BTreeSet<&'static str> = evals(&table).iter().filter_map(|eval| review_kind(eval)).collect();
+    object
+        .entry("path")
+        .or_insert_with(|| Value::String("./".into()));
+    let kinds: BTreeSet<&'static str> = evals(&table)
+        .iter()
+        .filter_map(|eval| review_kind(eval))
+        .collect();
     let fallback = fallback_tools(&table, &kinds);
     let converted = convert::convert(
         &[convert::Old {
@@ -70,7 +75,11 @@ pub fn to_artf(value: Value) -> Result<String, String> {
     let mut text = marker(&name, &table);
     // Its own file first, then its toolsets and profiles.
     for (index, (_, file)) in converted.files.into_iter().enumerate() {
-        text.push_str(&if index == 0 { composing(&file, &name, &fallback) } else { file });
+        text.push_str(&if index == 0 {
+            composing(&file, &name, &fallback)
+        } else {
+            file
+        });
     }
     if !fallback.is_empty() {
         text.push_str(FIXTURE_TOOLS);
@@ -83,7 +92,10 @@ fn marker(name: &str, table: &Value) -> String {
     if let Some(object) = builder.as_object_mut() {
         object.insert("name".into(), Value::String(name.to_owned()));
     }
-    format!("{MARKER}{}\n", serde_json::to_string(&builder).expect("a builder is JSON"))
+    format!(
+        "{MARKER}{}\n",
+        serde_json::to_string(&builder).expect("a builder is JSON")
+    )
 }
 
 /// The builder a fixture file was written from, without its `name`.
@@ -172,17 +184,23 @@ pub fn write(
                 object.remove("name");
             }
             registry.locations.insert(target.to_owned(), file.clone());
-            registry.projects.entry(root.to_owned()).or_default().insert(
-                file,
-                Fixture {
-                    name,
-                    table: marked,
-                    written: None,
-                },
-            );
+            registry
+                .projects
+                .entry(root.to_owned())
+                .or_default()
+                .insert(
+                    file,
+                    Fixture {
+                        name,
+                        table: marked,
+                        written: None,
+                    },
+                );
             return regenerate(&mut registry, root);
         }
-        (None, None) => toml::from_str::<Value>(source).ok().filter(Value::is_object),
+        (None, None) => toml::from_str::<Value>(source)
+            .ok()
+            .filter(Value::is_object),
     };
     let Some(mut table) = builder else {
         // Not a builder: written as it is, under its target's name.
@@ -309,7 +327,10 @@ fn regenerate(registry: &mut Registry, root: &Path) -> io::Result<()> {
     let nodes: Vec<(PathBuf, String, String, bool)> = project
         .iter()
         .map(|(file, fixture)| {
-            let path = fixture.table["path"].as_str().unwrap_or_default().to_owned();
+            let path = fixture.table["path"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned();
             let folder = path.ends_with('/')
                 && fixture.table.get("select").is_none()
                 && path != ".artifactize/";
@@ -340,7 +361,9 @@ fn regenerate(registry: &mut Registry, root: &Path) -> io::Result<()> {
                 continue;
             };
             let instruction = eval["payload"]["instruction"].as_str().unwrap_or_default();
-            for name in std::iter::once(fixture.name.clone()).chain(convert::references(instruction)) {
+            for name in
+                std::iter::once(fixture.name.clone()).chain(convert::references(instruction))
+            {
                 needs_tools.entry(name).or_default().insert(kind);
             }
         }
@@ -363,7 +386,10 @@ fn regenerate(registry: &mut Registry, root: &Path) -> io::Result<()> {
                 }
             }
         }
-        let fallback = fallback_tools(&table, &needs_tools.get(&fixture.name).cloned().unwrap_or_default());
+        let fallback = fallback_tools(
+            &table,
+            &needs_tools.get(&fixture.name).cloned().unwrap_or_default(),
+        );
         if !fallback.is_empty() {
             compositions.insert(fixture.name.clone(), fallback);
         }
@@ -401,7 +427,9 @@ fn regenerate(registry: &mut Registry, root: &Path) -> io::Result<()> {
                 let text = composing(
                     &text,
                     &fixture.name,
-                    compositions.get(&fixture.name).map_or(&[][..], Vec::as_slice),
+                    compositions
+                        .get(&fixture.name)
+                        .map_or(&[][..], Vec::as_slice),
                 );
                 let text = marker(&fixture.name, &fixture.table) + &text;
                 fs::write(&file, &text)?;
@@ -445,7 +473,13 @@ fn fallback_tools(table: &Value, kinds: &BTreeSet<&'static str>) -> Vec<&'static
                 .as_object()
                 .is_none_or(serde_json::Map::is_empty)
         })
-        .map(|kind| if *kind == "agent" { "fixture-agent!()" } else { "fixture-human!()" })
+        .map(|kind| {
+            if *kind == "agent" {
+                "fixture-agent!()"
+            } else {
+                "fixture-human!()"
+            }
+        })
         .collect()
 }
 

@@ -332,7 +332,10 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
         assert_eq!(eval_definition_hash(&eval(profile, json!({}))), base);
     }
     assert_eq!(
-        eval_definition_hash(&eval(agent("a", json!({})), json!({"id":"other","title":"Other"}))),
+        eval_definition_hash(&eval(
+            agent("a", json!({})),
+            json!({"id":"other","title":"Other"})
+        )),
         base
     );
     for changed in [
@@ -369,7 +372,10 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
     // A runtime eval's verdict is its command's: its prose instruction is not hashed.
     let check = json!({"kind":"runtime","command":"check","args":["a"]});
     assert_eq!(
-        eval_definition_hash(&eval(check.clone(), json!({"payload":{"instruction":"Other."}}))),
+        eval_definition_hash(&eval(
+            check.clone(),
+            json!({"payload":{"instruction":"Other."}})
+        )),
         runtime(json!(["a"]), json!(null))
     );
 

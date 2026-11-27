@@ -44,7 +44,9 @@ impl Parser {
     }
 
     fn peek_at(&self, ahead: usize) -> Option<&Kind> {
-        self.tokens.get(self.position + ahead).map(|token| &token.kind)
+        self.tokens
+            .get(self.position + ahead)
+            .map(|token| &token.kind)
     }
 
     fn span_here(&self) -> Span {
@@ -143,11 +145,7 @@ impl Parser {
         self.position += 1;
         let is_macro = self.eat(&Kind::Bang);
         let name = self.binding(kind, is_macro)?;
-        let params = if is_macro {
-            Some(self.params()?)
-        } else {
-            None
-        };
+        let params = if is_macro { Some(self.params()?) } else { None };
         let header = if self.eat(&Kind::Colon) {
             Some(self.expr()?)
         } else {
@@ -193,7 +191,10 @@ impl Parser {
         let mut args = Vec::new();
         while !self.eat(&Kind::RParen) {
             let name = self.ident("an argument name or `)`")?;
-            self.expect(&Kind::Eq, "`=` after the argument's name: arguments are named")?;
+            self.expect(
+                &Kind::Eq,
+                "`=` after the argument's name: arguments are named",
+            )?;
             let value = self.expr()?;
             args.push(Arg { name, value });
             if !self.eat(&Kind::Comma) && self.peek() != Some(&Kind::RParen) {

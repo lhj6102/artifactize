@@ -1072,7 +1072,11 @@ fn killed_owner_is_reclaimed_by_a_waiting_verify() {
     assert_eq!(dead["errorCode"], "OWNER_DIED");
     assert!(dead["completedAt"].is_string());
     assert_eq!(
-        support::runs::logged(&fixture.state, recovered["requests"][0]["id"].as_str().unwrap(), "stdout"),
+        support::runs::logged(
+            &fixture.state,
+            recovered["requests"][0]["id"].as_str().unwrap(),
+            "stdout"
+        ),
         "recovered\n"
     );
     assert_ne!(
@@ -1199,7 +1203,11 @@ async fn cancelling_a_joined_run_leaves_its_owner_running_and_cancelling_the_own
     assert_eq!(execution["errorCode"], "CANCELLED");
     let recovered = fixture.completed(&target, &next_id, waiter, 0).await;
     assert_eq!(
-        support::runs::logged(&fixture.state, recovered["requests"][0]["id"].as_str().unwrap(), "stdout"),
+        support::runs::logged(
+            &fixture.state,
+            recovered["requests"][0]["id"].as_str().unwrap(),
+            "stdout"
+        ),
         "retried\n"
     );
     let pid = cancelled["requests"][0]["child"]["pid"].as_u64().unwrap();
@@ -1247,7 +1255,11 @@ fn joined_waiter_keeps_its_execution_when_a_forced_result_completes_first() {
     let waiting = fixture.waiting_request(&waiter);
     let forced = fixture.command(&target, &["verify", "--wait", "--all", "--force"], 0);
     assert_eq!(
-        support::runs::logged(&fixture.state, forced["requests"][0]["id"].as_str().unwrap(), "stdout"),
+        support::runs::logged(
+            &fixture.state,
+            forced["requests"][0]["id"].as_str().unwrap(),
+            "stdout"
+        ),
         "forced\n"
     );
     fixture.release();
@@ -1943,7 +1955,11 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     let later = fixture.command(&target, &["verify", "--wait", "--all"], 0);
     assert_ne!(later["requests"][0]["executionId"], execution.id.as_str());
     assert_eq!(
-        support::runs::logged(&fixture.state, later["requests"][0]["id"].as_str().unwrap(), "stdout"),
+        support::runs::logged(
+            &fixture.state,
+            later["requests"][0]["id"].as_str().unwrap(),
+            "stdout"
+        ),
         "unexpected\n"
     );
 }

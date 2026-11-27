@@ -241,7 +241,12 @@ fn end_text(status: &platform::ProcessOutcome) -> String {
 
 impl Captured {
     /// The output read, and what failed.
-    fn split(self) -> ((Vec<u8>, bool, Vec<u8>), impl Iterator<Item = StreamFailure>) {
+    fn split(
+        self,
+    ) -> (
+        (Vec<u8>, bool, Vec<u8>),
+        impl Iterator<Item = StreamFailure>,
+    ) {
         let pipe = match self.pipe {
             PipeEnd::Closed => None,
             PipeEnd::Open => Some(StreamFailure::Open),

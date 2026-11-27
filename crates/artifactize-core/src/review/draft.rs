@@ -242,10 +242,19 @@ mod tests {
     fn green_takes_no_issues_and_red_needs_one() {
         let empty = Draft::default();
         assert_eq!(empty.readiness(Verdict::Green), Readiness::Ready);
-        assert_eq!(empty.readiness(Verdict::Red), Readiness::Blocked(RED_WITHOUT_ISSUE.into()));
-        let one = edited(vec![DraftEdit::AddIssue { text: "Fix the title".into() }]).unwrap();
+        assert_eq!(
+            empty.readiness(Verdict::Red),
+            Readiness::Blocked(RED_WITHOUT_ISSUE.into())
+        );
+        let one = edited(vec![DraftEdit::AddIssue {
+            text: "Fix the title".into(),
+        }])
+        .unwrap();
         assert_eq!(one.readiness(Verdict::Red), Readiness::Ready);
-        assert_eq!(one.readiness(Verdict::Green), Readiness::Blocked(GREEN_WITH_ISSUES.into()));
+        assert_eq!(
+            one.readiness(Verdict::Green),
+            Readiness::Blocked(GREEN_WITH_ISSUES.into())
+        );
         assert!(one.submission().is_err(), "no verdict chosen");
     }
 
@@ -257,14 +266,23 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(
-            draft.edit(DraftEdit::EditIssue { index: 0, previous: "two".into(), text: "x".into() }),
+            draft.edit(DraftEdit::EditIssue {
+                index: 0,
+                previous: "two".into(),
+                text: "x".into()
+            }),
             Err(ISSUE_CHANGED.into())
         );
         draft
-            .edit(DraftEdit::RemoveIssue { index: 0, previous: "one".into() })
+            .edit(DraftEdit::RemoveIssue {
+                index: 0,
+                previous: "one".into(),
+            })
             .unwrap();
         assert_eq!(draft.issues, ["two"]);
-        assert_eq!(draft.edit(DraftEdit::AddIssue { text: " ".into() }), Err(EMPTY_ISSUE.into()));
+        assert_eq!(
+            draft.edit(DraftEdit::AddIssue { text: " ".into() }),
+            Err(EMPTY_ISSUE.into())
+        );
     }
-
 }

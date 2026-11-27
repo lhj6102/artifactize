@@ -181,7 +181,11 @@ impl ExecutionResult {
             (None, Some(code)) => format!("exit {code}, "),
             (None, None) => String::new(),
         };
-        let reason = first.reason.lines().find(|line| !line.trim().is_empty()).unwrap_or("");
+        let reason = first
+            .reason
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or("");
         Some(format!("{count}: {lead}{}", reason.trim()))
     }
 
@@ -196,7 +200,8 @@ impl ExecutionResult {
                 json!({"verdict": verdict, "kind": "human", "issues": issues})
             }
             Self::Runtime(result) => {
-                let mut value = json!({"verdict": verdict, "kind": "runtime", "issues": result.issues});
+                let mut value =
+                    json!({"verdict": verdict, "kind": "runtime", "issues": result.issues});
                 if let Some(duration) = result.duration {
                     value["durationMs"] = json!(
                         u64::try_from(duration.as_millis())
@@ -258,8 +263,7 @@ const LEGACY_REASON_CHARS: usize = 2000;
 fn legacy(value: Value) -> Result<ExecutionResult, serde_json::Error> {
     use serde::de::Error;
     let mut fields: Map<String, Value> = serde_json::from_value(value)?;
-    let verdict: Verdict =
-        serde_json::from_value(fields.remove("verdict").unwrap_or(Value::Null))?;
+    let verdict: Verdict = serde_json::from_value(fields.remove("verdict").unwrap_or(Value::Null))?;
     if let Some(findings) = fields.remove("findings") {
         let issues: Vec<AgentIssue> = serde_json::from_value(findings)?;
         return Ok(ExecutionResult::Agent { verdict, issues });
@@ -282,9 +286,10 @@ fn legacy(value: Value) -> Result<ExecutionResult, serde_json::Error> {
         let issues = match (verdict, exit_code) {
             (Verdict::Red, Some(code)) => vec![RuntimeIssue {
                 exit_code: code,
-                reason: text("stderr")
-                    .or_else(|| text("stdout"))
-                    .map_or_else(|| exited_with(code), |output| tail(&output, LEGACY_REASON_CHARS)),
+                reason: text("stderr").or_else(|| text("stdout")).map_or_else(
+                    || exited_with(code),
+                    |output| tail(&output, LEGACY_REASON_CHARS),
+                ),
             }],
             (Verdict::Red, None) => {
                 return Err(serde_json::Error::custom(
@@ -315,7 +320,10 @@ fn legacy(value: Value) -> Result<ExecutionResult, serde_json::Error> {
         if reasons.is_empty() {
             reasons.push("RED, with no reason saved.".into());
         }
-        reasons.into_iter().map(|reason| HumanIssue { reason }).collect()
+        reasons
+            .into_iter()
+            .map(|reason| HumanIssue { reason })
+            .collect()
     } else {
         Vec::new()
     };
@@ -381,7 +389,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            agent.issues().iter().map(|issue| issue.reason.as_str()).collect::<Vec<_>>(),
+            agent
+                .issues()
+                .iter()
+                .map(|issue| issue.reason.as_str())
+                .collect::<Vec<_>>(),
             ["b", "a"]
         );
         let runtime = ExecutionResult::try_from(
@@ -392,24 +404,33 @@ mod tests {
             runtime.to_json(),
             json!({"verdict":"RED","kind":"runtime","issues":[{"exitCode":7,"reason":"out"}],"durationMs":5})
         );
-        let human = ExecutionResult::try_from(
-            json!({"verdict":"RED","change":["one","two"]}),
-        )
-        .unwrap();
+        let human =
+            ExecutionResult::try_from(json!({"verdict":"RED","change":["one","two"]})).unwrap();
         assert_eq!(human.issues().len(), 2);
-        let approved = ExecutionResult::try_from(json!({"verdict":"GREEN","approved":true})).unwrap();
-        assert_eq!(approved, ExecutionResult::Human { verdict: Verdict::Green, issues: Vec::new() });
+        let approved =
+            ExecutionResult::try_from(json!({"verdict":"GREEN","approved":true})).unwrap();
+        assert_eq!(
+            approved,
+            ExecutionResult::Human {
+                verdict: Verdict::Green,
+                issues: Vec::new()
+            }
+        );
         assert!(ExecutionResult::try_from(json!({"verdict":"RED","stdout":"x"})).is_err());
     }
 
     #[test]
     fn summaries_keep_exit_codes_and_drop_output() {
-        let result = RuntimeResult::exited(3, || "secret path /home/x".into(), Duration::from_millis(9));
+        let result =
+            RuntimeResult::exited(3, || "secret path /home/x".into(), Duration::from_millis(9));
         assert_eq!(
             ExecutionResult::Runtime(result.summary()).to_json(),
             json!({"verdict":"RED","kind":"runtime","issues":[{"exitCode":3,"reason":"Process exited with code 3."}],"durationMs":9})
         );
-        assert_eq!(RuntimeResult::exited(0, || unreachable!(), Duration::ZERO).issues, Vec::new());
+        assert_eq!(
+            RuntimeResult::exited(0, || unreachable!(), Duration::ZERO).issues,
+            Vec::new()
+        );
     }
 
     #[test]

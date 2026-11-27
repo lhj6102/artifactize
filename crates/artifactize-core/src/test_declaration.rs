@@ -15,9 +15,8 @@ pub fn eval(value: serde_json::Value) -> Result<crate::config::EvalDeclaration, 
     std::fs::create_dir_all(&definitions).map_err(|error| error.to_string())?;
     std::fs::write(definitions.join("test.artf"), text).map_err(|error| error.to_string())?;
     // The Artifacts it names exist, as inputs with nothing to review.
-    let mut named = crate::config::convert::references(
-        value_text(&value["payload"]["instruction"]).as_str(),
-    );
+    let mut named =
+        crate::config::convert::references(value_text(&value["payload"]["instruction"]).as_str());
     for arg in value["profile"]["args"].as_array().into_iter().flatten() {
         named.extend(crate::config::convert::references(value_text(arg).as_str()));
     }

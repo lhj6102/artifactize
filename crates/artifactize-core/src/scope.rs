@@ -8,13 +8,11 @@ use serde::Serialize;
 use crate::config::{Artifact, ArtifactName, ConfigError, Eval, Fingerprint, Profile, RepoConfig};
 
 mod argument;
-pub use argument::{Argument, LogicalSuffix, LogicalTarget};
 pub(crate) use argument::PATH_SLOT;
+pub use argument::{Argument, LogicalSuffix, LogicalTarget};
 
 mod human;
-pub(crate) use human::{
-    builtin_args, resolve_human_argv,
-};
+pub(crate) use human::{builtin_args, resolve_human_argv};
 
 pub use artifactize_tools::scope::{ArtifactId, ScopeError, ScopedPath, scoped_path};
 pub(crate) use artifactize_tools::scope::{logical_path, open_child, open_scoped};
@@ -305,7 +303,9 @@ pub(crate) fn artifact_instruction(eval: &Eval) -> Vec<InstructionPart> {
             continue;
         };
         if start < slot.range.start {
-            parts.push(InstructionPart::Text(source[start..slot.range.start].into()));
+            parts.push(InstructionPart::Text(
+                source[start..slot.range.start].into(),
+            ));
         }
         parts.push(InstructionPart::Artifact(artifact.clone()));
         start = slot.range.end;
@@ -498,7 +498,11 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
             continue;
         };
         let error = |message: String| {
-            config.error_at(id, &["fingerprint", "files"], format!("fingerprint.files: {message}"))
+            config.error_at(
+                id,
+                &["fingerprint", "files"],
+                format!("fingerprint.files: {message}"),
+            )
         };
         // A covering folder part subtracts every input, including a file/aspect's defaults.
         if artifact.covering_part.is_some() {
@@ -658,7 +662,9 @@ fn eval_references(
         if input == &eval.target {
             return Err(error(
                 &["inputs"],
-                ScopeError(format!("{input} is the eval's own Artifact; list other Artifacts in inputs.")),
+                ScopeError(format!(
+                    "{input} is the eval's own Artifact; list other Artifacts in inputs."
+                )),
             ));
         }
         let name = crate::config::ReferenceName::from(input);

@@ -53,7 +53,10 @@ impl<'a> Globals<'a> {
     }
 
     /// Pass one: every declaration of every file, duplicates rejected with both places.
-    pub fn collect(sources: &Sources, parsed: &'a [(FileId, Vec<Item>)]) -> Result<Self, LangError> {
+    pub fn collect(
+        sources: &Sources,
+        parsed: &'a [(FileId, Vec<Item>)],
+    ) -> Result<Self, LangError> {
         let mut globals = Self::default();
         for (file, items) in parsed {
             let origin = &sources.file(*file).origin;
@@ -68,13 +71,9 @@ impl<'a> Globals<'a> {
                 } else {
                     &mut namespace.concrete
                 };
-                if let Some(previous) = table.insert(
-                    item.name.text.as_str(),
-                    Decl {
-                        item,
-                        file: *file,
-                    },
-                ) {
+                if let Some(previous) =
+                    table.insert(item.name.text.as_str(), Decl { item, file: *file })
+                {
                     let bang = if is_macro { "!" } else { "" };
                     return Err(LangError::new(
                         item.name.span,
@@ -94,8 +93,13 @@ impl<'a> Globals<'a> {
 
     /// Macros expand statically: no macro may reach itself through the macros it calls.
     fn acyclic(&self) -> Result<(), LangError> {
-        let mut calls: BTreeMap<(ItemKind, &str), Vec<(ItemKind, &str, Span)>> = BTreeMap::new();
-        for kind in [ItemKind::Artf, ItemKind::Tool, ItemKind::Profile, ItemKind::Eval] {
+        let mut calls: CallGraph<'_> = BTreeMap::new();
+        for kind in [
+            ItemKind::Artf,
+            ItemKind::Tool,
+            ItemKind::Profile,
+            ItemKind::Eval,
+        ] {
             for (name, decl) in &self.kind(kind).macros {
                 let mut found = Vec::new();
                 item_calls(decl.item, &mut found);
@@ -104,7 +108,12 @@ impl<'a> Globals<'a> {
                     .flat_map(|(expected, callee, span)| {
                         let kinds: Vec<ItemKind> = match expected {
                             Some(kind) => vec![kind],
-                            None => vec![ItemKind::Artf, ItemKind::Tool, ItemKind::Profile, ItemKind::Eval],
+                            None => vec![
+                                ItemKind::Artf,
+                                ItemKind::Tool,
+                                ItemKind::Profile,
+                                ItemKind::Eval,
+                            ],
                         };
                         kinds
                             .into_iter()

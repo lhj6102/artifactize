@@ -3,10 +3,7 @@ use std::fs;
 use serde_json::json;
 
 use super::*;
-use crate::{
-    config::read_workspace_config,
-    graph::Graph,
-};
+use crate::{config::read_workspace_config, graph::Graph};
 
 /// Public selection-file contracts, independent of the parser's implementation constants.
 const FILE_BYTES: usize = 4 * 1024 * 1024;
@@ -323,7 +320,11 @@ fn a_named_profile_runs_the_included_agent_evals_without_rewriting_definitions()
     let before = crate::test_declaration::read_file(&source).unwrap();
     let load = || read_workspace_config(directory.path()).unwrap();
     let model = |config: &RepoConfig, id: &str| {
-        let eval = config.evals.iter().find(|eval| eval.id.as_str() == id).unwrap();
+        let eval = config
+            .evals
+            .iter()
+            .find(|eval| eval.id.as_str() == id)
+            .unwrap();
         serde_json::to_value(eval.declaration.profile()).unwrap()["model"].clone()
     };
     let selection = Selection::Eval {
@@ -351,7 +352,10 @@ fn a_named_profile_runs_the_included_agent_evals_without_rewriting_definitions()
         false,
     )
     .unwrap_err();
-    assert!(missing.contains("Unknown profile missing") && missing.contains("careful"), "{missing}");
+    assert!(
+        missing.contains("Unknown profile missing") && missing.contains("careful"),
+        "{missing}"
+    );
     let runtime = ProfileSelection::Evals(BTreeMap::from([(
         "target/r".parse().unwrap(),
         "careful".parse().unwrap(),

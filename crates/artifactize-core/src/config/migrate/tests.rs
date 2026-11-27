@@ -45,21 +45,40 @@ pass_schema = { type = "object" }
     .unwrap();
     let migration = migrate(directory.path()).unwrap();
     let text = fs::read_to_string(definitions.join("docs.artf")).unwrap();
-    assert!(text.starts_with("// The guide's folder.\nartf docs : markdown = {"), "{text}");
+    assert!(
+        text.starts_with("// The guide's folder.\nartf docs : markdown = {"),
+        "{text}"
+    );
     assert!(!text.contains("// Not a comment"), "{text}");
     let config = crate::config::read_workspace_config(directory.path()).unwrap();
     let docs = &config.artifacts[&"docs".parse::<crate::config::ArtifactName>().unwrap()];
     assert_eq!(docs.toolsets, ["markdown"]);
-    let clear = config.evals.iter().find(|eval| eval.id.as_str() == "docs/clear").unwrap();
-    assert_eq!(clear.declaration.instruction(), Some("# Not a comment\nIs docs clear?"));
+    let clear = config
+        .evals
+        .iter()
+        .find(|eval| eval.id.as_str() == "docs/clear")
+        .unwrap();
+    assert_eq!(
+        clear.declaration.instruction(),
+        Some("# Not a comment\nIs docs clear?")
+    );
     let crate::config::Profile::Agent { model, .. } = clear.declaration.profile() else {
         panic!("an Agent eval");
     };
     assert_eq!(model.as_str(), "fixture");
     assert!(config.profiles.contains_key("careful"));
     assert!(!definitions.join("settings.toml").exists());
-    assert!(migration.removed.contains(&PathBuf::from(".artifactize/settings.toml")));
-    assert!(migration.warnings.iter().any(|warning| warning.contains("pass_schema")));
+    assert!(
+        migration
+            .removed
+            .contains(&PathBuf::from(".artifactize/settings.toml"))
+    );
+    assert!(
+        migration
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("pass_schema"))
+    );
     // Once is enough: the project is already in the language.
     let again = migrate(directory.path()).unwrap();
     assert!(again.written.is_empty() && again.removed.is_empty());
@@ -73,14 +92,21 @@ fn in_tree_markers_become_definitions_with_explicit_parts() {
         "name = \"app\"\n[evals.check]\ntitle = \"Check\"\nprofile = { kind = \"runtime\", command = \"true\", args = [\"{guide}\"] }\npayload = { instruction = \"Run.\" }\n",
     )
     .unwrap();
-    fs::write(directory.path().join("docs/guide.md.artf"), "name = \"guide\"\n").unwrap();
+    fs::write(
+        directory.path().join("docs/guide.md.artf"),
+        "name = \"guide\"\n",
+    )
+    .unwrap();
     let migration = migrate(directory.path()).unwrap();
     assert!(!directory.path().join("index.artf").exists());
     assert_eq!(migration.removed.len(), 2);
     let config = crate::config::read_workspace_config(directory.path()).unwrap();
     let app = &config.artifacts[&"app".parse::<crate::config::ArtifactName>().unwrap()];
     assert!(app.parts.contains("guide"));
-    assert_eq!(config.evals[0].deps, ["guide".parse::<crate::config::ArtifactName>().unwrap()]);
+    assert_eq!(
+        config.evals[0].deps,
+        ["guide".parse::<crate::config::ArtifactName>().unwrap()]
+    );
 }
 
 #[test]
@@ -92,11 +118,17 @@ fn a_project_that_would_not_read_is_left_untouched() {
     fs::write(definitions.join("docs.artf"), old).unwrap();
     let error = migrate(directory.path()).unwrap_err().to_string();
     assert!(error.contains("Unknown profile alias !missing"), "{error}");
-    assert_eq!(fs::read_to_string(definitions.join("docs.artf")).unwrap(), old);
+    assert_eq!(
+        fs::read_to_string(definitions.join("docs.artf")).unwrap(),
+        old
+    );
     let old = "path = \"docs/\"\nparts = [\"nowhere\"]\n";
     fs::write(definitions.join("docs.artf"), old).unwrap();
     assert!(migrate(directory.path()).is_err());
-    assert_eq!(fs::read_to_string(definitions.join("docs.artf")).unwrap(), old);
+    assert_eq!(
+        fs::read_to_string(definitions.join("docs.artf")).unwrap(),
+        old
+    );
 }
 
 #[test]
@@ -119,7 +151,10 @@ fn old_plugins_name_their_namespace_and_declare_a_toolset() {
     let manifest = fs::read_to_string(plugin.join("plugin.toml")).unwrap();
     assert!(manifest.contains("namespace = \"html\""), "{manifest}");
     let tools = fs::read_to_string(plugin.join("html.artf")).unwrap();
-    assert!(tools.contains("human view = viewer(description = \"Open @{artf self}.\")"), "{tools}");
+    assert!(
+        tools.contains("human view = viewer(description = \"Open @{artf self}.\")"),
+        "{tools}"
+    );
     let config = crate::config::read_workspace_config(directory.path()).unwrap();
     let docs = &config.artifacts[&"docs".parse::<crate::config::ArtifactName>().unwrap()];
     assert_eq!(docs.toolsets, ["html"]);

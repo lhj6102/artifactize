@@ -28,10 +28,10 @@ pub(crate) mod migrations;
 pub(crate) mod run_control;
 mod run_read;
 pub use lifecycle::{ExecutionState, GreenResult, PendingRequest, RequestState, RunState};
+pub(crate) use result::tail as output_tail;
 pub use result::{
     AgentIssue, ExecutionResult, HumanIssue, Issue, RuntimeIssue, RuntimeResult, exited_with,
 };
-pub(crate) use result::tail as output_tail;
 pub use run_control::read_run_repo;
 pub(crate) use run_read::{read_new_results, read_run_record, read_run_requests_only};
 pub use run_read::{read_run, read_run_snapshot};

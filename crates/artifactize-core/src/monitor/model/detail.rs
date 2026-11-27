@@ -1,7 +1,6 @@
 //! Cards and detail-pane presentation for Runs, Artifacts and Evals.
 use super::*;
 
-
 /// Where a Detail field goes, in display order. Technical is folded by default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Section {
@@ -334,7 +333,6 @@ pub struct Card {
 pub(crate) fn raw(result: &crate::store::ExecutionResult) -> String {
     serde_json::to_string_pretty(&result.to_json()).expect("a saved result is JSON")
 }
-
 
 pub fn card(view: &RequestView, now: OffsetDateTime) -> Card {
     use crate::config::StoredProfile;

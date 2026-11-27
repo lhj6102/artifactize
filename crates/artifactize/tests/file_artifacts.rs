@@ -390,7 +390,13 @@ async fn builtins_expose_only_the_target_and_explicit_references() {
     assert!(!names.iter().any(|name| name.ends_with("_child")));
     let listing = call(&registry, "file_list_file", json!({}), &fixture.state).await;
     assert_eq!(
-        call(&registry, "file_list_file", json!({"path":"."}), &fixture.state).await,
+        call(
+            &registry,
+            "file_list_file",
+            json!({"path":"."}),
+            &fixture.state
+        )
+        .await,
         listing
     );
     assert_eq!(
@@ -530,7 +536,9 @@ fn human_tools_use_containing_folder_and_resolve_only_scoped_paths() {
     let registry =
         artifactize_core::tools::human::Registry::for_artifact(&config, &"file".parse().unwrap())
             .unwrap();
-    let command = registry.command(&"file_open_file".parse().unwrap()).unwrap();
+    let command = registry
+        .command(&"file_open_file".parse().unwrap())
+        .unwrap();
     assert_eq!(command.cwd, config.root.join("files"));
     assert_eq!(
         command.args,
@@ -1162,7 +1170,10 @@ async fn command_and_human_tools_revalidate_file_targets_on_every_call() {
         );
         assert!(
             human
-                .call(&"file_inspect_file".parse().unwrap(), CancellationToken::new())
+                .call(
+                    &"file_inspect_file".parse().unwrap(),
+                    CancellationToken::new()
+                )
                 .await
                 .is_error()
         );

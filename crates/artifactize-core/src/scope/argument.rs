@@ -118,7 +118,11 @@ impl std::str::FromStr for Argument {
         let mut slot = None;
         while let Some(at) = rest.find("@{").map(|index| {
             // `@@{` is an escaped literal opener.
-            if index > 0 && rest.as_bytes()[index - 1] == b'@' { index - 1 } else { index }
+            if index > 0 && rest.as_bytes()[index - 1] == b'@' {
+                index - 1
+            } else {
+                index
+            }
         }) {
             text.push_str(&rest[..at]);
             if rest[at..].starts_with("@@{") {
@@ -135,11 +139,15 @@ impl std::str::FromStr for Argument {
             let close = rest[at..]
                 .find('}')
                 .ok_or_else(|| ScopeError("This `@{path …}` slot has no closing `}`.".into()))?;
-            slot = Some((text.clone(), rest[at + PATH_SLOT.len()..at + close].trim().to_owned()));
+            slot = Some((
+                text.clone(),
+                rest[at + PATH_SLOT.len()..at + close].trim().to_owned(),
+            ));
             rest = &rest[at + close + 1..];
             if !rest.is_empty() {
                 return Err(ScopeError(
-                    "An argument's `@{path …}` slot ends it; write the path inside the slot.".into(),
+                    "An argument's `@{path …}` slot ends it; write the path inside the slot."
+                        .into(),
                 ));
             }
         }
@@ -164,7 +172,9 @@ impl std::str::FromStr for Argument {
         }
         let (name, path) = target.split_once('/').unwrap_or((&target, ""));
         if target.contains('/') && path.is_empty() {
-            return Err(ScopeError("Artifact argument suffix must be a nonempty /path.".into()));
+            return Err(ScopeError(
+                "Artifact argument suffix must be a nonempty /path.".into(),
+            ));
         }
         logical_path(path)?;
         Ok(Self::Reference {

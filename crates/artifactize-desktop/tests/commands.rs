@@ -630,7 +630,11 @@ fn a_human_review_claims_runs_refuses_what_readiness_refuses_and_submits_green()
     // The library's readiness, in its words: RED needs an issue, GREEN takes none.
     for (verdict, issues, refusal) in [
         ("RED", json!([]), artifactize_core::human::RED_WITHOUT_ISSUE),
-        ("GREEN", json!(["Off by one"]), artifactize_core::human::GREEN_WITH_ISSUES),
+        (
+            "GREEN",
+            json!(["Off by one"]),
+            artifactize_core::human::GREEN_WITH_ISSUES,
+        ),
     ] {
         let invalid = invoke(
             &window,
@@ -1042,7 +1046,10 @@ fn issues_are_edited_in_order_survive_a_restart_and_a_release_and_submit_as_red(
     .unwrap();
     let refused = invoke(&window, "human_draft_submit", json!({"id": id, "job": 3})).unwrap_err();
     assert_eq!(refused["kind"], "invalid");
-    assert_eq!(refused["message"], artifactize_core::human::GREEN_WITH_ISSUES);
+    assert_eq!(
+        refused["message"],
+        artifactize_core::human::GREEN_WITH_ISSUES
+    );
     invoke(
         &window,
         "human_draft_edit",
@@ -1916,7 +1923,12 @@ fn the_definitions_are_read_only_with_each_bindings_source() {
     assert_eq!(ship["macroName"], Value::Null);
     let tip = node("tip");
     assert_eq!(
-        [&tip["definition"], &tip["line"], &tip["macroName"], &tip["target"]],
+        [
+            &tip["definition"],
+            &tip["line"],
+            &tip["macroName"],
+            &tip["target"]
+        ],
         [
             &json!(".artifactize/posts.artf"),
             &json!(7),
@@ -2507,7 +2519,10 @@ fn a_chat_only_checkout_keeps_its_view_and_current_after_restart() {
         json!({"branch":branch, "artifact":"app"}),
     )
     .unwrap();
-    assert!(source["authored"].as_str().unwrap().contains("artf app"), "{source}");
+    assert!(
+        source["authored"].as_str().unwrap().contains("artf app"),
+        "{source}"
+    );
 
     os::git(&fixture.repo, &["symbolic-ref", "HEAD", "refs/heads/other"]);
     let stale = invoke(&restarted, "chat_open", json!({"id":id})).unwrap();
@@ -2948,7 +2963,11 @@ fn an_artifacts_tools_follow_its_declaration_when_it_moves_or_is_renamed() {
     let ship = fixture.repo.join(".artifactize/ship.artf");
     let follows = fs::read_to_string(&ship).unwrap();
     assert!(follows.contains("inputs = [release]"), "{follows}");
-    fs::write(&ship, follows.replace("inputs = [release]", "inputs = [notes]")).unwrap();
+    fs::write(
+        &ship,
+        follows.replace("inputs = [release]", "inputs = [notes]"),
+    )
+    .unwrap();
     assert_eq!(list("release").unwrap_err()["kind"], "missing");
     assert_eq!(list("notes").unwrap()[0]["name"], "release_notes_notes");
 }

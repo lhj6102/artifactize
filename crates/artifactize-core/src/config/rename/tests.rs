@@ -43,18 +43,42 @@ artf app = checked!(input = docs)
     )
     .unwrap();
     let renamed = rename(root, &name("docs"), &name("guides")).unwrap();
-    assert_eq!(renamed.moved, Some((".artifactize/docs.artf".into(), ".artifactize/guides.artf".into())));
+    assert_eq!(
+        renamed.moved,
+        Some((
+            ".artifactize/docs.artf".into(),
+            ".artifactize/guides.artf".into()
+        ))
+    );
     let app = fs::read_to_string(definitions.join("app.artf")).unwrap();
-    assert!(app.contains("tool docs = {") && app.contains("files & docs"), "{app}");
-    assert!(app.contains("with @{artf guides} and @{path guides/guide.md}"), "{app}");
-    assert!(app.contains("--docs=@{path guides}") && app.contains("inputs = [guides]"), "{app}");
-    assert!(app.contains("checked!(input = guides)") && app.contains("Matches the docs"), "{app}");
+    assert!(
+        app.contains("tool docs = {") && app.contains("files & docs"),
+        "{app}"
+    );
+    assert!(
+        app.contains("with @{artf guides} and @{path guides/guide.md}"),
+        "{app}"
+    );
+    assert!(
+        app.contains("--docs=@{path guides}") && app.contains("inputs = [guides]"),
+        "{app}"
+    );
+    assert!(
+        app.contains("checked!(input = guides)") && app.contains("Matches the docs"),
+        "{app}"
+    );
     assert_eq!(
         fs::read_to_string(definitions.join("guides.artf")).unwrap(),
         "// The docs.\nartf guides : files = { path = \"docs/\" }\n"
     );
     let config = crate::config::read_workspace_config(root).unwrap();
-    assert!(config.artifacts[&name("app")].parts.contains(&name("guides")));
-    let error = rename(root, &name("guides"), &name("APP")).unwrap_err().to_string();
+    assert!(
+        config.artifacts[&name("app")]
+            .parts
+            .contains(&name("guides"))
+    );
+    let error = rename(root, &name("guides"), &name("APP"))
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("already declared"), "{error}");
 }

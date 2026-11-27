@@ -38,7 +38,10 @@ fn an_issue_at_or_above_red_at_makes_the_eval_red_and_one_below_it_does_not() {
 #[test]
 fn without_red_at_any_issue_makes_the_eval_red() {
     let any = Issues::new(None);
-    assert_eq!(any.parse_model(&answer(&[])).unwrap().verdict, Verdict::Green);
+    assert_eq!(
+        any.parse_model(&answer(&[])).unwrap().verdict,
+        Verdict::Green
+    );
     for priority in ["P0", "P1", "P2", "P3"] {
         assert_eq!(
             any.parse_model(&answer(&[(priority, "found")]))
@@ -105,7 +108,10 @@ fn the_schema_sent_to_the_backend_is_the_one_closed_issues_list() {
         }),
         "the bar stays with artifactize; the schema is the same for every eval"
     );
-    assert_eq!(Issues::new(None).schema, Issues::new(Some(Priority::P0)).schema);
+    assert_eq!(
+        Issues::new(None).schema,
+        Issues::new(Some(Priority::P0)).schema
+    );
 }
 
 #[test]

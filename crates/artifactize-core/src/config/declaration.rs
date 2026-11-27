@@ -1,8 +1,10 @@
 //! What an Artifact's evals may use (its composed tools) and what its reviews depend on (its
 //! fingerprint), each with the checks that hold across its fields.
 
-use super::{AgentTool, HumanTool, LogicalPath, MAX_DECLARED_ITEMS, ToolFqn, ToolSession, schemas,
-    validation::{path, paths, script, timeout}};
+use super::{
+    AgentTool, HumanTool, LogicalPath, MAX_DECLARED_ITEMS, ToolFqn, ToolSession, schemas,
+    validation::{path, paths, script, timeout},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -47,12 +49,22 @@ impl Views {
                     format!("Agent tool {name}: unknown tool session {session}."),
                 ));
             }
-            tool.validate(schemas)
-                .map_err(|message| ("agent_tools", name.clone(), format!("Tool {name}: {message}")))?;
+            tool.validate(schemas).map_err(|message| {
+                (
+                    "agent_tools",
+                    name.clone(),
+                    format!("Tool {name}: {message}"),
+                )
+            })?;
         }
         for (name, tool) in &self.human_tools {
-            tool.validate()
-                .map_err(|message| ("human_tools", name.clone(), format!("Tool {name}: {message}")))?;
+            tool.validate().map_err(|message| {
+                (
+                    "human_tools",
+                    name.clone(),
+                    format!("Tool {name}: {message}"),
+                )
+            })?;
         }
         Ok(())
     }
@@ -195,7 +207,6 @@ impl From<Fingerprint> for Value {
         }
     }
 }
-
 
 impl Fingerprint {
     pub fn kind(&self) -> crate::types::FingerprintKind {

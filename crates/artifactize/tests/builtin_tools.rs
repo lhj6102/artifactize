@@ -176,7 +176,11 @@ async fn fixed_agent_reads_sections_and_schemas_but_not_nested_artifacts() {
             text: "# First\nbody\n## Nested\nchild\n# Next\nlast\n".into()
         }]
     );
-    assert!(call("a_fixed_a", json!({"path":"other.md"})).await.is_error());
+    assert!(
+        call("a_fixed_a", json!({"path":"other.md"}))
+            .await
+            .is_error()
+    );
     let section = call("a_section_a", json!({"heading":"First"})).await;
     assert_eq!(
         section.content(),
@@ -272,7 +276,9 @@ async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition()
     support::declaration::write(&(repo), repo.join("a/index.artf"), value.to_string()).unwrap();
     let config = read_workspace_config(&repo).unwrap();
     let registry = tools::human::Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
-    registry.preflight(&"a_reference_a".parse().unwrap()).unwrap();
+    registry
+        .preflight(&"a_reference_a".parse().unwrap())
+        .unwrap();
     let result = registry
         .call(&"a_reference_a".parse().unwrap(), CancellationToken::new())
         .await;
@@ -454,7 +460,10 @@ async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
     let config = read_workspace_config(root.path()).unwrap();
     let registry = tools::human::Registry::new(&config, &"notes/review".parse().unwrap()).unwrap();
     let read = registry
-        .call(&"notes_read_notes".parse().unwrap(), CancellationToken::new())
+        .call(
+            &"notes_read_notes".parse().unwrap(),
+            CancellationToken::new(),
+        )
         .await;
     assert!(!read.is_error(), "{read:?}");
     assert_eq!(
@@ -464,7 +473,10 @@ async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
         }]
     );
     let section = registry
-        .call(&"notes_section_notes".parse().unwrap(), CancellationToken::new())
+        .call(
+            &"notes_section_notes".parse().unwrap(),
+            CancellationToken::new(),
+        )
         .await;
     assert!(!section.is_error(), "{section:?}");
     assert_eq!(

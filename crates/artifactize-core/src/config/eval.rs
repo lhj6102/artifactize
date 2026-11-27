@@ -248,7 +248,11 @@ impl EvalDeclaration {
         &mut self.body.profile
     }
     /// Run this Agent eval with another named profile: an execution option, never hashed.
-    pub(crate) fn select_profile(&mut self, name: &ProfileName, profile: &Profile) -> Result<(), String> {
+    pub(crate) fn select_profile(
+        &mut self,
+        name: &ProfileName,
+        profile: &Profile,
+    ) -> Result<(), String> {
         if self.body.profile.kind() != ProfileKind::Agent || profile.kind() != ProfileKind::Agent {
             return Err(format!(
                 "Profile {name} replaces only an Agent eval's Agent profile."

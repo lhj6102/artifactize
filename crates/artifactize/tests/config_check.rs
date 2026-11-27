@@ -397,4 +397,3 @@ fn config_check_names_the_replacements_for_removed_backends() {
         }
     }
 }
-

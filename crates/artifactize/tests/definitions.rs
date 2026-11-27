@@ -65,7 +65,10 @@ fn checked(name: &str, path: &str) -> String {
 #[test]
 fn names_paths_definition_files_and_explicit_parts_are_independent() {
     let project = Project::new();
-    project.node("outer", "artf outer = { path = \"src/\", parts = [inner] }\n");
+    project.node(
+        "outer",
+        "artf outer = { path = \"src/\", parts = [inner] }\n",
+    );
     project.node(
         "family/anything",
         "artf inner = { path = \"src/lib/\", basis = true }\n",
@@ -135,7 +138,10 @@ fn missing_targets_are_notes_not_definition_errors() {
     project.node("future", &checked("future", "future/"));
     let check = project.json(&["config", "check", "--json"], 0);
     assert_eq!(check["notes"].as_array().unwrap().len(), 1);
-    project.node("wrong", "artf wrong = { path = \"wrong/\", basis = true }\n");
+    project.node(
+        "wrong",
+        "artf wrong = { path = \"wrong/\", basis = true }\n",
+    );
     project.write("wrong", "not a directory");
     let check = project.json(&["config", "check", "--json"], 0);
     assert_eq!(check["notes"].as_array().unwrap().len(), 2);
@@ -236,7 +242,10 @@ fn status_reports_unavailable_targets_per_eval_without_losing_other_forecasts() 
 fn verify_and_config_check_require_tools_for_the_actual_eval_scope() {
     let project = Project::new();
     project.write("notes.md", "Hello\n");
-    project.node("notes", "artf notes = { path = \"notes.md\", basis = true }\n");
+    project.node(
+        "notes",
+        "artf notes = { path = \"notes.md\", basis = true }\n",
+    );
     project.node(
         "app",
         r#"profile fixture = agent(backend = "openai", model = "fixture")
@@ -270,7 +279,10 @@ artf app = {
             "{error}"
         );
     }
-    project.node("notes", "artf notes : markdown = { path = \"notes.md\", basis = true }\n");
+    project.node(
+        "notes",
+        "artf notes : markdown = { path = \"notes.md\", basis = true }\n",
+    );
     assert!(project.cli(&["config", "check"]).status.success());
 }
 

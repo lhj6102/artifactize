@@ -65,7 +65,11 @@ impl Fixture {
 
     fn json(&self, args: &[&str]) -> Value {
         let output = self.run(args);
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         serde_json::from_slice(&output.stdout).unwrap()
     }
 }
@@ -76,9 +80,18 @@ fn expand_and_symbols_show_what_the_code_declares() {
     fixture.write(".artifactize/project.artf", DEFINITIONS);
     let output = fixture.run(&["config", "expand", "core"]);
     let text = String::from_utf8(output.stdout).unwrap();
-    assert!(text.starts_with("// .artifactize/project.artf:13 (by crate!)\n"), "{text}");
-    assert!(text.contains("artf core : files = {\n  path = \"crates/core/\""), "{text}");
-    assert!(text.contains("instruction = \"Is @{artf self} readable next to @{artf docs}?\""), "{text}");
+    assert!(
+        text.starts_with("// .artifactize/project.artf:13 (by crate!)\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("artf core : files = {\n  path = \"crates/core/\""),
+        "{text}"
+    );
+    assert!(
+        text.contains("instruction = \"Is @{artf self} readable next to @{artf docs}?\""),
+        "{text}"
+    );
     let expanded = fixture.json(&["--json", "config", "expand"]);
     let names: Vec<_> = expanded
         .as_array()
@@ -105,12 +118,18 @@ fn check_prints_the_line_and_the_macro_call_of_an_error() {
     let fixture = Fixture::new();
     fixture.write(
         ".artifactize/project.artf",
-        &DEFINITIONS.replace("artf core = crate!(dir = \"core\")", "artf core = crate!(dir = \"core\", size = 1)"),
+        &DEFINITIONS.replace(
+            "artf core = crate!(dir = \"core\")",
+            "artf core = crate!(dir = \"core\", size = 1)",
+        ),
     );
     let output = fixture.run(&["config", "check"]);
     assert!(!output.status.success());
     let error = String::from_utf8(output.stderr).unwrap();
-    assert!(error.contains("line 13") && error.contains("size"), "{error}");
+    assert!(
+        error.contains("line 13") && error.contains("size"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -133,10 +152,17 @@ fn migrate_converts_old_definitions_once_and_rename_follows_references() {
         "{migrated}"
     );
     let again = fixture.run(&["config", "migrate"]);
-    assert!(String::from_utf8(again.stdout).unwrap().contains("already in the .artf language"));
+    assert!(
+        String::from_utf8(again.stdout)
+            .unwrap()
+            .contains("already in the .artf language")
+    );
     let renamed = fixture.json(&["--json", "config", "rename", "docs", "guide"]);
     assert_eq!(renamed["moved"][1], ".artifactize/guide.artf");
     let text = fs::read_to_string(fixture.0.join(".artifactize/guide.artf")).unwrap();
-    assert!(text.contains("artf guide : markdown") && text.contains("Is @{artf guide} clear?"), "{text}");
+    assert!(
+        text.contains("artf guide : markdown") && text.contains("Is @{artf guide} clear?"),
+        "{text}"
+    );
     assert!(fixture.run(&["config", "check"]).status.success());
 }

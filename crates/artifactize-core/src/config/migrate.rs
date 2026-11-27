@@ -42,8 +42,9 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
     let mut current = BTreeMap::new();
     let mut olds = Vec::new();
     let mut warnings = Vec::new();
-    let has_definitions = crate::platform::paths::reusable_directory(&root, discovery::DEFINITION_DIR)
-        .map_err(|error| ConfigError::new(&definitions, error))?;
+    let has_definitions =
+        crate::platform::paths::reusable_directory(&root, discovery::DEFINITION_DIR)
+            .map_err(|error| ConfigError::new(&definitions, error))?;
     if has_definitions {
         for (path, text) in discovery::sources(&root)? {
             if !lang::looks_like_toml(&text) {
@@ -54,7 +55,9 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
             let name = path
                 .file_stem()
                 .and_then(|stem| stem.to_str())
-                .ok_or_else(|| ConfigError::new(&path, "A definition file is named after its Artifact."))?
+                .ok_or_else(|| {
+                    ConfigError::new(&path, "A definition file is named after its Artifact.")
+                })?
                 .to_owned();
             let mut table = table(&path, &text, &profiles)?;
             if let Some(object) = table.as_object_mut() {
@@ -97,11 +100,11 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
         sources.insert(path, text);
     }
     discovery::read_sources_with(root.clone(), &sources, catalog)?;
-    for (path, text) in plugin_writes
-        .iter()
-        .cloned()
-        .chain(sources.into_iter().filter(|(path, _)| !current.contains_key(path)))
-    {
+    for (path, text) in plugin_writes.iter().cloned().chain(
+        sources
+            .into_iter()
+            .filter(|(path, _)| !current.contains_key(path)),
+    ) {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| ConfigError::new(parent, error))?;
         }
@@ -137,11 +140,14 @@ fn settings(
     removed: &mut Vec<PathBuf>,
 ) -> Result<BTreeMap<String, Value>, ConfigError> {
     let path = definitions.join(SETTINGS);
-    if !crate::platform::path_kind(&path).is_ok_and(|kind| kind == crate::platform::FileKind::File) {
+    if !crate::platform::path_kind(&path).is_ok_and(|kind| kind == crate::platform::FileKind::File)
+    {
         return Ok(BTreeMap::new());
     }
-    let text = discovery::read_regular_text(&path).map_err(|error| ConfigError::new(&path, error))?;
-    let table: toml::Table = toml::from_str(&text).map_err(|error| ConfigError::new(&path, error))?;
+    let text =
+        discovery::read_regular_text(&path).map_err(|error| ConfigError::new(&path, error))?;
+    let table: toml::Table =
+        toml::from_str(&text).map_err(|error| ConfigError::new(&path, error))?;
     removed.push(path.clone());
     let Some(profiles) = table.get("profiles") else {
         return Ok(BTreeMap::new());
@@ -154,7 +160,9 @@ fn settings(
         .into_iter()
         .map(|(name, mut profile)| {
             if let Some(object) = profile.as_object_mut() {
-                object.entry("kind").or_insert_with(|| Value::String("agent".into()));
+                object
+                    .entry("kind")
+                    .or_insert_with(|| Value::String("agent".into()));
             }
             (name, profile)
         })
@@ -162,7 +170,11 @@ fn settings(
 }
 
 /// An old TOML definition as JSON, its `!alias(…)` profiles resolved from the settings.
-fn table(path: &Path, text: &str, profiles: &BTreeMap<String, Value>) -> Result<Value, ConfigError> {
+fn table(
+    path: &Path,
+    text: &str,
+    profiles: &BTreeMap<String, Value>,
+) -> Result<Value, ConfigError> {
     let masked = artifactize_tools::artf::mask(text)
         .map_err(|error| ConfigError::new(path, error.message))?;
     let parsed: toml::Table =
@@ -185,7 +197,9 @@ fn table(path: &Path, text: &str, profiles: &BTreeMap<String, Value>) -> Result<
             match toml::from_str::<toml::Table>(&wrapped) {
                 Ok(mut table) => {
                     let overrides = serde_json::to_value(table.remove("_")).expect("TOML is JSON");
-                    if let (Some(profile), Some(overrides)) = (profile.as_object_mut(), overrides.as_object()) {
+                    if let (Some(profile), Some(overrides)) =
+                        (profile.as_object_mut(), overrides.as_object())
+                    {
                         profile.extend(overrides.clone());
                     }
                 }
@@ -212,7 +226,9 @@ fn resolve(value: &mut Value, resolved: &mut impl FnMut(&str) -> Option<Value>) 
             }
         }
         Value::Array(items) => items.iter_mut().for_each(|item| resolve(item, resolved)),
-        Value::Object(fields) => fields.values_mut().for_each(|field| resolve(field, resolved)),
+        Value::Object(fields) => fields
+            .values_mut()
+            .for_each(|field| resolve(field, resolved)),
         _ => {}
     }
 }
@@ -233,9 +249,13 @@ fn in_tree(
         let opened = crate::platform::open_directory(&directory)
             .map_err(|error| ConfigError::new(&directory, error))?;
         let mut entries = Vec::new();
-        for entry in crate::platform::read_dir(&opened).map_err(|error| ConfigError::new(&directory, error))? {
+        for entry in crate::platform::read_dir(&opened)
+            .map_err(|error| ConfigError::new(&directory, error))?
+        {
             let entry = entry.map_err(|error| ConfigError::new(&directory, error))?;
-            let kind = entry.file_type().map_err(|error| ConfigError::new(&directory, error))?;
+            let kind = entry
+                .file_type()
+                .map_err(|error| ConfigError::new(&directory, error))?;
             entries.push((entry.file_name(), kind));
         }
         entries.sort_by(|a, b| a.0.cmp(&b.0));
@@ -249,13 +269,17 @@ fn in_tree(
             } else {
                 relative.join(text_name)
             };
-            if ignored.matched(&path, kind == crate::platform::FileKind::Directory).is_ignore() {
+            if ignored
+                .matched(&path, kind == crate::platform::FileKind::Directory)
+                .is_ignore()
+            {
                 continue;
             }
             if kind == crate::platform::FileKind::Directory {
                 // Another project's folder is its own to migrate.
-                let separate = crate::platform::paths::reusable_directory(&path, discovery::DEFINITION_DIR)
-                    .unwrap_or(false);
+                let separate =
+                    crate::platform::paths::reusable_directory(&path, discovery::DEFINITION_DIR)
+                        .unwrap_or(false);
                 if !SKIPPED.contains(&text_name) && !separate {
                     pending.push((path, logical));
                 }
@@ -264,22 +288,33 @@ fn in_tree(
             if kind != crate::platform::FileKind::File || !text_name.ends_with(".artf") {
                 continue;
             }
-            let text = discovery::read_regular_text(&path).map_err(|error| ConfigError::new(&path, error))?;
+            let text = discovery::read_regular_text(&path)
+                .map_err(|error| ConfigError::new(&path, error))?;
             let mut table = table(&path, &text, profiles)?;
             let name = table
                 .get("name")
                 .and_then(Value::as_str)
-                .ok_or_else(|| ConfigError::new(&path, "An index.artf names its Artifact with `name`."))?
+                .ok_or_else(|| {
+                    ConfigError::new(&path, "An index.artf names its Artifact with `name`.")
+                })?
                 .to_owned();
             let folder = crate::platform::path_text(&relative);
             let (target, whole) = if text_name == ".artf" && relative.as_os_str().is_empty() {
                 (".artifactize/".to_owned(), false)
             } else if text_name == "index.artf" {
-                let target = if folder.is_empty() { "./".to_owned() } else { format!("{folder}/") };
+                let target = if folder.is_empty() {
+                    "./".to_owned()
+                } else {
+                    format!("{folder}/")
+                };
                 (target, table.get("select").is_none())
             } else {
                 let file = text_name.strip_suffix(".artf").expect("an .artf file");
-                let target = if folder.is_empty() { file.to_owned() } else { format!("{folder}/{file}") };
+                let target = if folder.is_empty() {
+                    file.to_owned()
+                } else {
+                    format!("{folder}/{file}")
+                };
                 (target, false)
             };
             if let Some(object) = table.as_object_mut() {
@@ -287,8 +322,13 @@ fn in_tree(
                 object.insert("path".into(), Value::String(target.clone()));
                 // The project folder's content excludes the definitions now kept beside it.
                 if target == "./" && !object.contains_key("fingerprint") {
-                    object.insert("fingerprint".into(), serde_json::json!({"ignore": [".artifactize/"]}));
-                    warnings.push(format!("{name}: its content ignores .artifactize/, where its definitions are now."));
+                    object.insert(
+                        "fingerprint".into(),
+                        serde_json::json!({"ignore": [".artifactize/"]}),
+                    );
+                    warnings.push(format!(
+                        "{name}: its content ignores .artifactize/, where its definitions are now."
+                    ));
                 }
             }
             removed.push(path);
@@ -309,7 +349,8 @@ fn in_tree(
         let owner = folders
             .iter()
             .filter(|(whole, prefix)| {
-                whole != name && (prefix == "./" || (target.starts_with(prefix.as_str()) && target != prefix))
+                whole != name
+                    && (prefix == "./" || (target.starts_with(prefix.as_str()) && target != prefix))
             })
             .max_by_key(|(_, prefix)| if prefix == "./" { 0 } else { prefix.len() });
         if let Some((owner, _)) = owner {
@@ -352,12 +393,23 @@ fn comments(text: &str) -> Vec<String> {
         if open.is_none()
             && let Some(comment) = line.trim_start().strip_prefix('#')
         {
-            found.push(comment.strip_prefix(' ').unwrap_or(comment).trim_end().to_owned());
+            found.push(
+                comment
+                    .strip_prefix(' ')
+                    .unwrap_or(comment)
+                    .trim_end()
+                    .to_owned(),
+            );
             continue;
         }
         for delimiter in ["\"\"\"", "'''"] {
-            if open.is_none_or(|open| open == delimiter) && line.matches(delimiter).count() % 2 == 1 {
-                open = if open.is_some() { None } else { Some(delimiter) };
+            if open.is_none_or(|open| open == delimiter) && line.matches(delimiter).count() % 2 == 1
+            {
+                open = if open.is_some() {
+                    None
+                } else {
+                    Some(delimiter)
+                };
             }
         }
     }
@@ -368,16 +420,21 @@ fn comments(text: &str) -> Vec<String> {
 fn ignore(root: &Path) -> Result<ignore::gitignore::Gitignore, ConfigError> {
     let file = root.join(IGNORE_FILE);
     let mut builder = ignore::gitignore::GitignoreBuilder::new(root);
-    builder.case_insensitive(false).expect("case-sensitive discovery");
+    builder
+        .case_insensitive(false)
+        .expect("case-sensitive discovery");
     if crate::platform::path_kind(&file).is_ok_and(|kind| kind == crate::platform::FileKind::File) {
-        let source = discovery::read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
+        let source =
+            discovery::read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
         for line in source.lines() {
             builder
                 .add_line(Some(file.clone()), line)
                 .map_err(|error| ConfigError::new(&file, error))?;
         }
     }
-    builder.build().map_err(|error| ConfigError::new(&file, error))
+    builder
+        .build()
+        .map_err(|error| ConfigError::new(&file, error))
 }
 
 #[cfg(test)]

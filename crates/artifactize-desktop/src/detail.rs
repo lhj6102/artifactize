@@ -139,7 +139,6 @@ pub struct CardView {
     pub model: Option<String>,
 }
 
-
 /// A result's issues as one entry: each led by its priority or exit code, or `none`.
 pub fn issue_entries(issues: &[artifactize_core::store::Issue]) -> Vec<ResultEntry> {
     let key = "issues".to_owned();

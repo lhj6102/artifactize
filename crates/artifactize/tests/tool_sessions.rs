@@ -190,7 +190,10 @@ fn declarations_reject_unknown_sessions_and_lifecycle_options_with_spans() {
     use artifactize_core::config::parse_declaration;
     let unknown = "tool app = {\n  agent act = command(\n    description = \"act\",\n    command = \"harness\",\n    args = [],\n    protocol = \"json\",\n    session = \"missing\",\n  )\n}\nartf app : app = { path = \"./\", basis = true }\n";
     let error = parse_declaration(unknown).unwrap_err();
-    assert!(error.contains("unknown tool session app.missing"), "{error}");
+    assert!(
+        error.contains("unknown tool session app.missing"),
+        "{error}"
+    );
     assert!(error.contains("line 2"), "{error}");
     let extra = "tool app = {\n  session app = session(\n    start = command(command = \"harness\", args = [], timeout_ms = 1),\n    stop = command(command = \"harness\", args = []),\n  )\n}\nartf app : app = { path = \"./\", basis = true }\n";
     let error = parse_declaration(extra).unwrap_err();

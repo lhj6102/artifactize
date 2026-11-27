@@ -173,7 +173,9 @@ pub fn lex(source: &str) -> Result<Lexed, SyntaxError> {
         match byte {
             b' ' | b'\t' | b'\r' | b'\n' => index += 1,
             b'/' if bytes.get(index + 1) == Some(&b'/') => {
-                index = source[index..].find('\n').map_or(bytes.len(), |end| index + end);
+                index = source[index..]
+                    .find('\n')
+                    .map_or(bytes.len(), |end| index + end);
                 lexed.comments.push(start..index);
             }
             b'"' | b'\'' => {
@@ -368,7 +370,11 @@ fn dedent(source: &str, content: Range<usize>) -> (String, Vec<usize>) {
 
 /// Escapes and slots, read once. A raw string keeps every byte as written.
 fn decode(text: &str, map: &[usize], raw: bool) -> Result<Literal, SyntaxError> {
-    let at = |index: usize| map.get(index).copied().unwrap_or_else(|| map.last().map_or(0, |last| last + 1));
+    let at = |index: usize| {
+        map.get(index)
+            .copied()
+            .unwrap_or_else(|| map.last().map_or(0, |last| last + 1))
+    };
     if raw {
         return Ok(Literal {
             parts: vec![Part::Text(text.to_owned())],
@@ -389,7 +395,12 @@ fn decode(text: &str, map: &[usize], raw: bool) -> Result<Literal, SyntaxError> 
             let close = rest
                 .find('}')
                 .ok_or_else(|| error(at(index), "This `@{` slot has no closing `}`."))?;
-            let slot = slot(&rest[2..close], index + 2, map, at(index)..at(index + close) + 1)?;
+            let slot = slot(
+                &rest[2..close],
+                index + 2,
+                map,
+                at(index)..at(index + close) + 1,
+            )?;
             if !current.is_empty() {
                 parts.push(Part::Text(std::mem::take(&mut current)));
             }
@@ -416,12 +427,16 @@ fn decode(text: &str, map: &[usize], raw: bool) -> Result<Literal, SyntaxError> 
             'r' => current.push('\r'),
             't' => current.push('\t'),
             'u' => {
-                let hex: String = (0..4).filter_map(|_| chars.next().map(|(_, c)| c)).collect();
+                let hex: String = (0..4)
+                    .filter_map(|_| chars.next().map(|(_, c)| c))
+                    .collect();
                 let value = u32::from_str_radix(&hex, 16)
                     .ok()
                     .filter(|_| hex.len() == 4)
                     .and_then(char::from_u32)
-                    .ok_or_else(|| error(at(index), "`\\u` takes four hex digits of a character."))?;
+                    .ok_or_else(|| {
+                        error(at(index), "`\\u` takes four hex digits of a character.")
+                    })?;
                 current.push(value);
             }
             '\n' => {
@@ -477,7 +492,10 @@ fn slot(
         words.push((rest.to_owned(), at(start)..at(start) + rest.len()));
     }
     let Some((kind, kind_span)) = words.first().cloned() else {
-        return Err(error(span.start, "An empty `@{}` slot; write `@{artf NAME}`, `@{path NAME}`, `@{param NAME}` or `@{tool NAME AUDIENCE TOOL}`, or `@@{` for a literal `@{`."));
+        return Err(error(
+            span.start,
+            "An empty `@{}` slot; write `@{artf NAME}`, `@{path NAME}`, `@{param NAME}` or `@{tool NAME AUDIENCE TOOL}`, or `@@{` for a literal `@{`.",
+        ));
     };
     let kind = match kind.as_str() {
         "artf" => SlotKind::Artf,
@@ -487,7 +505,9 @@ fn slot(
         other => {
             return Err(error(
                 kind_span.start,
-                format!("Unknown slot kind `{other}`: a slot is `@{{artf …}}`, `@{{path …}}`, `@{{param …}}` or `@{{tool …}}`; write `@@{{` for a literal `@{{`."),
+                format!(
+                    "Unknown slot kind `{other}`: a slot is `@{{artf …}}`, `@{{path …}}`, `@{{param …}}` or `@{{tool …}}`; write `@@{{` for a literal `@{{`."
+                ),
             ));
         }
     };

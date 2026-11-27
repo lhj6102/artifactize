@@ -20,7 +20,11 @@ fn read_back(converted: &Converted) -> crate::config::RepoConfig {
         std::fs::write(root.path().join(".artifactize").join(file), text).unwrap();
     }
     let config = crate::config::read_workspace_config(root.path());
-    let files: Vec<_> = converted.files.iter().map(|(_, text)| text.as_str()).collect();
+    let files: Vec<_> = converted
+        .files
+        .iter()
+        .map(|(_, text)| text.as_str())
+        .collect();
     config.unwrap_or_else(|error| panic!("{error}\n\n{}", files.join("\n---\n")))
 }
 
@@ -95,12 +99,20 @@ fn old_declarations_read_back_as_the_same_project() {
     let spec = &config.artifacts[&name("spec")];
     assert_eq!(spec.toolsets, ["markdown"]);
     assert_eq!(config.profiles.len(), 1, "one profile, shared");
-    let review = config.evals.iter().find(|eval| eval.id.as_str() == "app/review").unwrap();
+    let review = config
+        .evals
+        .iter()
+        .find(|eval| eval.id.as_str() == "app/review")
+        .unwrap();
     assert_eq!(
         review.declaration.instruction(),
         Some("Compare app with spec; keep {not a name} and @{ as text.")
     );
-    let tests = config.evals.iter().find(|eval| eval.id.as_str() == "app/e1-tests").unwrap();
+    let tests = config
+        .evals
+        .iter()
+        .find(|eval| eval.id.as_str() == "app/e1-tests")
+        .unwrap();
     assert_eq!(tests.declaration.inputs(), [name("spec")]);
     let warnings = converted.warnings.join("\n");
     assert!(warnings.contains("app/1-tests"), "{warnings}");
@@ -132,11 +144,22 @@ fn identical_tools_are_one_shared_toolset_and_variants_named_profiles() {
         &BTreeSet::new(),
     )
     .unwrap();
-    let names: Vec<_> = converted.files.iter().map(|(file, _)| file.clone()).collect();
-    assert_eq!(names, ["a.artf", "b.artf", "tools.artf", "profiles.artf"].map(PathBuf::from));
+    let names: Vec<_> = converted
+        .files
+        .iter()
+        .map(|(file, _)| file.clone())
+        .collect();
+    assert_eq!(
+        names,
+        ["a.artf", "b.artf", "tools.artf", "profiles.artf"].map(PathBuf::from)
+    );
     let config = read_back(&converted);
     assert_eq!(config.artifacts[&name("b")].toolsets, ["a"]);
-    let profiles: Vec<_> = config.profiles.keys().map(|name| name.as_str().to_owned()).collect();
+    let profiles: Vec<_> = config
+        .profiles
+        .keys()
+        .map(|name| name.as_str().to_owned())
+        .collect();
     // An unnamed profile is named after its backend.
     assert_eq!(profiles, ["codex", "fast"]);
 }
@@ -144,10 +167,7 @@ fn identical_tools_are_one_shared_toolset_and_variants_named_profiles() {
 #[test]
 fn old_references_are_bare_names_outside_escapes_quotes_and_nesting() {
     let source = r#"{first} {first}/file {a-b_9} \{escaped} \{also\} {after} {{doubled}} ${variable} { "key": "{json}" } {nested {ignored}} {'}'} {`}`} {"\\\"}"} {last} {unfinished {hidden}"#;
-    assert_eq!(
-        references(source),
-        ["first", "a-b_9", "after", "last"]
-    );
+    assert_eq!(references(source), ["first", "a-b_9", "after", "last"]);
     assert_eq!(
         references(r"\{no} \\{yes} \\\{no} \\\\{again}"),
         ["yes", "again"]

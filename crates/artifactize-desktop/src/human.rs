@@ -6,15 +6,15 @@
 //! errors are the terminal's.
 pub(crate) mod draft;
 mod draft_queue;
-mod verdict;
 mod jobs;
 pub(crate) mod log;
 pub(crate) mod search;
 mod searches;
+mod verdict;
 
-pub use verdict::Verdict;
 use jobs::{Action, Jobs};
 pub(crate) use jobs::{Caller, Lease};
+pub use verdict::Verdict;
 
 use crate::ids::{JobId, RequestKey};
 use crate::{
@@ -789,7 +789,6 @@ async fn guard(
     }
 }
 
-
 /// Submit `verdict` with `issues` for request `id` and publish it like `request submit`: GREEN
 /// with none, RED with at least one, or it fails as `invalid` and the request keeps waiting.
 #[tauri::command]
@@ -809,8 +808,8 @@ pub async fn human_submit(
         .await?;
     let owner = &turn.owners[0];
     let request = guard(&app, owner, review::review_refusal).await?;
-    let result =
-        artifactize_core::human::Submission::new(verdict.into(), issues).map_err(Failure::Invalid)?;
+    let result = artifactize_core::human::Submission::new(verdict.into(), issues)
+        .map_err(Failure::Invalid)?;
     submit(
         &app,
         work,

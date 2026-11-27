@@ -15,7 +15,10 @@ profile fast = agent(backend = "openai", model = "m")
 eval! style() : fast = { title = "S", instruction = "I" }
 "#,
     );
-    let kinds: Vec<_> = parsed.iter().map(|item| (item.kind, item.params.is_some())).collect();
+    let kinds: Vec<_> = parsed
+        .iter()
+        .map(|item| (item.kind, item.params.is_some()))
+        .collect();
     assert_eq!(
         kinds,
         [

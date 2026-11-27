@@ -11,7 +11,10 @@ pub(super) fn candidate(text: &str) -> Option<Candidate> {
     }
     let mut value: serde_json::Value = serde_json::from_str(text).ok()?;
     // Conversations saved before the envelope moved to the root wrap it in `result`.
-    if value.get("verdict").is_none() && value.get("issues").is_none() && value.get("findings").is_none() {
+    if value.get("verdict").is_none()
+        && value.get("issues").is_none()
+        && value.get("findings").is_none()
+    {
         if value.as_object()?.len() != 1 {
             return None;
         }

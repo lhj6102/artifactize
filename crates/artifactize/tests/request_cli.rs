@@ -271,7 +271,14 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
     assert_eq!(show["claim"]["reviewer"], "alice");
     for args in [
         vec!["request", "claim", id, "--reviewer", "bob"],
-        vec!["request", "tool", id, "child_inspect_child", "--reviewer", "bob"],
+        vec![
+            "request",
+            "tool",
+            id,
+            "child_inspect_child",
+            "--reviewer",
+            "bob",
+        ],
         vec![
             "request",
             "submit",
@@ -305,9 +312,15 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
     assert!(String::from_utf8_lossy(&launch.stdout).contains("launched"));
     // GREEN takes no issue and RED needs one; a refusal never echoes the review.
     for (args, expected) in [
-        (&["--verdict", "GREEN", "--issue", "Needs work"][..], "GREEN takes no issues"),
+        (
+            &["--verdict", "GREEN", "--issue", "Needs work"][..],
+            "GREEN takes no issues",
+        ),
         (&["--verdict", "RED"][..], "RED needs at least one issue"),
-        (&["--verdict", "RED", "--issue", " "][..], "An issue needs text"),
+        (
+            &["--verdict", "RED", "--issue", " "][..],
+            "An issue needs text",
+        ),
     ] {
         let error = fixture.json(&[&["request", "submit", id][..], args].concat(), 2);
         let message = error["error"].as_str().unwrap();
@@ -321,7 +334,10 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
     let issues = fixture.root.path().join("issues.json");
     for (contents, expected) in [
         (" ".repeat(ISSUES_BYTES + 1), "exceed"),
-        (r#"{"issues":[]}"#.to_owned(), "Issues must be a JSON array of strings."),
+        (
+            r#"{"issues":[]}"#.to_owned(),
+            "Issues must be a JSON array of strings.",
+        ),
     ] {
         fs::write(support::declaration::source_path(&issues), contents).unwrap();
         let error = fixture.json(
@@ -563,16 +579,7 @@ fn submission_leaves_human_claim_and_submission_available() {
     let waiting = fixture.waiting();
     let id = waiting["id"].as_str().unwrap();
     fixture.json(&["request", "claim", id], 0);
-    fixture.json(
-        &[
-            "request",
-            "submit",
-            id,
-            "--verdict",
-            "GREEN",
-        ],
-        0,
-    );
+    fixture.json(&["request", "submit", id, "--verdict", "GREEN"], 0);
     assert_eq!(fixture.json(&["request", "show", id], 0)["status"], "GREEN");
     for args in [
         vec!["verify", "--all", "--timeout-ms", "0"],
@@ -633,16 +640,7 @@ fn wait_observes_red_and_fingerprint_errors_and_explicit_cancellation_stops_clea
         "changed\n",
     )
     .unwrap();
-    fixture.json(
-        &[
-            "request",
-            "submit",
-            id,
-            "--verdict",
-            "GREEN",
-        ],
-        2,
-    );
+    fixture.json(&["request", "submit", id, "--verdict", "GREEN"], 2);
     let run = finish(child, 2);
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(run["status"], "ERROR");

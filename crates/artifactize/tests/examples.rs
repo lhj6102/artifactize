@@ -363,7 +363,10 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
     let unrelated = session.json(&copy, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(unrelated["executionsStarted"], 0);
     assert_eq!(executions(&unrelated), executions(&first));
-    append(&copy.join(".artifactize/posts.artf"), "\n// Definition-only comment.\n");
+    append(
+        &copy.join(".artifactize/posts.artf"),
+        "\n// Definition-only comment.\n",
+    );
     let comment = session.json(&copy, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(comment["executionsStarted"], 0);
 
@@ -563,9 +566,7 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     let provider = support::FakeProvider::start(|request| {
         support::openai::completed(
             request,
-            vec![support::openai::message(
-                &json!({"issues":[]}).to_string(),
-            )],
+            vec![support::openai::message(&json!({"issues":[]}).to_string())],
             support::openai::usage(1, 1),
         )
     });
@@ -604,7 +605,11 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     );
     let notes = session.output(
         &repo,
-        &[&["request", "tool", request, "review_notes_spec"][..], &reviewer].concat(),
+        &[
+            &["request", "tool", request, "review_notes_spec"][..],
+            &reviewer,
+        ]
+        .concat(),
         0,
     );
     assert!(String::from_utf8_lossy(&notes.stdout).contains("## Open questions"));

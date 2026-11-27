@@ -1,8 +1,8 @@
 //! Parse and route request commands.
 
 mod actions;
-mod issues;
 mod inspect;
+mod issues;
 
 use std::path::Path;
 

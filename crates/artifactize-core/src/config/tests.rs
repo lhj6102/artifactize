@@ -31,7 +31,9 @@ impl Project {
     }
 
     fn error(&self) -> String {
-        read_workspace_config(self.0.path()).unwrap_err().to_string()
+        read_workspace_config(self.0.path())
+            .unwrap_err()
+            .to_string()
     }
 }
 
@@ -88,40 +90,72 @@ artf cli = crate!(
     assert_eq!(core.path.local(), Some(std::path::Path::new("crates/core")));
     assert_eq!(core.toolsets, ["files", "cargo"]);
     let binding = core.binding.as_ref().unwrap();
-    assert_eq!((binding.line, binding.macro_name.as_deref()), (1, Some("crate!")));
-    let eval = |id: &str| config.evals.iter().find(|eval| eval.id.as_str() == id).unwrap();
+    assert_eq!(
+        (binding.line, binding.macro_name.as_deref()),
+        (1, Some("crate!"))
+    );
+    let eval = |id: &str| {
+        config
+            .evals
+            .iter()
+            .find(|eval| eval.id.as_str() == id)
+            .unwrap()
+    };
     assert_eq!(
         eval("core/style").declaration.instruction(),
         Some("Check core against rules.")
     );
-    assert_eq!(eval("cli/docs").declaration.instruction(), Some("Read cli."));
+    assert_eq!(
+        eval("cli/docs").declaration.instruction(),
+        Some("Read cli.")
+    );
     // `self` in a shared toolset is the Artifact composing it.
-    let crate::config::AgentTool::Command(test) =
-        &config.artifacts[&name("cli")].views.agent_tools[&"cargo.test".parse::<ToolFqn>().unwrap()]
+    let crate::config::AgentTool::Command(test) = &config.artifacts[&name("cli")].views.agent_tools
+        [&"cargo.test".parse::<ToolFqn>().unwrap()]
     else {
         panic!("a command tool");
     };
-    assert_eq!(test.args[1].to_string(), "--manifest-path=@{path cli/Cargo.toml}");
+    assert_eq!(
+        test.args[1].to_string(),
+        "--manifest-path=@{path cli/Cargo.toml}"
+    );
     assert_eq!(config.profiles.len(), 1);
-    assert!(config.evals.iter().all(|eval| eval.id.as_str() != "core/docs"));
+    assert!(
+        config
+            .evals
+            .iter()
+            .all(|eval| eval.id.as_str() != "core/docs")
+    );
 }
 
 #[test]
 fn errors_name_the_line_and_the_macro_call_that_made_it() {
     let project = Project::new(&[
         ("shared.artf", SHARED),
-        ("crates.artf", "artf core = crate!(dir = \"core\", extra_evals = { eval x : human = { title = \"X\" } })\n"),
+        (
+            "crates.artf",
+            "artf core = crate!(dir = \"core\", extra_evals = { eval x : human = { title = \"X\" } })\n",
+        ),
     ]);
     let error = project.error();
     assert!(error.contains("crates.artf"), "{error}");
     assert!(error.contains("Eval `x` needs an `instruction`"), "{error}");
     let project = Project::new(&[
         ("shared.artf", SHARED),
-        ("crates.artf", "artf core = crate!(dir = \"core\", colour = \"red\")\n"),
+        (
+            "crates.artf",
+            "artf core = crate!(dir = \"core\", colour = \"red\")\n",
+        ),
     ]);
     let error = project.error();
-    assert!(error.contains("line 1") && error.contains("colour"), "{error}");
-    assert!(error.contains("note:") && error.contains("shared.artf"), "{error}");
+    assert!(
+        error.contains("line 1") && error.contains("colour"),
+        "{error}"
+    );
+    assert!(
+        error.contains("note:") && error.contains("shared.artf"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -130,13 +164,20 @@ fn names_are_unique_ignoring_case_and_macros_do_not_recurse() {
         ("a.artf", "artf app = { path = \"docs/\" }\n"),
         ("b.artf", "artf App = { path = \"rules/\" }\n"),
     ]);
-    assert!(project.error().contains("differ ignoring case"), "{}", project.error());
+    assert!(
+        project.error().contains("differ ignoring case"),
+        "{}",
+        project.error()
+    );
     let project = Project::new(&[
         ("a.artf", "artf app = { path = \"docs/\" }\n"),
         ("b.artf", "artf app = { path = \"rules/\" }\n"),
     ]);
     let error = project.error();
-    assert!(error.contains("note:") && error.contains("a.artf"), "{error}");
+    assert!(
+        error.contains("note:") && error.contains("a.artf"),
+        "{error}"
+    );
     let project = Project::new(&[(
         "loop.artf",
         "eval! a() : human = { title = \"A\", instruction = \"A\" }\nartf! x() = { path = \"docs/\", eval one = x!() }\nartf y = x!()\n",
@@ -152,8 +193,15 @@ fn names_are_unique_ignoring_case_and_macros_do_not_recurse() {
 
 #[test]
 fn toml_definitions_ask_for_migration() {
-    let project = Project::new(&[("app.artf", "path = \"docs/\"\n[evals.check]\ntitle = \"Check\"\n")]);
-    assert!(project.error().contains("run artifactize config migrate"), "{}", project.error());
+    let project = Project::new(&[(
+        "app.artf",
+        "path = \"docs/\"\n[evals.check]\ntitle = \"Check\"\n",
+    )]);
+    assert!(
+        project.error().contains("run artifactize config migrate"),
+        "{}",
+        project.error()
+    );
 }
 
 #[test]
@@ -165,15 +213,28 @@ fn identical_tools_merge_and_different_ones_with_one_name_conflict() {
 "#;
     let project = Project::new(&[(
         "app.artf",
-        &format!("{service}artf app : svc!(port = \"1\") & svc!(port = \"1\") = {{ path = \"docs/\" }}\n"),
+        &format!(
+            "{service}artf app : svc!(port = \"1\") & svc!(port = \"1\") = {{ path = \"docs/\" }}\n"
+        ),
     )]);
-    assert_eq!(project.read().artifacts[&name("app")].views.agent_tools.len(), 1);
+    assert_eq!(
+        project.read().artifacts[&name("app")]
+            .views
+            .agent_tools
+            .len(),
+        1
+    );
     let project = Project::new(&[(
         "app.artf",
-        &format!("{service}artf app : svc!(port = \"1\") & svc!(port = \"2\") = {{ path = \"docs/\" }}\n"),
+        &format!(
+            "{service}artf app : svc!(port = \"1\") & svc!(port = \"2\") = {{ path = \"docs/\" }}\n"
+        ),
     )]);
     let error = project.error();
-    assert!(error.contains("both named `svc.ping`") && error.contains("note:"), "{error}");
+    assert!(
+        error.contains("both named `svc.ping`") && error.contains("note:"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -200,7 +261,13 @@ artf app : files = {
 "#,
     )]);
     let config = project.read();
-    let eval = |id: &str| config.evals.iter().find(|eval| eval.id.as_str() == id).unwrap();
+    let eval = |id: &str| {
+        config
+            .evals
+            .iter()
+            .find(|eval| eval.id.as_str() == id)
+            .unwrap()
+    };
     assert_eq!(
         eval("app/agent").declaration.instruction(),
         Some("Use files_read_app on rules/style.md.")
@@ -222,13 +289,20 @@ artf app : files = {
             ),
         );
         let error = project.error();
-        assert!(error.contains(expected) && error.contains("line 4"), "{error}");
+        assert!(
+            error.contains(expected) && error.contains("line 4"),
+            "{error}"
+        );
     }
     project.write(
         "app.artf",
         "artf app = {\n  path = \"docs/\"\n  eval check : runtime(command = \"true\", args = []) = { title = \"C\", instruction = \"About @{artf app}.\" }\n}\n",
     );
-    assert!(project.error().contains("names no Artifact"), "{}", project.error());
+    assert!(
+        project.error().contains("names no Artifact"),
+        "{}",
+        project.error()
+    );
 }
 
 #[test]
@@ -237,14 +311,23 @@ fn an_agent_eval_names_a_declared_profile() {
         "app.artf",
         "artf app = {\n  path = \"docs/\"\n  eval agent : agent(backend = \"openai\", model = \"m\") = { title = \"A\", instruction = \"A\" }\n}\n",
     )]);
-    assert!(project.error().contains("declare `profile NAME = agent(…)`"), "{}", project.error());
+    assert!(
+        project
+            .error()
+            .contains("declare `profile NAME = agent(…)`"),
+        "{}",
+        project.error()
+    );
 }
 
 #[test]
 fn meta_artifacts_under_definitions_default_to_a_semantic_fingerprint() {
     let project = Project::new(&[
         ("design/app.artf", "artf app = { path = \"docs/\" }\n"),
-        ("graph.artf", "artf design : artifactize = { path = \".artifactize/design/\" }\n"),
+        (
+            "graph.artf",
+            "artf design : artifactize = { path = \".artifactize/design/\" }\n",
+        ),
     ]);
     let config = project.read();
     assert!(matches!(
@@ -253,12 +336,18 @@ fn meta_artifacts_under_definitions_default_to_a_semantic_fingerprint() {
     ));
     // Comments and layout change no meaning; a changed field does.
     let fingerprint = || {
-        crate::graph_structure::read_scoped(project.0.path(), &project.read().artifacts[&name("design")])
-            .unwrap()
-            .fingerprint()
+        crate::graph_structure::read_scoped(
+            project.0.path(),
+            &project.read().artifacts[&name("design")],
+        )
+        .unwrap()
+        .fingerprint()
     };
     let before = fingerprint();
-    project.write("design/app.artf", "// The app's docs.\nartf app = {\n  path = \"docs/\"\n}\n");
+    project.write(
+        "design/app.artf",
+        "// The app's docs.\nartf app = {\n  path = \"docs/\"\n}\n",
+    );
     assert_eq!(fingerprint(), before);
     project.write("design/app.artf", "artf app = { path = \"rules/\" }\n");
     assert_ne!(fingerprint(), before);
@@ -268,7 +357,10 @@ fn meta_artifacts_under_definitions_default_to_a_semantic_fingerprint() {
 fn expand_shows_the_binding_as_written_and_the_declaration_it_makes() {
     let project = Project::new(&[
         ("shared.artf", SHARED),
-        ("crates.artf", "// The core crate.\nartf core = crate!(dir = \"core\")\n"),
+        (
+            "crates.artf",
+            "// The core crate.\nartf core = crate!(dir = \"core\")\n",
+        ),
     ]);
     let [core] = expand::expand(project.0.path(), Some(&name("core")))
         .unwrap()
@@ -282,10 +374,15 @@ fn expand_shows_the_binding_as_written_and_the_declaration_it_makes() {
         "{}",
         core.expanded
     );
-    assert!(core.expanded.contains("eval style : reviewer = {"), "{}", core.expanded);
+    assert!(
+        core.expanded.contains("eval style : reviewer = {"),
+        "{}",
+        core.expanded
+    );
     // An argument's path slot reads as the slot it is, not as escaped text.
     assert!(
-        core.expanded.contains("\"--manifest-path=@{path core/Cargo.toml}\""),
+        core.expanded
+            .contains("\"--manifest-path=@{path core/Cargo.toml}\""),
         "{}",
         core.expanded
     );

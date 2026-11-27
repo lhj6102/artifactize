@@ -299,8 +299,7 @@ where
 }
 
 #[tokio::test]
-async fn a_review_runs_its_tools_in_artifactize_and_returns_the_issues_with_the_derived_verdict()
-{
+async fn a_review_runs_its_tools_in_artifactize_and_returns_the_issues_with_the_derived_verdict() {
     let outcome = review(limits(None), |mut claude| async move {
         assert_eq!(claude.start(VERSION).await, ["a_read_a"]);
         assert!(claude.prompt().await.starts_with("Review a."));
