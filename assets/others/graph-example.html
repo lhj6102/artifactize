@@ -98,6 +98,8 @@
   .tree svg { width: 30px; height: 30px; flex: none; }
   /* What the listings leave out, under the tree. */
   .tree .excerpt { margin: 2px 16px 0 26px; color: var(--dim); font: 400 14px/18px var(--sans); }
+  /* Korean breaks between words, never inside one. */
+  :lang(ko) .tree .excerpt { word-break: keep-all; }
   /* The files the definitions name, two to a row. */
   .tree li.source { display: inline-flex; width: 50%; }
   .tree li.source > span { font-size: 18px; gap: 10px; }
@@ -228,6 +230,7 @@
               <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>design.artf</span><code>artf design : markdown</code><code>path=&quot;SPEC.md&quot;</code><code>eval solves : reviewer</code><code>instruction=&quot;…@{artf problem}&quot;</code></li>
               <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>code.artf</span><code>artf code : files</code><code>path=&quot;code/&quot;</code><code>eval covers : reviewer</code><code>instruction=&quot;…@{artf design}&quot;</code><code>eval tests : runtime(</code><code>command=&quot;npm&quot;, args=[&quot;test&quot;])</code><code>eval rules : reviewer</code></li>
               <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>docs.artf</span><code>artf docs : files</code><code>path=&quot;docs/&quot;</code><code>eval usage : reviewer</code><code>instruction=&quot;…@{artf code}&quot;</code><code>eval readable : reviewer</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>profiles.artfprofiles</span><code>profile reviewer : agent</code><code>model=&quot;…&quot;</code></li>
             </ul>
           </li>
           <li class="source"><span><svg class="file"><use href="#i-file"/></svg>PROBLEM.md</span></li><li class="source"><span><svg class="file"><use href="#i-file"/></svg>SPEC.md</span></li>
@@ -328,7 +331,7 @@
       legendAgent: "AI agent review",
       legendHuman: "Person's review",
       legendSelf: "Reads only its own Artifact",
-      excerpt: "In brief: blocks, titles and full instructions omitted. AI checks name a profile declared in profiles.artfprofiles.",
+      excerpt: "In brief: blocks, titles and full instructions omitted. reviewer, in profiles.artfprofiles, is a profile: which AI model runs a check.",
     },
     ko: {
       repository: "프로젝트 파일",
@@ -350,7 +353,7 @@
       legendAgent: "AI 에이전트 검토",
       legendHuman: "사람이 검토",
       legendSelf: "자기 Artifact만 읽는 평가",
-      excerpt: "발췌라서 블록, 평가 제목, 지시 전문은 뺐습니다. AI 평가는 profiles.artfprofiles에 선언한 profile 이름을 씁니다.",
+      excerpt: "발췌라서 블록, 평가 제목, 지시 전문은 뺐습니다. profiles.artfprofiles의 reviewer는 AI 평가를 어떤 모델로 돌릴지 정하는 profile입니다.",
     },
     zh: {
       repository: "项目文件",
@@ -372,7 +375,7 @@
       legendAgent: "AI 智能体审查",
       legendHuman: "人工审查",
       legendSelf: "只读取自身 Artifact 的评估",
-      excerpt: "节选省略了代码块、每项检查的标题和完整指令。AI 检查使用在 profiles.artfprofiles 中声明的配置名。",
+      excerpt: "节选省略了代码块、每项检查的标题和完整指令。profiles.artfprofiles 中的 reviewer 是一个配置（profile），规定 AI 检查用哪个模型运行。",
     },
   };
 
