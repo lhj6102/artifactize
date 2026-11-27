@@ -60,7 +60,7 @@ fn antigravity_id() -> AgentId {
 /// Probe Antigravity in an empty private tempdir without authenticating or sending a prompt.
 pub async fn status() -> Status {
     let spec = antigravity_spec();
-    match probe_spec(&spec, true).await {
+    match probe_spec(&spec, None, true).await {
         AgentAvailability::Ready {
             executable,
             version,
@@ -121,7 +121,7 @@ pub async fn status() -> Status {
 
 pub async fn models() -> Result<Vec<ListedModel>, String> {
     let spec = antigravity_spec();
-    match probe_spec(&spec, true).await {
+    match probe_spec(&spec, None, true).await {
         AgentAvailability::Ready { models, .. } => Ok(models),
         AgentAvailability::Missing { reason } => Err(reason),
         AgentAvailability::NotSetUp { reason, .. } => Err(format!(

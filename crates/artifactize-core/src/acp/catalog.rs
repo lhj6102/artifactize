@@ -759,10 +759,16 @@ pub async fn probe_agent(
             };
         }
     };
-    probe_spec(&spec, force_refresh).await
+    probe_spec(&spec, repo, force_refresh).await
 }
 
-pub async fn probe_spec(spec: &AgentSpec, force_refresh: bool) -> AgentAvailability {
+/// Probe `spec` as `probe_agent` does. With a `worktree`, a built-in preset whose executable
+/// resolves inside it is refused before anything runs (C-TRUST-BEFORE-WORKTREE).
+pub async fn probe_spec(
+    spec: &AgentSpec,
+    worktree: Option<&Path>,
+    force_refresh: bool,
+) -> AgentAvailability {
     let probe_dir = match platform::private_tempdir_in(
         "artifactize-acp-probe-",
         &platform::temporary_directory(),
@@ -801,6 +807,16 @@ pub async fn probe_spec(spec: &AgentSpec, force_refresh: bool) -> AgentAvailabil
             };
         }
     };
+    if spec.reject_worktree_executable
+        && let Some(worktree) = worktree
+        && let Err(error) = trust::outside_worktree(&resolved, worktree)
+    {
+        return AgentAvailability::Failed {
+            executable: Some(resolved.clone()),
+            version: None,
+            error,
+        };
+    }
     let mtime_secs = std::fs::metadata(&resolved)
         .ok()
         .and_then(|meta| meta.modified().ok())
