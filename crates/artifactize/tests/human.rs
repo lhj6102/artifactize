@@ -373,13 +373,14 @@ fn a_long_open_viewer_cannot_read_a_new_folder_parts_files() {
 }
 
 #[tokio::test]
-async fn a_claimed_review_opens_by_its_exact_reference_outside_the_default_search() {
+async fn a_claimed_review_stays_waiting_and_opens_by_its_exact_reference_outside_another_search() {
     use artifactize_core::review::{Target, search};
     let fixture = Fixture::new(false);
     let run = fixture.verify(returning()).await;
     let id = &run.requests[0].id;
     let alice = "alice".parse().unwrap();
-    let query = "type:human waiting".parse().unwrap();
+    let waiting = "type:human waiting".parse().unwrap();
+    let query = "type:human is:unclaimed".parse().unwrap();
     let page = search::search(&fixture.state, &query, &alice, 0)
         .await
         .unwrap();
@@ -391,6 +392,12 @@ async fn a_claimed_review_opens_by_its_exact_reference_outside_the_default_searc
     assert!(!before.outside_filter());
     let receipts = fixture.receipts().await;
     human::claim(&receipts, id, &alice).await.unwrap();
+    // A claimed review still waits for a person, its claimant: the default search keeps it.
+    let page = search::search(&fixture.state, &waiting, &alice, 0)
+        .await
+        .unwrap();
+    assert_eq!(page.requests.len(), 1);
+    assert_eq!(&page.requests[0].0.request.id, id);
     assert!(
         search::search(&fixture.state, &query, &alice, 0)
             .await

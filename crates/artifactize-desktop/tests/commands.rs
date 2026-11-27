@@ -569,14 +569,22 @@ fn verify_browse_and_review_search_are_independent() {
     assert_eq!(review["eval"], "release/signoff");
     let id = review["id"].as_str().unwrap();
     invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    // A claimed review still waits for a person, its claimant: it stays counted and listed.
     assert_eq!(
         invoke(&window, "human_waiting_count", json!({})).unwrap(),
-        0
+        1
     );
-    let exact = invoke(
+    let listed = invoke(
         &window,
         "human_open_reference",
         json!({"id": id, "query": "type:human waiting"}),
+    )
+    .unwrap();
+    assert_eq!(listed["outsideFilter"], false);
+    let exact = invoke(
+        &window,
+        "human_open_reference",
+        json!({"id": id, "query": "type:human is:unclaimed"}),
     )
     .unwrap();
     assert_eq!(exact["view"]["id"], id);
