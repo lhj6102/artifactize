@@ -32,6 +32,8 @@ pub enum Kind {
     Bang,
     Dot,
     Spread,
+    /// `=>`, between a `match` arm's label and its value.
+    Arrow,
 }
 
 impl Kind {
@@ -54,6 +56,7 @@ impl Kind {
             Self::Bang => "`!`".into(),
             Self::Dot => "`.`".into(),
             Self::Spread => "`...`".into(),
+            Self::Arrow => "`=>`".into(),
         }
     }
 }
@@ -96,7 +99,6 @@ pub enum SlotKind {
     Artf,
     Path,
     Param,
-    Tool,
 }
 
 impl SlotKind {
@@ -105,14 +107,6 @@ impl SlotKind {
             Self::Artf => "artf",
             Self::Path => "path",
             Self::Param => "param",
-            Self::Tool => "tool",
-        }
-    }
-
-    fn arity(self) -> usize {
-        match self {
-            Self::Tool => 3,
-            Self::Artf | Self::Path | Self::Param => 1,
         }
     }
 }
@@ -153,6 +147,7 @@ pub fn lex(source: &str) -> Result<Lexed, SyntaxError> {
             b')' => single(Kind::RParen),
             b'[' => single(Kind::LBracket),
             b']' => single(Kind::RBracket),
+            b'=' if bytes.get(index + 1) == Some(&b'>') => Some((Kind::Arrow, 2)),
             b'=' => single(Kind::Eq),
             b',' => single(Kind::Comma),
             b':' => single(Kind::Colon),
@@ -494,31 +489,37 @@ fn slot(
     let Some((kind, kind_span)) = words.first().cloned() else {
         return Err(error(
             span.start,
-            "An empty `@{}` slot; write `@{artf NAME}`, `@{path NAME}`, `@{param NAME}` or `@{tool NAME AUDIENCE TOOL}`, or `@@{` for a literal `@{`.",
+            "An empty `@{}` slot; write `@{artf NAME}`, `@{path NAME}` or `@{param NAME}`, or `@@{` for a literal `@{`.",
         ));
     };
     let kind = match kind.as_str() {
         "artf" => SlotKind::Artf,
         "path" => SlotKind::Path,
         "param" => SlotKind::Param,
-        "tool" => SlotKind::Tool,
+        "tool" => {
+            return Err(error(
+                kind_span.start,
+                "There is no tool slot: composing a toolset gives an eval its tools, and `@{artf NAME}` names an Artifact whose tools it reads.",
+            ));
+        }
         other => {
             return Err(error(
                 kind_span.start,
                 format!(
-                    "Unknown slot kind `{other}`: a slot is `@{{artf …}}`, `@{{path …}}`, `@{{param …}}` or `@{{tool …}}`; write `@@{{` for a literal `@{{`."
+                    "Unknown slot kind `{other}`: a slot is `@{{artf …}}`, `@{{path …}}` or `@{{param …}}`; write `@@{{` for a literal `@{{`."
                 ),
             ));
         }
     };
     words.remove(0);
-    if words.len() != kind.arity() {
+    if words.len() != 1 {
         return Err(error(
             span.start,
-            match kind {
-                SlotKind::Tool => "A tool slot names an Artifact, an audience and a tool: `@{tool self human html.view}`.".to_owned(),
-                kind => format!("A `{}` slot names one thing: `@{{{} NAME}}`.", kind.name(), kind.name()),
-            },
+            format!(
+                "A `{}` slot names one thing: `@{{{} NAME}}`.",
+                kind.name(),
+                kind.name()
+            ),
         ));
     }
     Ok(Slot { kind, words, span })

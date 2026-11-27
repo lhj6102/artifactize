@@ -90,7 +90,7 @@ fn strings_decode_escapes_and_keep_braces_literal() {
 
 #[test]
 fn slots_are_typed_with_spans_and_double_at_escapes_them() {
-    let source = r#""Read @{artf rules} at @{path self/src/x.rs} via @{tool self human html.view}, not @@{artf x}.""#;
+    let source = r#""Read @{artf rules} at @{path self/src/x.rs}, not @@{artf x}.""#;
     let parts = literal(source).parts;
     let Part::Slot(path) = &parts[3] else {
         panic!("{parts:?}");
@@ -98,18 +98,8 @@ fn slots_are_typed_with_spans_and_double_at_escapes_them() {
     assert_eq!(path.kind, SlotKind::Path);
     assert_eq!(&source[path.span.clone()], "@{path self/src/x.rs}");
     assert_eq!(&source[path.words[0].1.clone()], "self/src/x.rs");
-    let Part::Slot(tool) = &parts[5] else {
-        panic!("{parts:?}");
-    };
-    assert_eq!(
-        tool.words
-            .iter()
-            .map(|(word, _)| word.as_str())
-            .collect::<Vec<_>>(),
-        ["self", "human", "html.view"]
-    );
     assert_eq!(parts[0], text("Read "));
-    assert_eq!(parts[6], text(", not @{artf x}."));
+    assert_eq!(parts[4], text(", not @{artf x}."));
     // A file name under an Artifact may hold spaces; the path runs to the closing brace.
     let spaced = r#""@{path self/open me.txt }""#;
     let Part::Slot(path) = &literal(spaced).parts[0] else {
@@ -120,7 +110,7 @@ fn slots_are_typed_with_spans_and_double_at_escapes_them() {
     for bad in [
         r#""@{}""#,
         r#""@{name x}""#,
-        r#""@{tool a b}""#,
+        r#""@{tool self agent files.read}""#,
         r#""@{artf a b}""#,
         r#""@{artf a""#,
         r#""@{path a b}""#,

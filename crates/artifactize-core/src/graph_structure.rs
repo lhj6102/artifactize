@@ -29,8 +29,8 @@ pub struct Artifact {
     pub kind: ArtifactKind,
     /// The target as resolved, so moving it changes what a definitions review saw.
     pub path: String,
-    /// The toolsets it composes and what they resolve to: a shared `tool!` macro's change
-    /// changes every Artifact that composes it.
+    /// The toolsets it composes and what they resolve to: a change to a shared toolset changes
+    /// every Artifact that composes it.
     pub toolsets: Vec<String>,
     pub tools: Views,
     pub basis: Option<bool>,

@@ -598,13 +598,13 @@ fn a_human_review_claims_runs_refuses_what_readiness_refuses_and_submits_green()
 
     let open = invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
     assert_eq!(open["stage"], "claim");
-    assert_eq!(open["tools"][0]["name"], "release_notes_release");
+    assert_eq!(open["tools"][0]["name"], "release-tools_notes_release");
     assert_eq!(open["tools"][0]["action"], "prints release/notes.md");
     // Tools need an explicit claim; opening claimed nothing.
     let refused = invoke(
         &window,
         "human_run",
-        json!({"id": id, "tool": "release_notes_release", "job": 1}),
+        json!({"id": id, "tool": "release-tools_notes_release", "job": 1}),
     )
     .unwrap_err();
     // The library's own refusal, in its words.
@@ -621,11 +621,11 @@ fn a_human_review_claims_runs_refuses_what_readiness_refuses_and_submits_green()
     let ran = invoke(
         &window,
         "human_run",
-        json!({"id": id, "tool": "release_notes_release", "job": 3}),
+        json!({"id": id, "tool": "release-tools_notes_release", "job": 3}),
     )
     .unwrap();
     // What it printed reaches the Tool log as events; the command answers with the notice.
-    assert_eq!(ran["text"], "release_notes_release finished.");
+    assert_eq!(ran["text"], "release-tools_notes_release finished.");
 
     // The library's readiness, in its words: RED needs an issue, GREEN takes none.
     for (verdict, issues, refusal) in [
@@ -737,7 +737,7 @@ payload.instruction = "Review the fixture."
             invoke(
                 first,
                 "human_run",
-                json!({"id": id, "tool": "busy_wait_busy", "job": 2}),
+                json!({"id": id, "tool": "busy-tools_wait_busy", "job": 2}),
             )
         });
         let gate = FinishOnDrop(&release);
@@ -753,7 +753,7 @@ payload.instruction = "Review the fixture."
         let rejected = invoke(
             &other,
             "human_run",
-            json!({"id": id, "tool": "busy_wait_busy", "job": 2}),
+            json!({"id": id, "tool": "busy-tools_wait_busy", "job": 2}),
         )
         .unwrap_err();
         assert_eq!(rejected["kind"], "action");
@@ -2879,8 +2879,8 @@ fn an_artifacts_own_tools_run_in_its_worktree_without_a_review_or_claim() {
         json!({"branch": branch, "artifact": "release"}),
     )
     .unwrap();
-    assert_eq!(tools[0]["name"], "release_notes_release");
-    assert_eq!(tools[0]["operation"], "release.notes");
+    assert_eq!(tools[0]["name"], "release-tools_notes_release");
+    assert_eq!(tools[0]["operation"], "release-tools.notes");
     assert_eq!(tools[0]["action"], "prints release/notes.md");
     // ship declares none of its own.
     assert_eq!(
@@ -2895,12 +2895,12 @@ fn an_artifacts_own_tools_run_in_its_worktree_without_a_review_or_claim() {
     let ran = invoke(
         &window,
         "artifact_tool_run",
-        json!({"branch": branch, "artifact": "release", "tool": "release_notes_release", "job": 1}),
+        json!({"branch": branch, "artifact": "release", "tool": "release-tools_notes_release", "job": 1}),
     )
     .unwrap();
     assert_eq!(
         ran,
-        json!({"text": "release_notes_release finished.", "error": false})
+        json!({"text": "release-tools_notes_release finished.", "error": false})
     );
     // Nobody claimed the waiting review, and nothing was recorded on it.
     let saved = saved(&fixture, "release/signoff");
@@ -2913,12 +2913,12 @@ fn an_artifacts_own_tools_run_in_its_worktree_without_a_review_or_claim() {
     let refused = invoke(
         &window,
         "artifact_tool_run",
-        json!({"branch": branch, "artifact": "ship", "tool": "release_notes_release", "job": 2}),
+        json!({"branch": branch, "artifact": "ship", "tool": "release-tools_notes_release", "job": 2}),
     )
     .unwrap();
     assert_eq!(
         refused,
-        json!({"text": "release_notes_release did not run.", "error": true})
+        json!({"text": "release-tools_notes_release did not run.", "error": true})
     );
 }
 
@@ -2962,12 +2962,11 @@ fn an_artifacts_tools_follow_its_declaration_when_it_moves_or_is_renamed() {
     fs::write(&file, renamed).unwrap();
     let ship = fixture.repo.join(".artifactize/ship.artf");
     let follows = fs::read_to_string(&ship).unwrap();
-    assert!(follows.contains("inputs = [release]"), "{follows}");
-    fs::write(
-        &ship,
-        follows.replace("inputs = [release]", "inputs = [notes]"),
-    )
-    .unwrap();
+    assert!(follows.contains("deps = [release]"), "{follows}");
+    fs::write(&ship, follows.replace("deps = [release]", "deps = [notes]")).unwrap();
     assert_eq!(list("release").unwrap_err()["kind"], "missing");
-    assert_eq!(list("notes").unwrap()[0]["name"], "release_notes_notes");
+    assert_eq!(
+        list("notes").unwrap()[0]["name"],
+        "release-tools_notes_notes"
+    );
 }

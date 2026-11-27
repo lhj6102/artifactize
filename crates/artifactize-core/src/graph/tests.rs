@@ -50,7 +50,6 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                     .map(|(source, _)| source.parse().unwrap())
                     .collect(),
                 declaration: eval,
-                variant: None,
             });
         }
         config.artifacts.insert(

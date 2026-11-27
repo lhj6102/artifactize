@@ -2,9 +2,9 @@ artf waiting = {
   fingerprint = false
   path = "waiting/"
 
+  // Check timeout.
   eval check : runtime(command = "/bin/false", args = []) = {
     title = "Check waiting"
-    instruction = "Check timeout."
-    inputs = [timeout]
+    deps = [timeout]
   }
 }

@@ -346,7 +346,9 @@ fn validate(plugin: &Plugin) -> Result<(), ConfigError> {
         }))
         .flat_map(|plugin| plugin.source_files().collect::<Vec<_>>())
         .collect();
-    let program = super::lang::read(files).map_err(|(sources, error)| sources.error(error))?;
+    // A plugin declares toolsets and macros, never profiles: no environment to read.
+    let program =
+        super::lang::read(files, &|_| None).map_err(|(sources, error)| sources.error(error))?;
     if !program.symbols.iter().any(|symbol| {
         symbol.kind == "tool" && !symbol.is_macro && symbol.name == plugin.info.name.as_str()
     }) {

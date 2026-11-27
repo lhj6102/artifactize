@@ -386,13 +386,13 @@ async fn builtins_expose_only_the_target_and_explicit_references() {
         .list()
         .map(|tool| tool.name.as_str())
         .collect::<Vec<_>>();
-    assert!(names.contains(&"reference_read_reference"));
+    assert!(names.contains(&"reference-tools_read_reference"));
     assert!(!names.iter().any(|name| name.ends_with("_child")));
-    let listing = call(&registry, "file_list_file", json!({}), &fixture.state).await;
+    let listing = call(&registry, "file-tools_list_file", json!({}), &fixture.state).await;
     assert_eq!(
         call(
             &registry,
-            "file_list_file",
+            "file-tools_list_file",
             json!({"path":"."}),
             &fixture.state
         )
@@ -410,7 +410,7 @@ async fn builtins_expose_only_the_target_and_explicit_references() {
     );
     let glob = call(
         &registry,
-        "file_glob_file",
+        "file-tools_glob_file",
         json!({"pattern":"**/*"}),
         &fixture.state,
     )
@@ -418,7 +418,7 @@ async fn builtins_expose_only_the_target_and_explicit_references() {
     assert_eq!(glob["files"], json!(["target.txt"]));
     let grep = call(
         &registry,
-        "file_grep_file",
+        "file-tools_grep_file",
         json!({"pattern":"needle"}),
         &fixture.state,
     )
@@ -427,7 +427,7 @@ async fn builtins_expose_only_the_target_and_explicit_references() {
     assert_eq!(
         call(
             &registry,
-            "file_read_file",
+            "file-tools_read_file",
             json!({"path":"target.txt"}),
             &fixture.state
         )
@@ -437,7 +437,7 @@ async fn builtins_expose_only_the_target_and_explicit_references() {
     assert_eq!(
         call(
             &registry,
-            "reference_read_reference",
+            "reference-tools_read_reference",
             json!({"path":"rules"}),
             &fixture.state
         )
@@ -445,13 +445,16 @@ async fn builtins_expose_only_the_target_and_explicit_references() {
         "rules"
     );
     for (tool, args) in [
-        ("file_read_file", json!({"path":"sibling.txt"})),
-        ("file_read_file", json!({"path":"target.txt.artf"})),
-        ("file_read_file", json!({"path":"child/index.artf"})),
-        ("file_read_file", json!({"path":"../other/input.txt"})),
-        ("file_glob_file", json!({"path":"child","pattern":"**/*"})),
+        ("file-tools_read_file", json!({"path":"sibling.txt"})),
+        ("file-tools_read_file", json!({"path":"target.txt.artf"})),
+        ("file-tools_read_file", json!({"path":"child/index.artf"})),
+        ("file-tools_read_file", json!({"path":"../other/input.txt"})),
         (
-            "file_grep_file",
+            "file-tools_glob_file",
+            json!({"path":"child","pattern":"**/*"}),
+        ),
+        (
+            "file-tools_grep_file",
             json!({"path":"sibling.txt","pattern":"secret"}),
         ),
     ] {
@@ -465,7 +468,7 @@ async fn builtins_expose_only_the_target_and_explicit_references() {
 }
 
 #[test]
-fn argv_and_instruction_references_resolve_to_files_and_reject_file_suffixes() {
+fn argument_references_resolve_to_files_and_reject_file_suffixes() {
     let fixture = Fixture::new();
     fixture.write("files/input.txt", "input");
     fixture.declare(
@@ -490,21 +493,6 @@ fn argv_and_instruction_references_resolve_to_files_and_reject_file_suffixes() {
         fixture.declare("files/input.txt.artf", runtime("file", &args));
         fixture.error("files/input.txt.artf", "cannot have a /path suffix");
     }
-    fixture.declare(
-        "files/input.txt.artf",
-        json!({
-            "name":"file",
-            "evals":[
-                {
-                    "id":"review",
-                    "title":"Review",
-                    "profile":{"kind":"human"},
-                    "payload":{"instruction":"Read {file}/sub."},
-                },
-            ],
-        }),
-    );
-    fixture.error("files/input.txt.artf", "cannot have a /path suffix");
     fixture.declare(
         "files/input.txt.artf",
         json!({"name":"file","fingerprint":{"script":{"command":support::os::echo_program(),"args":["{file}/sub"]}}}),
@@ -537,7 +525,7 @@ fn human_tools_use_containing_folder_and_resolve_only_scoped_paths() {
         artifactize_core::tools::human::Registry::for_artifact(&config, &"file".parse().unwrap())
             .unwrap();
     let command = registry
-        .command(&"file_open_file".parse().unwrap())
+        .command(&"file-tools_open_file".parse().unwrap())
         .unwrap();
     assert_eq!(command.cwd, config.root.join("files"));
     assert_eq!(
@@ -739,8 +727,14 @@ async fn command_tools_run_in_the_containing_folder_and_preserve_file_scope_meta
     );
     let config = fixture.config();
     let registry = Registry::for_artifact(&config, &"file".parse().unwrap()).unwrap();
-    registry.preflight("file_inspect_file").unwrap();
-    let data = call(&registry, "file_inspect_file", json!({}), &fixture.state).await;
+    registry.preflight("file-tools_inspect_file").unwrap();
+    let data = call(
+        &registry,
+        "file-tools_inspect_file",
+        json!({}),
+        &fixture.state,
+    )
+    .await;
     let input = support::os::path_text(&support::os::canonical(
         &config.root.join("files/input.txt"),
     ));
@@ -785,9 +779,9 @@ async fn changed_targets_cannot_be_replaced_by_directories_or_symlinks_after_dis
         .contains("must remain a regular file")
     );
     for (tool, args) in [
-        ("file_read_file", json!({"path":"input.txt"})),
-        ("file_read_file", json!({"path":"input.txt/secret"})),
-        ("file_list_file", json!({})),
+        ("file-tools_read_file", json!({"path":"input.txt"})),
+        ("file-tools_read_file", json!({"path":"input.txt/secret"})),
+        ("file-tools_list_file", json!({})),
     ] {
         assert!(
             registry
@@ -805,7 +799,7 @@ async fn changed_targets_cannot_be_replaced_by_directories_or_symlinks_after_dis
     assert!(
         registry
             .call(
-                "file_read_file",
+                "file-tools_read_file",
                 json!({"path":"input.txt"}),
                 &fixture.state,
                 CancellationToken::new()
@@ -867,10 +861,10 @@ async fn relative_tool_executables_work_on_file_artifacts() {
     );
     let config = fixture.config();
     let registry = Registry::for_artifact(&config, &"file".parse().unwrap()).unwrap();
-    registry.preflight("file_inspect_file").unwrap();
+    registry.preflight("file-tools_inspect_file").unwrap();
     let result = registry
         .call(
-            "file_inspect_file",
+            "file-tools_inspect_file",
             json!({}),
             &fixture.state,
             CancellationToken::new(),
@@ -893,12 +887,13 @@ fn file_target_errors_name_their_definition_line() {
     std::fs::create_dir_all(definition.parent().unwrap()).unwrap();
     std::fs::write(
         &definition,
-        "artf file : files = {\n  path = \"input.txt\"\n  eval review : human = {\n    title = \"Review\"\n    instruction = \"Check @{path file/sub}.\"\n  }\n}\n",
+        "artf file = {\n  path = \"input.txt\"\n  eval check : runtime(\n    command = \"true\",\n    args = [\"@{path file/sub}\"],\n  ) = {\n    title = \"Check\"\n  }\n}\n",
     )
     .unwrap();
+    // The command's arguments are part of the evaluator, which starts on line 3.
     let error = read_workspace_config(&fixture.repo).unwrap_err();
     assert!(
-        error.message.contains("line 5") && error.message.contains("cannot have a /path suffix"),
+        error.message.contains("line 3") && error.message.contains("cannot have a /path suffix"),
         "{error}"
     );
     std::fs::write(
@@ -1160,7 +1155,7 @@ async fn command_and_human_tools_revalidate_file_targets_on_every_call() {
         assert!(
             agent
                 .call(
-                    "file_inspect_file",
+                    "file-tools_inspect_file",
                     json!({}),
                     &fixture.state,
                     CancellationToken::new()
@@ -1171,7 +1166,7 @@ async fn command_and_human_tools_revalidate_file_targets_on_every_call() {
         assert!(
             human
                 .call(
-                    &"file_inspect_file".parse().unwrap(),
+                    &"file-tools_inspect_file".parse().unwrap(),
                     CancellationToken::new()
                 )
                 .await

@@ -41,9 +41,10 @@ fn name(text: &str) -> ArtifactName {
     text.parse().unwrap()
 }
 
-const SHARED: &str = r#"
-profile reviewer = agent(backend = "openai", model = "fixture")
+const PROFILES: &str = r#"profile reviewer : agent = { backend = "openai", model = "fixture" }
+"#;
 
+const SHARED: &str = r#"
 tool cargo = {
   agent test = command(
     protocol = "json",
@@ -54,15 +55,13 @@ tool cargo = {
   )
 }
 
-eval! follows(rule = "rules") : reviewer = {
-  title = "Follows the rules"
-  instruction = "Check @{artf self} against @{artf rules}."
-  red_at = "P1"
-}
-
 artf! crate(dir, extra_evals = {}) : files & cargo = {
   path = "crates/@{param dir}/"
-  eval style = follows!()
+  eval style : reviewer = {
+    title = "Follows the rules"
+    instruction = "Check @{artf self} against @{artf rules}."
+    red_at = "P1"
+  }
   ...extra_evals
 }
 
@@ -72,6 +71,7 @@ artf rules : files = { path = "rules/", basis = true }
 #[test]
 fn macros_expand_with_defaults_spreads_and_a_late_bound_self() {
     let project = Project::new(&[
+        ("profiles.artfprofiles", PROFILES),
         ("shared.artf", SHARED),
         (
             "crates.artf",
@@ -131,6 +131,7 @@ artf cli = crate!(
 #[test]
 fn errors_name_the_line_and_the_macro_call_that_made_it() {
     let project = Project::new(&[
+        ("profiles.artfprofiles", PROFILES),
         ("shared.artf", SHARED),
         (
             "crates.artf",
@@ -141,6 +142,7 @@ fn errors_name_the_line_and_the_macro_call_that_made_it() {
     assert!(error.contains("crates.artf"), "{error}");
     assert!(error.contains("Eval `x` needs an `instruction`"), "{error}");
     let project = Project::new(&[
+        ("profiles.artfprofiles", PROFILES),
         ("shared.artf", SHARED),
         (
             "crates.artf",
@@ -159,7 +161,7 @@ fn errors_name_the_line_and_the_macro_call_that_made_it() {
 }
 
 #[test]
-fn names_are_unique_ignoring_case_and_macros_do_not_recurse() {
+fn a_name_is_declared_once_across_kinds_and_artifacts_differ_ignoring_case() {
     let project = Project::new(&[
         ("a.artf", "artf app = { path = \"docs/\" }\n"),
         ("b.artf", "artf App = { path = \"rules/\" }\n"),
@@ -178,17 +180,26 @@ fn names_are_unique_ignoring_case_and_macros_do_not_recurse() {
         error.contains("note:") && error.contains("a.artf"),
         "{error}"
     );
-    let project = Project::new(&[(
-        "loop.artf",
-        "eval! a() : human = { title = \"A\", instruction = \"A\" }\nartf! x() = { path = \"docs/\", eval one = x!() }\nartf y = x!()\n",
-    )]);
-    assert!(!project.error().is_empty());
-    let project = Project::new(&[(
-        "loop.artf",
-        "profile! p() = p!()\nartf y = {\n  path = \"docs/\"\n  eval e : p!() = { title = \"E\", instruction = \"E\" }\n}\n",
-    )]);
-    let error = project.error();
-    assert!(error.contains("calls itself"), "{error}");
+    // What follows `:` reads unambiguously: a toolset, an Artifact and a profile never share
+    // a name.
+    for (file, text) in [
+        (
+            "b.artf",
+            "tool app = { agent read = builtin(op = \"read\") }\n",
+        ),
+        (
+            "b.artfprofiles",
+            "profile app : agent = { backend = \"openai\", model = \"m\" }\n",
+        ),
+        ("b.artf", "artf! app() = { path = \"rules/\" }\n"),
+    ] {
+        let project = Project::new(&[
+            ("a.artf", "artf app = { path = \"docs/\" }\n"),
+            (file, text),
+        ]);
+        let error = project.error();
+        assert!(error.contains("already declared as"), "{error}");
+    }
 }
 
 #[test]
@@ -206,15 +217,16 @@ fn toml_definitions_ask_for_migration() {
 
 #[test]
 fn identical_tools_merge_and_different_ones_with_one_name_conflict() {
-    let service = r#"tool! svc(port) = {
-  namespace = "svc"
-  agent ping = command(protocol = "json", command = "curl", args = ["localhost:@{param port}"], description = "Ping.", input_schema = { type = "object" })
-}
-"#;
+    let ping = |port: &str| {
+        format!(
+            "agent ping = command(protocol = \"json\", command = \"curl\", args = [\"localhost:{port}\"], description = \"Ping.\", input_schema = {{ type = \"object\" }})"
+        )
+    };
     let project = Project::new(&[(
         "app.artf",
         &format!(
-            "{service}artf app : svc!(port = \"1\") & svc!(port = \"1\") = {{ path = \"docs/\" }}\n"
+            "tool svc = {{\n  {}\n}}\nartf app : svc & svc = {{ path = \"docs/\" }}\n",
+            ping("1")
         ),
     )]);
     assert_eq!(
@@ -227,7 +239,9 @@ fn identical_tools_merge_and_different_ones_with_one_name_conflict() {
     let project = Project::new(&[(
         "app.artf",
         &format!(
-            "{service}artf app : svc!(port = \"1\") & svc!(port = \"2\") = {{ path = \"docs/\" }}\n"
+            "tool svc = {{\n  {}\n  {}\n}}\nartf app : svc = {{ path = \"docs/\" }}\n",
+            ping("1"),
+            ping("2")
         ),
     )]);
     let error = project.error();
@@ -238,28 +252,27 @@ fn identical_tools_merge_and_different_ones_with_one_name_conflict() {
 }
 
 #[test]
-fn slots_render_for_their_audience_and_runtime_instructions_take_none() {
-    let project = Project::new(&[(
-        "app.artf",
-        r#"profile reviewer = agent(backend = "openai", model = "fixture")
-artf rules : files = { path = "rules/", basis = true }
+fn instructions_name_artifacts_and_runtime_evals_list_their_deps() {
+    let project = Project::new(&[
+        ("profiles.artfprofiles", PROFILES),
+        (
+            "app.artf",
+            r#"artf rules : files = { path = "rules/", basis = true }
 artf app : files = {
   path = "docs/"
   eval agent : reviewer = {
     title = "Agent"
-    instruction = "Use @{tool self agent files.read} on @{path rules/style.md}."
+    instruction = "Read @{artf self} against @{artf rules}."
   }
-  eval person : human = {
-    title = "Person"
-    instruction = "Open @{tool self human files.view}; compare with @{artf rules}."
-  }
+  // The command reads the rules it is given.
   eval check : runtime(command = "true", args = ["@{path rules}"]) = {
     title = "Check"
-    inputs = [rules]
+    deps = [rules]
   }
 }
 "#,
-    )]);
+        ),
+    ]);
     let config = project.read();
     let eval = |id: &str| {
         config
@@ -270,54 +283,142 @@ artf app : files = {
     };
     assert_eq!(
         eval("app/agent").declaration.instruction(),
-        Some("Use files_read_app on rules/style.md.")
-    );
-    assert_eq!(
-        eval("app/person").declaration.instruction(),
-        Some("Open files.view; compare with rules.")
+        Some("Read app against rules.")
     );
     assert_eq!(eval("app/check").declaration.inputs(), [name("rules")]);
     assert!(eval("app/check").deps.contains(&name("rules")));
-    for (text, expected) in [
-        ("@{tool self agent files.nothing}", "files.nothing"),
-        ("@{artf missing}", "missing"),
+    assert_eq!(eval("app/check").declaration.instruction(), None);
+    for (eval, says) in [
+        (
+            "eval agent : reviewer = { title = \"A\", instruction = \"Use @{tool self agent files.read}.\" }",
+            "There is no tool slot",
+        ),
+        (
+            "eval agent : reviewer = { title = \"A\", instruction = \"Read @{path self/a.md}.\" }",
+            "a `@{path …}` belongs in a command's arguments",
+        ),
+        (
+            "eval agent : reviewer = { title = \"A\", instruction = \"Read @{artf missing}.\" }",
+            "missing",
+        ),
+        (
+            "eval check : runtime(command = \"true\", args = []) = { title = \"C\", instruction = \"About it.\" }",
+            "takes no `instruction`",
+        ),
+        (
+            "eval agent : reviewer = { title = \"A\", instruction = \"A\", deps = [app] }",
+            "`deps` is for runtime evals",
+        ),
     ] {
         project.write(
             "app.artf",
-            &format!(
-                "profile reviewer = agent(backend = \"openai\", model = \"fixture\")\nartf app : files = {{\n  path = \"docs/\"\n  eval agent : reviewer = {{ title = \"A\", instruction = \"{text}\" }}\n}}\n"
-            ),
+            &format!("artf app : files = {{\n  path = \"docs/\"\n  {eval}\n}}\n"),
         );
         let error = project.error();
-        assert!(
-            error.contains(expected) && error.contains("line 4"),
-            "{error}"
-        );
+        assert!(error.contains(says) && error.contains("line 3"), "{error}");
     }
+}
+
+#[test]
+fn a_macro_fills_paths_and_arguments_never_prose() {
+    for prose in [
+        "title = \"@{param what} reads well\", instruction = \"Read @{artf self}.\"",
+        "title = \"Reads well\", instruction = what",
+    ] {
+        let project = Project::new(&[(
+            "app.artf",
+            &format!(
+                "artf! doc(what) = {{\n  path = \"docs/\"\n  eval reads : human = {{ {prose} }}\n}}\nartf app = doc!(what = \"the guide\")\n"
+            ),
+        )]);
+        let error = project.error();
+        assert!(error.contains("written out where it stands"), "{error}");
+    }
+}
+
+#[test]
+fn an_agent_eval_names_a_profile_of_an_artfprofiles_file() {
+    let project = Project::new(&[(
+        "app.artf",
+        "artf app = {\n  path = \"docs/\"\n  eval agent : agent(backend = \"openai\", model = \"m\") = { title = \"A\", instruction = \"A\" }\n}\n",
+    )]);
+    assert!(
+        project.error().contains("profile NAME : agent"),
+        "{}",
+        project.error()
+    );
     project.write(
         "app.artf",
-        "artf app = {\n  path = \"docs/\"\n  eval check : runtime(command = \"true\", args = []) = { title = \"C\", instruction = \"About @{artf app}.\" }\n}\n",
+        "artf app = {\n  path = \"docs/\"\n  eval agent : nobody = { title = \"A\", instruction = \"A\" }\n}\n",
     );
     assert!(
-        project.error().contains("names no Artifact"),
+        project.error().contains("Unknown profile `nobody`"),
         "{}",
         project.error()
     );
 }
 
 #[test]
-fn an_agent_eval_names_a_declared_profile() {
-    let project = Project::new(&[(
-        "app.artf",
-        "artf app = {\n  path = \"docs/\"\n  eval agent : agent(backend = \"openai\", model = \"m\") = { title = \"A\", instruction = \"A\" }\n}\n",
-    )]);
+fn a_profile_runs_the_branch_its_environment_variable_names() {
+    let project = Project::new(&[
+        (
+            "profiles.artfprofiles",
+            r#"profile reviewer : agent = match TIER {
+  default => { backend = "openai", model = "everyday" },
+  heavy => { backend = "openai", model = "careful", reasoning = "high" },
+}
+profile translator : agent = { backend = "openai", model = "words" }
+"#,
+        ),
+        (
+            "app.artf",
+            "artf app : files = {\n  path = \"docs/\"\n  eval agent : reviewer = { title = \"A\", instruction = \"A\" }\n  eval words : translator = { title = \"W\", instruction = \"W\" }\n}\n",
+        ),
+    ]);
+    let read = |tier: Option<&str>| {
+        discovery::read_workspace_declarations_with(project.0.path(), &|name| {
+            (name == "TIER").then(|| tier.map(str::to_owned)).flatten()
+        })
+    };
+    let model = |config: &RepoConfig, id: &str| {
+        let eval = config
+            .evals
+            .iter()
+            .find(|eval| eval.id.as_str() == id)
+            .unwrap();
+        serde_json::to_value(eval.declaration.profile()).unwrap()["model"].clone()
+    };
+    let unset = read(None).unwrap();
+    assert_eq!(model(&unset, "app/agent"), "everyday");
+    assert_eq!(model(&read(Some("")).unwrap(), "app/agent"), "everyday");
+    let heavy = read(Some("heavy")).unwrap();
+    assert_eq!(model(&heavy, "app/agent"), "careful");
+    // A profile without a `match` runs the same in every environment.
+    assert_eq!(model(&heavy, "app/words"), "words");
+    // The graph a Run saves says which value chose the branches.
+    let graph = serde_json::to_value(
+        crate::query::graph(&heavy, &crate::project::selection::Selection::All).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(graph["environment"], serde_json::json!({ "TIER": "heavy" }));
+    // A value no branch names is refused rather than run as `default`.
+    let error = read(Some("haevy")).unwrap_err().to_string();
     assert!(
-        project
-            .error()
-            .contains("declare `profile NAME = agent(…)`"),
-        "{}",
-        project.error()
+        error.contains("TIER=haevy") && error.contains("`heavy`"),
+        "{error}"
     );
+    // Every branch is checked, the ones the environment does not select included.
+    project.write(
+        "profiles.artfprofiles",
+        "profile reviewer : agent = match TIER {\n  default => { backend = \"openai\", model = \"everyday\" },\n  heavy => { backend = \"openai\" },\n}\nprofile translator : agent = { backend = \"openai\", model = \"words\" }\n",
+    );
+    assert!(read(None).is_err());
+    project.write(
+        "profiles.artfprofiles",
+        "profile reviewer : agent = match TIER {\n  heavy => { backend = \"openai\", model = \"careful\" },\n}\nprofile translator : agent = { backend = \"openai\", model = \"words\" }\n",
+    );
+    let error = read(Some("heavy")).unwrap_err().to_string();
+    assert!(error.contains("without a `default` branch"), "{error}");
 }
 
 #[test]
@@ -356,6 +457,7 @@ fn meta_artifacts_under_definitions_default_to_a_semantic_fingerprint() {
 #[test]
 fn expand_shows_the_binding_as_written_and_the_declaration_it_makes() {
     let project = Project::new(&[
+        ("profiles.artfprofiles", PROFILES),
         ("shared.artf", SHARED),
         (
             "crates.artf",
@@ -379,7 +481,6 @@ fn expand_shows_the_binding_as_written_and_the_declaration_it_makes() {
         "{}",
         core.expanded
     );
-    assert_eq!(core.evals[0].from.as_deref(), Some("follows!"));
     // The expansion is code: it reads back as the same Artifact beside the shared definitions.
     project.write("crates.artf", &core.expanded);
     let config = project.read();
@@ -403,6 +504,11 @@ fn expand_shows_the_binding_as_written_and_the_declaration_it_makes() {
     assert!(symbols.iter().any(|symbol| symbol.kind == "tool"
         && symbol.name == "files"
         && symbol.plugin.as_deref() == Some("files")));
+    assert!(
+        symbols
+            .iter()
+            .any(|symbol| symbol.kind == "profile" && symbol.name == "reviewer")
+    );
     // A runtime argument's path slot reads as the slot it is, not as escaped text.
     project.write(
         "crates.artf",

@@ -37,11 +37,10 @@ impl Project {
     }
     fn node(&self, name: &str, mut declaration: Value) {
         declaration["name"] = Value::String(name.to_owned());
-        fs::write(
-            self.repo.join(format!(".artifactize/{name}.artf")),
-            support::declaration::to_artf(declaration).unwrap(),
-        )
-        .unwrap();
+        // Its `.artf` file, and the file of profiles its Agent evals name.
+        for (file, text) in support::declaration::to_files(declaration).unwrap() {
+            fs::write(self.repo.join(".artifactize").join(file), text).unwrap();
+        }
     }
     fn json(&self, args: &[&str], code: i32) -> Value {
         let mut command = Command::new(support::os::cli());
@@ -315,10 +314,10 @@ async fn command_tools_and_fingerprint_scripts_receive_the_same_opaque_live_addr
     }));
     let config = config::read_workspace_config(&project.repo).unwrap();
     let registry = Registry::for_artifact(&config, &"service".parse().unwrap()).unwrap();
-    registry.preflight("service_observe_service").unwrap();
+    registry.preflight("service-tools_observe_service").unwrap();
     let result = registry
         .call(
-            "service_observe_service",
+            "service-tools_observe_service",
             json!({}),
             &project.root.path().join("tool-output"),
             CancellationToken::new(),

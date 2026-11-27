@@ -11,8 +11,8 @@ use serde_json::{Map, Value, json};
 
 use super::{
     LangError, Origin, PluginSource, Sources, Symbol, SymbolParam,
-    ast::{Block, Entry, Expr, FileId, Item, ItemKind, Name, Span},
-    scope::{Decl, Env, Globals, bind, names},
+    ast::{Block, Entry, Expr, FileId, Item, ItemKind, Name, ProfileBody, ProfileItem, Span},
+    scope::{Decl, Env, Globals, ProfileDecl, bind, names},
     values::{MAX_DEPTH, Strings},
 };
 use crate::config::{
@@ -38,26 +38,18 @@ pub(crate) enum SlotRef {
         path: String,
         span: Span,
     },
-    Tool {
-        target: SlotTarget,
-        audience: String,
-        tool: String,
-        span: Span,
-    },
 }
 
 impl SlotRef {
     pub fn span(&self) -> Span {
         match self {
-            Self::Artf { span, .. } | Self::Path { span, .. } | Self::Tool { span, .. } => *span,
+            Self::Artf { span, .. } | Self::Path { span, .. } => *span,
         }
     }
 
     pub fn target(&self) -> &SlotTarget {
         match self {
-            Self::Artf { target, .. } | Self::Path { target, .. } | Self::Tool { target, .. } => {
-                target
-            }
+            Self::Artf { target, .. } | Self::Path { target, .. } => target,
         }
     }
 }
@@ -74,7 +66,7 @@ pub(crate) type Instruction = Vec<Piece>;
 
 #[derive(Debug, Clone)]
 pub(crate) enum LoweredFingerprint {
-    /// Not declared, or `none`: the target kind's default.
+    /// Not declared: the target kind's default.
     Default,
     /// `fingerprint = false`: never reused.
     Disabled,
@@ -87,19 +79,17 @@ pub(crate) enum LoweredFingerprint {
 pub(crate) struct LoweredEval {
     pub id: String,
     pub id_span: Span,
-    pub span: Span,
     pub title: String,
     pub mutex: Vec<MutexTag>,
     pub red_at: Option<Priority>,
     pub profile: Profile,
-    /// The named profile or `name!` macro the eval refers to; none for `human` and an inline
-    /// `runtime(…)`.
+    /// The profile the eval names; none for `human` and an inline `runtime(…)`.
     pub profile_name: Option<String>,
     pub profile_span: Span,
+    /// What an Agent or Human evaluator is asked; a runtime eval has none.
     pub instruction: Option<(Instruction, Span)>,
-    pub inputs: Vec<(String, Span)>,
-    /// The `eval!` macro or global eval it was made from.
-    pub source: Option<String>,
+    /// What a runtime eval's command reads, besides what its arguments name.
+    pub deps: Vec<(String, Span)>,
 }
 
 #[derive(Debug, Clone)]
@@ -126,7 +116,10 @@ pub(crate) struct LoweredArtifact {
 
 pub(super) struct Expanded {
     pub artifacts: Vec<LoweredArtifact>,
+    /// Every profile in the branch the environment selects.
     pub profiles: BTreeMap<String, (Profile, Span)>,
+    /// The environment variables the profiles read, each with its value; `None` when unset.
+    pub environment: BTreeMap<String, Option<String>>,
     pub symbols: Vec<Symbol>,
     pub names: Vec<(Span, String)>,
 }
@@ -143,6 +136,8 @@ pub(super) struct Expander<'a> {
     current: RefCell<Option<String>>,
     /// Every span that named an Artifact, for `config rename`.
     pub names: RefCell<std::collections::BTreeSet<(Span, String)>>,
+    /// The profiles, each in the branch the environment selects.
+    profiles: BTreeMap<String, (Profile, Span)>,
 }
 
 /// Leaves a macro frame or a resolving name when dropped.
@@ -161,12 +156,17 @@ impl Drop for Frame<'_, '_> {
     }
 }
 
+/// The value of one environment variable; `None` when it is unset.
+pub(crate) type Environment<'e> = &'e dyn Fn(&str) -> Option<String>;
+
 pub(super) fn expand(
     sources: &Sources,
     parsed: &[(FileId, Vec<Item>)],
+    profiles: &[(FileId, Vec<ProfileItem>)],
+    environment: Environment<'_>,
 ) -> Result<Expanded, LangError> {
-    let globals = Globals::collect(sources, parsed)?;
-    let expander = Expander {
+    let globals = Globals::collect(sources, parsed, profiles)?;
+    let mut expander = Expander {
         globals,
         sources,
         nodes: Cell::new(0),
@@ -174,7 +174,10 @@ pub(super) fn expand(
         visiting: RefCell::new(Vec::new()),
         current: RefCell::new(None),
         names: RefCell::default(),
+        profiles: BTreeMap::new(),
     };
+    let (profiles, environment) = expander.resolve_profiles(environment)?;
+    expander.profiles = profiles;
     let mut artifacts = Vec::new();
     let mut lowercase = BTreeMap::new();
     for (name, decl) in &expander.globals.artf.concrete {
@@ -189,19 +192,9 @@ pub(super) fn expand(
         artifacts.push(expander.artifact(*decl)?);
     }
     *expander.current.borrow_mut() = Some(UNBOUND_SELF.into());
-    let mut profiles = BTreeMap::new();
-    for (name, decl) in &expander.globals.profile.concrete {
-        let (profile, _) = expander.named_profile(name, *decl)?;
-        if profile.kind() == ProfileKind::Agent {
-            profiles.insert((*name).to_owned(), (profile, decl.item.name.span));
-        }
-    }
     for (name, decl) in &expander.globals.tool.concrete {
         let toolsets = expander.named_tool(name, *decl)?;
         expander.compose(&toolsets)?;
-    }
-    for decl in expander.globals.eval.concrete.values() {
-        expander.global_eval(&decl.item.name, *decl)?;
     }
     let symbols = expander.symbols();
     for artifact in &artifacts {
@@ -214,7 +207,8 @@ pub(super) fn expand(
     Ok(Expanded {
         names,
         artifacts,
-        profiles,
+        profiles: expander.profiles,
+        environment,
         symbols,
     })
 }
@@ -405,7 +399,7 @@ impl<'a> Expander<'a> {
                     name,
                     header,
                     value,
-                    span,
+                    ..
                 } => {
                     if keyword.text != "eval" {
                         return Err(self.error(
@@ -415,7 +409,7 @@ impl<'a> Expander<'a> {
                     }
                     artifact
                         .evals
-                        .push(self.eval(name, header.as_ref(), value, env, *span)?);
+                        .push(self.eval(name, header.as_ref(), value, env)?);
                 }
                 Entry::Spread(value, _) => artifact.evals.extend(self.spread_evals(value, env)?),
             }
@@ -430,39 +424,17 @@ impl<'a> Expander<'a> {
         env: &Rc<Env<'a>>,
         artifact: &mut LoweredArtifact,
     ) -> Result<(), LangError> {
-        let optional = self.optional(value, env)?;
+        let (value, env) = self.chase(value, env.clone())?;
         match key.text.as_str() {
-            "path" => {
-                let Some((value, env)) = optional else {
-                    return Err(self.error(value.span(), "`path` is required."));
-                };
-                artifact.path = (self.text(value, &env, "`path`")?, value.span());
-            }
-            "basis" => {
-                artifact.basis = optional
-                    .map(|(value, env)| self.boolean(value, &env, "`basis`"))
-                    .transpose()?;
-            }
-            "parts" => {
-                if let Some((value, env)) = optional {
-                    artifact.parts = self.artifacts(value, &env, "`parts`")?;
-                }
-            }
+            "path" => artifact.path = (self.text(value, &env, "`path`")?, value.span()),
+            "basis" => artifact.basis = Some(self.boolean(value, &env, "`basis`")?),
+            "parts" => artifact.parts = self.artifacts(value, &env, "`parts`")?,
             "select" => {
-                artifact.select = optional
-                    .map(|(value, env)| Ok((self.texts(value, &env, "`select`")?, value.span())))
-                    .transpose()?;
+                artifact.select = Some((self.texts(value, &env, "`select`")?, value.span()));
             }
-            "tags" => {
-                if let Some((value, env)) = optional {
-                    artifact.tags = self.texts(value, &env, "`tags`")?;
-                }
-            }
+            "tags" => artifact.tags = self.texts(value, &env, "`tags`")?,
             "fingerprint" => {
-                artifact.fingerprint = match optional {
-                    None => (LoweredFingerprint::Default, Some(value.span())),
-                    Some((value, env)) => (self.fingerprint(value, &env)?, Some(value.span())),
-                };
+                artifact.fingerprint = (self.fingerprint(value, &env)?, Some(value.span()));
             }
             other => {
                 return Err(self.error(
@@ -498,7 +470,7 @@ impl<'a> Expander<'a> {
             other => {
                 return Err(self.error(
                     other.span(),
-                    "`fingerprint` is `false`, `none`, `{ files = […], ignore = […] }` or `script(command = …, args = […])`.",
+                    "`fingerprint` is `false`, `{ files = […], ignore = […] }` or `script(command = …, args = […])`.",
                 ));
             }
         };
@@ -529,8 +501,8 @@ impl<'a> Expander<'a> {
                     name,
                     header,
                     value,
-                    span,
-                } if keyword.text == "eval" => self.eval(name, header.as_ref(), value, &env, *span),
+                    ..
+                } if keyword.text == "eval" => self.eval(name, header.as_ref(), value, &env),
                 Entry::Spread(value, _) => Err(self.error(
                     value.span(),
                     "Spread the eval blocks one by one into the Artifact.",
@@ -549,7 +521,6 @@ impl<'a> Expander<'a> {
         header: Option<&'a Expr>,
         value: &'a Expr,
         env: &Rc<Env<'a>>,
-        span: Span,
     ) -> Result<LoweredEval, LangError> {
         crate::config::identifier(&id.text, "An eval id")
             .map_err(|message| self.error(id.span, message))?;
@@ -559,92 +530,43 @@ impl<'a> Expander<'a> {
         let (resolved, resolved_env) = self.chase(value, env.clone())?;
         match (header, resolved) {
             (Some(header), Expr::Block(block)) => {
-                let (profile, profile_name) = self.profile(header, env, false)?;
-                self.eval_fields(id, span, block, &resolved_env, profile, profile_name, header.span(), None)
+                let (profile, profile_name) = self.profile(header, env)?;
+                self.eval_fields(
+                    id,
+                    block,
+                    &resolved_env,
+                    profile,
+                    profile_name,
+                    header.span(),
+                )
             }
-            (None, Expr::Macro { name, args, span: call }) => {
-                let definition = self.macro_decl(ItemKind::Eval, name)?;
-                let _frame = self.enter(*call, &name.text)?;
-                let macro_env = bind(definition.item, args, &resolved_env, *call)?;
-                let Some(header) = &definition.item.header else {
-                    return Err(self.error(definition.item.name.span, "An `eval!` macro names its profile: `eval! name(…) : PROFILE = { … }`."));
-                };
-                let Expr::Block(block) = &definition.item.body else {
-                    return Err(self.error(definition.item.body.span(), "An `eval!` macro's body is a block `{ … }`."));
-                };
-                let (profile, profile_name) = self.profile(header, &macro_env, false)?;
-                self.eval_fields(id, span, block, &macro_env, profile, profile_name, header.span(), Some(format!("{}!", name.text)))
-            }
-            (None, Expr::Ident(name)) => {
-                let decl = self.globals.eval.concrete.get(name.text.as_str()).copied().ok_or_else(|| {
-                    self.error(name.span, format!("Unknown eval `{}`; declare it with `eval {} : PROFILE = {{ … }}`.", name.text, name.text))
-                })?;
-                let mut eval = self.global_eval(id, decl)?;
-                eval.span = span;
-                Ok(eval)
-            }
-            (Some(_), other) => Err(self.error(other.span(), "`eval id : PROFILE = …` takes a block `{ … }`.")),
-            (None, Expr::Block(_)) => Err(self.error(
-                id.span,
-                format!("Eval `{}` needs a profile: `eval {} : PROFILE = {{ … }}`, with `human`, `runtime(…)` or a profile's name.", id.text, id.text),
+            (Some(_), other) => Err(self.error(
+                other.span(),
+                "`eval id : PROFILE = …` takes a block `{ … }`.",
             )),
-            (None, other) => Err(self.error(other.span(), "An eval is `eval id : PROFILE = { … }`, `eval id = name!(…)` or `eval id = name`.")),
+            (None, _) => Err(self.error(
+                id.span,
+                format!(
+                    "Eval `{}` needs a profile: `eval {} : PROFILE = {{ … }}`, with `human`, `runtime(…)` or a profile of an `.artfprofiles` file.",
+                    id.text, id.text
+                ),
+            )),
         }
     }
 
-    /// A top-level `eval`, read in the root scope for the Artifact being declared.
-    fn global_eval(&self, id: &Name, decl: Decl<'a>) -> Result<LoweredEval, LangError> {
-        let item = decl.item;
-        let _visit = self.visit(ItemKind::Eval, &item.name.text, id.span)?;
-        let Some(header) = &item.header else {
-            return Err(self.error(
-                item.name.span,
-                format!(
-                    "Eval `{}` needs a profile: `eval {} : PROFILE = {{ … }}`.",
-                    item.name.text, item.name.text
-                ),
-            ));
-        };
-        let Expr::Block(block) = &item.body else {
-            return Err(self.error(
-                item.body.span(),
-                "A top-level eval's body is a block `{ … }`.",
-            ));
-        };
-        let root = Env::root();
-        let (profile, profile_name) = self.profile(header, &root, false)?;
-        self.eval_fields(
-            id,
-            item.span,
-            block,
-            &root,
-            profile,
-            profile_name,
-            header.span(),
-            Some(item.name.text.clone()),
-        )
-    }
-
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "an eval's parts arrive from three declaration forms"
-    )]
     fn eval_fields(
         &self,
         id: &Name,
-        span: Span,
         block: &'a Block,
         env: &Rc<Env<'a>>,
         profile: Profile,
         profile_name: Option<String>,
         profile_span: Span,
-        source: Option<String>,
     ) -> Result<LoweredEval, LangError> {
         let kind = profile.kind();
         let mut eval = LoweredEval {
             id: id.text.clone(),
             id_span: id.span,
-            span,
             title: String::new(),
             mutex: Vec::new(),
             red_at: None,
@@ -652,8 +574,7 @@ impl<'a> Expander<'a> {
             profile_name,
             profile_span,
             instruction: None,
-            inputs: Vec::new(),
-            source,
+            deps: Vec::new(),
         };
         let mut seen: BTreeMap<&str, Span> = BTreeMap::new();
         for entry in &block.entries {
@@ -665,9 +586,10 @@ impl<'a> Expander<'a> {
                     .error(key.span, format!("Field `{}` is given twice.", key.text))
                     .note(previous, "first given here"));
             }
-            let Some((value, env)) = self.optional(value, env)? else {
-                continue;
-            };
+            if matches!(key.text.as_str(), "title" | "instruction") {
+                self.written_out(value, env, &format!("`{}`", key.text))?;
+            }
+            let (value, env) = self.chase(value, env.clone())?;
             match key.text.as_str() {
                 "title" => eval.title = self.text(value, &env, "`title`")?,
                 "red_at" => {
@@ -699,30 +621,34 @@ impl<'a> Expander<'a> {
                         .map_err(|message| self.error(value.span(), message))?;
                 }
                 "instruction" => {
+                    if kind == ProfileKind::Runtime {
+                        return Err(self.error(
+                            key.span,
+                            "A runtime eval's verdict is its command's exit code, so it takes no `instruction`: explain it in a `//` comment and list what it reads in `deps`.",
+                        ));
+                    }
                     let pieces = self.template(value, &env, "`instruction`")?;
-                    if kind == ProfileKind::Runtime
-                        && let Some(slot) = pieces.iter().find_map(|piece| match piece {
-                            Piece::Slot(slot) => Some(slot),
-                            Piece::Text(_) => None,
-                        })
-                    {
+                    if let Some(slot) = pieces.iter().find_map(|piece| match piece {
+                        Piece::Slot(slot @ SlotRef::Path { .. }) => Some(slot),
+                        _ => None,
+                    }) {
                         return Err(self.error(
                             slot.span(),
-                            "A runtime eval's instruction is not hashed, so it names no Artifact: list them in `inputs` and use `@{path …}` in the command's `args`.",
+                            "An instruction names Artifacts with `@{artf …}`; a `@{path …}` belongs in a command's arguments.",
                         ));
                     }
                     eval.instruction = Some((pieces, value.span()));
                 }
-                "inputs" => {
+                "deps" => {
                     if kind != ProfileKind::Runtime {
-                        return Err(self.error(key.span, "`inputs` is for runtime evals; an Agent or Human eval names what it reads in its instruction."));
+                        return Err(self.error(key.span, "`deps` is for runtime evals; an Agent or Human eval names what it reads with `@{artf …}` in its instruction."));
                     }
-                    eval.inputs = self.artifacts(value, &env, "`inputs`")?;
+                    eval.deps = self.artifacts(value, &env, "`deps`")?;
                 }
                 other => {
                     return Err(self.error(
                         key.span,
-                        format!("Unknown field `{other}`; an eval has `title`, `instruction`, `red_at`, `mutex` and, for a runtime eval, `inputs`."),
+                        format!("Unknown field `{other}`; an Agent or Human eval has `title`, `instruction` and `mutex`, an Agent eval also `red_at`, and a runtime eval `title`, `mutex` and `deps`."),
                     ));
                 }
             }
@@ -742,49 +668,27 @@ impl<'a> Expander<'a> {
         Ok(eval)
     }
 
-    /// A profile in an eval's header (`agent(…)` only inside a `profile` declaration).
+    /// The evaluator in an eval's header: `human`, an inline `runtime(…)`, or a profile's name.
     fn profile(
         &self,
         expr: &'a Expr,
         env: &Rc<Env<'a>>,
-        declaring: bool,
     ) -> Result<(Profile, Option<String>), LangError> {
         let (expr, env) = self.chase(expr, env.clone())?;
         let json = match expr {
             Expr::Ident(name) if name.text == "human" => json!({"kind": "human"}),
             Expr::Ident(name) => {
-                let decl = self
-                    .globals
-                    .profile
-                    .concrete
-                    .get(name.text.as_str())
-                    .copied()
-                    .ok_or_else(|| {
-                        let mut error =
-                            self.error(name.span, format!("Unknown profile `{}`.", name.text));
-                        if self.globals.profile.macros.contains_key(name.text.as_str()) {
-                            error = error.note(
-                                self.globals.profile.macros[name.text.as_str()]
-                                    .item
-                                    .name
-                                    .span,
-                                format!(
-                                    "`{}` is a `profile!` macro: write `{}!(…)`",
-                                    name.text, name.text
-                                ),
-                            );
-                        }
-                        error
-                    })?;
-                let (profile, _) = self.named_profile(&name.text, decl)?;
-                return Ok((profile, Some(name.text.clone())));
-            }
-            Expr::Macro { name, args, span } => {
-                let definition = self.macro_decl(ItemKind::Profile, name)?;
-                let _frame = self.enter(*span, &name.text)?;
-                let macro_env = bind(definition.item, args, &env, *span)?;
-                let (profile, _) = self.profile(&definition.item.body, &macro_env, true)?;
-                return Ok((profile, Some(format!("{}!", name.text))));
+                let (profile, _) = self.profiles.get(name.text.as_str()).ok_or_else(|| {
+                    self.error(
+                        name.span,
+                        format!(
+                            "Unknown profile `{}`; the profiles of the `.artfprofiles` files are {}.",
+                            name.text,
+                            names(self.profiles.keys().map(String::as_str))
+                        ),
+                    )
+                })?;
+                return Ok((profile.clone(), Some(name.text.clone())));
             }
             Expr::Call { name, args, .. } if name.text == "runtime" => {
                 let mut object = self.arguments(args, &env, |field| {
@@ -797,21 +701,16 @@ impl<'a> Expander<'a> {
                 object.insert("kind".into(), json!("runtime"));
                 Value::Object(object)
             }
-            Expr::Call { name, args, .. } if name.text == "agent" => {
-                if !declaring {
-                    return Err(self.error(
-                        name.span,
-                        "An Agent eval refers to a named profile: declare `profile NAME = agent(…)` and write `: NAME`.",
-                    ));
-                }
-                let mut object = self.arguments(args, &env, |_| Strings::Plain)?;
-                object.insert("kind".into(), json!("agent"));
-                Value::Object(object)
+            Expr::Call { name, .. } if name.text == "agent" => {
+                return Err(self.error(
+                    name.span,
+                    "An Agent eval names a profile of an `.artfprofiles` file: `profile NAME : agent = { … }`, then `eval ID : NAME`.",
+                ));
             }
             other => {
                 return Err(self.error(
                     other.span(),
-                    "Expected a profile: `human`, `runtime(…)`, a profile's name or `name!(…)`.",
+                    "Expected an evaluator: `human`, `runtime(…)` or a profile's name.",
                 ));
             }
         };
@@ -823,16 +722,135 @@ impl<'a> Expander<'a> {
         Ok((profile, None))
     }
 
-    fn named_profile(
+    /// Every profile in the branch the environment selects. Every branch is read, so a mistake
+    /// in one the environment does not select fails too. A variable set to a value no profile's
+    /// `match` names is refused rather than read as `default`.
+    #[expect(
+        clippy::type_complexity,
+        reason = "the profiles and the environment values they read are returned together"
+    )]
+    fn resolve_profiles(
         &self,
-        name: &str,
-        decl: Decl<'a>,
-    ) -> Result<(Profile, Option<String>), LangError> {
-        let _visit = self.visit(ItemKind::Profile, name, decl.item.name.span)?;
-        if decl.item.header.is_some() {
-            return Err(self.error(decl.item.name.span, "A profile has no `: …` header."));
+        environment: Environment<'_>,
+    ) -> Result<
+        (
+            BTreeMap<String, (Profile, Span)>,
+            BTreeMap<String, Option<String>>,
+        ),
+        LangError,
+    > {
+        let mut labels: BTreeMap<&str, (Span, std::collections::BTreeSet<&str>)> = BTreeMap::new();
+        for decl in self.globals.profiles.values() {
+            if let ProfileBody::Match { variable, arms } = &decl.item.body {
+                let entry = labels
+                    .entry(variable.text.as_str())
+                    .or_insert((variable.span, std::collections::BTreeSet::new()));
+                entry.1.extend(
+                    arms.iter()
+                        .map(|(label, _)| label.text.as_str())
+                        .filter(|label| *label != "default"),
+                );
+            }
         }
-        self.profile(&decl.item.body, &Env::root(), true)
+        let mut values = BTreeMap::new();
+        for (variable, (span, known)) in &labels {
+            let value = environment(variable).filter(|value| !value.trim().is_empty());
+            if let Some(value) = &value
+                && !known.contains(value.as_str())
+            {
+                return Err(self.error(
+                    *span,
+                    format!(
+                        "{variable}={value} names no branch of any profile; the branches are {}. Unset {variable} for each profile's `default`.",
+                        names(known.iter().copied())
+                    ),
+                ));
+            }
+            values.insert((*variable).to_owned(), value);
+        }
+        let mut profiles = BTreeMap::new();
+        for (name, decl) in &self.globals.profiles {
+            let profile = self.profile_branch(*decl, &values)?;
+            profiles.insert((*name).to_owned(), (profile, decl.item.name.span));
+        }
+        Ok((profiles, values))
+    }
+
+    /// One profile: every branch read, the one `values` selects returned.
+    fn profile_branch(
+        &self,
+        decl: ProfileDecl<'a>,
+        values: &BTreeMap<String, Option<String>>,
+    ) -> Result<Profile, LangError> {
+        let item = decl.item;
+        if item.kind.text != "agent" {
+            return Err(self.error(
+                item.kind.span,
+                "A profile is `: agent`; a runtime or Human eval writes its evaluator in its own header.",
+            ));
+        }
+        match &item.body {
+            ProfileBody::Setting(block) => self.agent_setting(block),
+            ProfileBody::Match { variable, arms } => {
+                let mut seen: BTreeMap<&str, Span> = BTreeMap::new();
+                let mut chosen = None;
+                let mut default = None;
+                let wanted = values.get(&variable.text).cloned().flatten();
+                for (label, block) in arms {
+                    if let Some(previous) = seen.insert(&label.text, label.span) {
+                        return Err(self
+                            .error(
+                                label.span,
+                                format!("Branch `{}` is given twice.", label.text),
+                            )
+                            .note(previous, "first given here"));
+                    }
+                    let setting = self.agent_setting(block)?;
+                    if label.text == "default" {
+                        default = Some(setting);
+                    } else if wanted.as_deref() == Some(label.text.as_str()) {
+                        chosen = Some(setting);
+                    }
+                }
+                let default = default.ok_or_else(|| {
+                    self.error(
+                        item.name.span,
+                        format!(
+                            "Profile `{}` matches {} without a `default` branch, which runs while {} is unset or names another branch.",
+                            item.name.text, variable.text, variable.text
+                        ),
+                    )
+                })?;
+                Ok(chosen.unwrap_or(default))
+            }
+        }
+    }
+
+    /// One complete Agent setting: `{ backend = …, model = …, … }`.
+    fn agent_setting(&self, block: &'a Block) -> Result<Profile, LangError> {
+        let root = Env::root();
+        let mut object = Map::new();
+        for entry in &block.entries {
+            let Entry::Field { key, value } = entry else {
+                return Err(self.error(
+                    block.span,
+                    "A profile's setting holds `key = value` fields.",
+                ));
+            };
+            if object
+                .insert(key.text.clone(), self.json(value, &root, Strings::Plain)?)
+                .is_some()
+            {
+                return Err(self.error(key.span, format!("Field `{}` is given twice.", key.text)));
+            }
+        }
+        object.insert("kind".into(), json!("agent"));
+        let profile: Profile = serde_json::from_value(Value::Object(object))
+            .map_err(|error| self.error(block.span, format!("Profile: {error}")))?;
+        profile
+            .check()
+            .map_err(|message| self.error(block.span, message))?;
+        Ok(profile)
     }
 
     /// The toolsets a tool expression composes, in order.
@@ -855,59 +873,20 @@ impl<'a> Expander<'a> {
                     .copied()
                     .ok_or_else(|| {
                         let known = self.globals.tool.concrete.keys().copied();
-                        let mut error = self.error(
+                        self.error(
                             name.span,
                             format!(
                                 "Unknown toolset `{}`; the toolsets are {}.",
                                 name.text,
                                 names(known)
                             ),
-                        );
-                        if self.globals.tool.macros.contains_key(name.text.as_str()) {
-                            error = error.note(
-                                self.globals.tool.macros[name.text.as_str()].item.name.span,
-                                format!(
-                                    "`{}` is a `tool!` macro: write `{}!(…)`",
-                                    name.text, name.text
-                                ),
-                            );
-                        }
-                        error
+                        )
                     })?;
                 self.named_tool(&name.text, decl)
             }
-            Expr::Macro { name, args, span } => {
-                let definition = self.macro_decl(ItemKind::Tool, name)?;
-                let frame = self.enter(*span, &name.text)?;
-                let macro_env = bind(definition.item, args, &env, *span)?;
-                let Expr::Block(block) = &definition.item.body else {
-                    return Err(self.error(
-                        definition.item.body.span(),
-                        "A `tool!` macro's body is a block `{ … }` with its `namespace`.",
-                    ));
-                };
-                let namespace = block
-                    .entries
-                    .iter()
-                    .find_map(|entry| match entry {
-                        Entry::Field { key, value } if key.text == "namespace" => Some(value),
-                        _ => None,
-                    })
-                    .ok_or_else(|| {
-                        self.error(
-                            definition.item.name.span,
-                            "A `tool!` macro sets its `namespace`.",
-                        )
-                    })?;
-                let namespace = self.text(namespace, &macro_env, "`namespace`")?;
-                let toolset =
-                    self.toolset(&namespace, *span, block, macro_env, definition.file, true)?;
-                drop(frame);
-                Ok(vec![toolset])
-            }
             other => Err(self.error(
                 other.span(),
-                "Expected a toolset: a `tool`'s name, `name!(…)`, or `a & b`.",
+                "Expected a toolset: a `tool`'s name, or `a & b`.",
             )),
         }
     }
@@ -924,7 +903,6 @@ impl<'a> Expander<'a> {
                 block,
                 Env::root(),
                 decl.file,
-                false,
             )?]),
             alias => self.toolsets(alias, &Env::root()),
         }
@@ -937,7 +915,6 @@ impl<'a> Expander<'a> {
         block: &'a Block,
         env: Rc<Env<'a>>,
         file: FileId,
-        from_macro: bool,
     ) -> Result<Toolset<'a>, LangError> {
         ToolFqn::namespace(namespace).map_err(|message| self.error(span, message))?;
         let plugin = match self.origin(file) {
@@ -947,13 +924,6 @@ impl<'a> Expander<'a> {
         let mut members = Vec::new();
         for entry in &block.entries {
             match entry {
-                Entry::Field { key, .. } if key.text == "namespace" && from_macro => {}
-                Entry::Field { key, .. } if key.text == "namespace" => {
-                    return Err(self.error(
-                        key.span,
-                        "A `tool`'s name is its namespace; only a `tool!` macro sets `namespace`.",
-                    ));
-                }
                 Entry::Declare {
                     keyword,
                     name,
@@ -1151,12 +1121,7 @@ impl<'a> Expander<'a> {
 
     fn symbols(&self) -> Vec<Symbol> {
         let mut symbols = Vec::new();
-        for kind in [
-            ItemKind::Artf,
-            ItemKind::Tool,
-            ItemKind::Profile,
-            ItemKind::Eval,
-        ] {
+        for kind in [ItemKind::Artf, ItemKind::Tool] {
             let namespace = self.globals.kind(kind);
             for (is_macro, table) in [(false, &namespace.concrete), (true, &namespace.macros)] {
                 for decl in table.values() {
@@ -1185,6 +1150,17 @@ impl<'a> Expander<'a> {
                     });
                 }
             }
+        }
+        for decl in self.globals.profiles.values() {
+            symbols.push(Symbol {
+                kind: "profile",
+                name: decl.item.name.text.clone(),
+                is_macro: false,
+                params: None,
+                file: self.sources.file(decl.file).path.clone(),
+                line: self.sources.line_column(decl.item.name.span).0,
+                plugin: None,
+            });
         }
         symbols
     }

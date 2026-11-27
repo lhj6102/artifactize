@@ -21,21 +21,25 @@ fn a_rename_changes_the_binding_every_reference_and_nothing_else() {
         "// The docs.\nartf docs : files = { path = \"docs/\" }\n",
     )
     .unwrap();
-    // `docs` is also a tool's name and a word in prose: neither is an Artifact.
+    fs::write(
+        definitions.join("profiles.artfprofiles"),
+        "profile reviewer : agent = { backend = \"openai\", model = \"fixture\" }\n",
+    )
+    .unwrap();
+    // `docs` is also a word in prose: it is no Artifact.
     fs::write(
         definitions.join("app.artf"),
-        r#"profile reviewer = agent(backend = "openai", model = "fixture")
-tool docs = { agent read = builtin(op = "read") }
-artf! checked(input) : files & docs = {
+        r#"tool reading = { agent read = builtin(op = "read") }
+artf! checked(input) : files & reading = {
   path = "src/"
   parts = [input]
   eval matches : reviewer = {
     title = "Matches the docs"
-    instruction = "Compare @{artf self} with @{artf docs} and @{path docs/guide.md}."
+    instruction = "Compare @{artf self} with @{artf docs}."
   }
   eval tests : runtime(command = "true", args = ["--docs=@{path docs}"]) = {
     title = "Tests"
-    inputs = [docs]
+    deps = [docs]
   }
 }
 artf app = checked!(input = docs)
@@ -51,16 +55,9 @@ artf app = checked!(input = docs)
         ))
     );
     let app = fs::read_to_string(definitions.join("app.artf")).unwrap();
+    assert!(app.contains("with @{artf guides}."), "{app}");
     assert!(
-        app.contains("tool docs = {") && app.contains("files & docs"),
-        "{app}"
-    );
-    assert!(
-        app.contains("with @{artf guides} and @{path guides/guide.md}"),
-        "{app}"
-    );
-    assert!(
-        app.contains("--docs=@{path guides}") && app.contains("inputs = [guides]"),
+        app.contains("--docs=@{path guides}") && app.contains("deps = [guides]"),
         "{app}"
     );
     assert!(
@@ -81,4 +78,11 @@ artf app = checked!(input = docs)
         .unwrap_err()
         .to_string();
     assert!(error.contains("already declared"), "{error}");
+    // Toolsets and profiles share the Artifacts' names: neither name is free.
+    for taken in ["reading", "reviewer"] {
+        let error = rename(root, &name("guides"), &name(taken))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("already declared as"), "{taken}: {error}");
+    }
 }

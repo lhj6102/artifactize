@@ -1,8 +1,0 @@
-// The Agent profiles: what an Agent eval runs with. `artifactize verify --profile NAME` runs
-// every Agent eval of a Run with one of them instead; a profile is how an eval runs, not what
-// it asks, so the choice never changes a reuse key.
-profile luna = agent(backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000)
-profile luna-max = agent(backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000)
-profile sol-max = agent(backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000)
-profile sol-medium = agent(backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000)
-profile sol-high = agent(backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000)

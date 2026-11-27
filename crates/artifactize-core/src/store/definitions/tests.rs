@@ -198,9 +198,9 @@ fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
                 "basis":null,
                 // Where it is bound and what it composes, as the desktop's Definition shows.
                 "binding":{"line":6},
-                "tools":"app",
-                "toolsets":["app"],
-                "views":{"agentSessions":{},"agentTools":{"app.read":{"builtin":"read"}},"humanTools":{}},
+                "tools":"app-tools",
+                "toolsets":["app-tools"],
+                "views":{"agentSessions":{},"agentTools":{"app-tools.read":{"builtin":"read"}},"humanTools":{}},
                 "fingerprint":{"script":{
                     "command":crate::test_os::echo_program(),
                     "args":["v1"],

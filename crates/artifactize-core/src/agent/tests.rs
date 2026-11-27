@@ -298,7 +298,7 @@ fn anthropic_text(text: &str) -> MockHttpResponse {
 
 fn anthropic_response(tools: bool, stop: &str) -> MockHttpResponse {
     let content = if tools {
-        json!({"type":"tool_use","id":"call_1","name":"a_inspect_a","input":{}})
+        json!({"type":"tool_use","id":"call_1","name":"a-tools_inspect_a","input":{}})
     } else {
         json!({"type":"text","text":""})
     };
@@ -347,7 +347,10 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
             openai_response(
                 "exact-model",
                 "completed",
-                vec![call("c1", "a_inspect_a"), call("c2", "a_inspect_a")],
+                vec![
+                    call("c1", "a-tools_inspect_a"),
+                    call("c2", "a-tools_inspect_a"),
+                ],
                 Value::Null,
             ),
             final_openai(),
@@ -391,7 +394,7 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
     assert_eq!(body["text"]["format"]["strict"], true);
     assert_eq!(body["text"]["format"]["schema"]["type"], "object");
     assert!(body["text"]["format"]["schema"].get("anyOf").is_none());
-    assert_eq!(body["tools"][0]["name"], "a_inspect_a");
+    assert_eq!(body["tools"][0]["name"], "a-tools_inspect_a");
     assert_eq!(body["tools"][0]["parameters"]["required"], json!(["path"]));
     assert!(
         body.to_string()
@@ -400,7 +403,7 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
     // The evaluator gets only its identity, target, instruction and Artifacts as user input.
     assert_eq!(
         body["input"][0]["content"][0]["text"],
-        "Eval: Review (a/review)\nTarget Artifact: a\nInstruction: Check a\nArtifacts:\n[{\"name\":\"a\",\"role\":\"target\",\"tools\":[\"a_inspect_a\"]}]"
+        "Eval: Review (a/review)\nTarget Artifact: a\nInstruction: Check a\nArtifacts:\n[{\"name\":\"a\",\"role\":\"target\",\"tools\":[\"a-tools_inspect_a\"]}]"
     );
     assert!(!body.to_string().contains("unchanged"));
     assert!(!body.to_string().contains("import json"));
@@ -452,7 +455,7 @@ async fn anthropic_exact_effort_multiblock_results_and_reported_cache_usage() {
     assert_eq!(body["output_config"]["effort"], "high");
     assert_eq!(body["output_config"]["format"]["type"], "json_schema");
     assert_eq!(body["max_tokens"], 16_384);
-    assert_eq!(body["tools"][0]["name"], "a_inspect_a");
+    assert_eq!(body["tools"][0]["name"], "a-tools_inspect_a");
     assert_eq!(
         body["tools"][0]["input_schema"]["properties"]["path"],
         json!({"type":"string"})
@@ -485,13 +488,16 @@ async fn incomplete_wrong_model_and_duplicate_calls_fail_before_tools() {
         openai_response(
             "other-model",
             "completed",
-            vec![call("c1", "a_inspect_a")],
+            vec![call("c1", "a-tools_inspect_a")],
             Value::Null,
         ),
         openai_response(
             "exact-model",
             "completed",
-            vec![call("same", "a_inspect_a"), call("same", "a_inspect_a")],
+            vec![
+                call("same", "a-tools_inspect_a"),
+                call("same", "a-tools_inspect_a"),
+            ],
             Value::Null,
         ),
     ] {
@@ -618,7 +624,7 @@ async fn output_that_breaks_off_sends_the_same_turn_again_at_any_turn() {
             openai_response(
                 "exact-model",
                 "completed",
-                vec![call("c1", "a_inspect_a")],
+                vec![call("c1", "a-tools_inspect_a")],
                 Value::Null,
             ),
             MockHttpResponse::error(StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
@@ -776,7 +782,7 @@ async fn registry_image_blocks_reach_both_provider_wires() {
                 openai_response(
                     "exact-model",
                     "completed",
-                    vec![call("c1", "a_inspect_a")],
+                    vec![call("c1", "a-tools_inspect_a")],
                     Value::Null,
                 ),
                 final_openai(),
@@ -865,8 +871,8 @@ async fn instruction_names_artifacts_and_lists_each_once_without_paths() {
     assert_eq!(
         body["input"][0]["content"][0]["text"],
         "Eval: Review (a/review)\nTarget Artifact: a\nInstruction: Check a against b, then a again; b decides\nArtifacts:\n\
-         [{\"name\":\"a\",\"role\":\"target\",\"tools\":[\"a_inspect_a\"]},\n \
-         {\"name\":\"b\",\"role\":\"input\",\"tools\":[\"b_read_b\"]}]"
+         [{\"name\":\"a\",\"role\":\"target\",\"tools\":[\"a-tools_inspect_a\"]},\n \
+         {\"name\":\"b\",\"role\":\"input\",\"tools\":[\"b-tools_read_b\"]}]"
     );
     assert!(!body.to_string().contains("input.txt"));
 }

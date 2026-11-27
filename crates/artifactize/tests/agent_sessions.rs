@@ -287,7 +287,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         assert_eq!(header["model"], format!("{backend}-model"));
         assert_eq!(header["parameters"]["prompt_cache_key"], session.as_str());
         assert_eq!(header["budgets"]["timeoutMs"], 20000);
-        assert_eq!(header["tools"][0]["name"], "notes_read_notes");
+        assert_eq!(header["tools"][0]["name"], "notes-tools_read_notes");
         assert_eq!(header["state"], review["session"]["state"]);
         assert_eq!(
             roles(&events),
@@ -358,8 +358,8 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
             format!("Reference: {reference}"),
             "── System".into(),
             "[reasoning] Reading the notes".into(),
-            r#"[tool call notes_read_notes] {"path":"notes.md"}"#.into(),
-            "[tool result notes_read_notes]".into(),
+            r#"[tool call notes-tools_read_notes] {"path":"notes.md"}"#.into(),
+            "[tool result notes-tools_read_notes]".into(),
             "── Repair prompt (turn 3)".into(),
             "── Result: {".into(),
         ] {
@@ -385,7 +385,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         for call in &calls[3..] {
             assert_eq!(call.body["prompt_cache_key"], session.as_str());
             assert_eq!(call.body["model"], format!("{backend}-model"));
-            assert_eq!(call.body["tools"][0]["name"], "notes_read_notes");
+            assert_eq!(call.body["tools"][0]["name"], "notes-tools_read_notes");
             if backend == "codex" {
                 assert_eq!(call.headers["session-id"], session);
             }
@@ -515,7 +515,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         assert_eq!(summary["tokens"]["outputTokens"], 12);
         assert_eq!(
             summary["toolCalls"],
-            json!({"notes_read_notes":{"calls":2,"failed":0}})
+            json!({"notes-tools_read_notes":{"calls":2,"failed":0}})
         );
         assert!(summary["durationMs"].is_u64());
         let shown = project.text(&provider, &["session", "show", &session, "--summary"], 0);
@@ -525,7 +525,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
             "Tokens: input 60 · output 12 · cache read 0 · reasoning 0\n".into(),
             "  turn 1: input 10 · output 2 · cache read 0 · reasoning 0\n".into(),
             "  follow-up 2, turn 1: input 10 · output 2 · cache read 0 · reasoning 0\n".into(),
-            "Tool calls: 2\n  notes_read_notes: 2\n".into(),
+            "Tool calls: 2\n  notes-tools_read_notes: 2\n".into(),
         ] {
             assert!(shown.contains(&expected), "{expected} in {shown}");
         }

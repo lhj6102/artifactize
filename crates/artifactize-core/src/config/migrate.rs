@@ -47,7 +47,10 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
             .map_err(|error| ConfigError::new(&definitions, error))?;
     if has_definitions {
         for (path, text) in discovery::sources(&root)? {
-            if !lang::looks_like_toml(&text) {
+            let profiles_file = path
+                .extension()
+                .is_some_and(|extension| extension == lang::PROFILES_EXTENSION);
+            if profiles_file || !lang::looks_like_toml(&text) {
                 current.insert(path, text);
                 continue;
             }

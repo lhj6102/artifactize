@@ -182,7 +182,8 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
     assert!(green["result"]["durationMs"].is_u64());
     assert!(green["child"]["pid"].as_u64().unwrap() > 0);
     assert!(green["child"]["startTime"].as_u64().unwrap() > 0);
-    assert_eq!(green["payload"]["instruction"], "Check runtime.");
+    // A runtime eval asks nothing: its exit code is its verdict.
+    assert!(green["payload"]["instruction"].is_null(), "{green}");
     assert_eq!(
         green["cwd"],
         support::os::path_text(&fixture.repo.join("review"))
@@ -657,7 +658,7 @@ fn verify_file_and_csv_selectors_preserve_order() {
 }
 
 #[test]
-fn invalid_selections_and_profiles_never_create_a_run() {
+fn invalid_selections_never_create_a_run() {
     let fixture = Fixture::new();
     support::copy_fixture("runtime", &fixture.repo);
     for args in [
@@ -665,8 +666,6 @@ fn invalid_selections_and_profiles_never_create_a_run() {
         vec!["verify", "--evals", "green/check,"],
         vec!["verify", "--artifacts", "green,unknown"],
         vec!["verify", "--artifacts", ""],
-        vec!["verify", "green", "--profile", "unknown"],
-        vec!["verify", "green", "--profile", "bad name"],
     ] {
         let output = fixture
             .command()

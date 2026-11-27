@@ -518,7 +518,7 @@ fn config_check_rejects_true_and_nonobject_fingerprints_with_a_clear_message() {
             output["error"]
                 .as_str()
                 .unwrap()
-                .contains("`fingerprint` is `false`, `none`"),
+                .contains("`fingerprint` is `false`, `{ files = […], ignore = […] }`"),
             "{output}"
         );
     }

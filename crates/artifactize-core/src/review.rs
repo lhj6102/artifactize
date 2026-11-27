@@ -610,11 +610,11 @@ mod artifact_tool_tests {
         std::fs::write(
             root.join(".artifactize/app.artf"),
             r#"
-tool app = {
+tool reader = {
   human notes = builtin(op = "read", args = ["@{path self}"])
 }
 
-artf app : app = { path = "notes.md" }
+artf app : reader = { path = "notes.md" }
 "#,
         )
         .unwrap();
@@ -624,7 +624,7 @@ artf app : app = { path = "notes.md" }
         let artifact = "app".parse().unwrap();
         let sites = crate::config::read_sites(&root).unwrap();
         let app = ArtifactDeclarations::read(&root, &artifact, &sites[&artifact]).unwrap();
-        let tool = "app_notes_app".parse().unwrap();
+        let tool = "reader_notes_app".parse().unwrap();
         let run = || {
             app.run_tool(
                 &checkout,

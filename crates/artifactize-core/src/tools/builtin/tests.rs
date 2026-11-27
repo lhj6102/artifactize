@@ -106,7 +106,7 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
     for (mime, bytes) in image::tests::fixtures() {
         fixture.write("a/source/image.txt", &bytes);
         let result = fixture
-            .call("a_view_image_a", json!({"path":"source/image.txt"}))
+            .call("a-tools_view_image_a", json!({"path":"source/image.txt"}))
             .await;
         assert!(!result.is_error(), "{result:?}");
         assert_eq!(
@@ -126,7 +126,7 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
     ] {
         assert!(
             fixture
-                .call("a_view_image_a", json!({"path":path}))
+                .call("a-tools_view_image_a", json!({"path":path}))
                 .await
                 .is_error(),
             "{path}"
@@ -142,7 +142,7 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
         fixture.write("a/invalid.png", bytes);
         assert!(
             fixture
-                .call("a_view_image_a", json!({"path":"invalid.png"}))
+                .call("a-tools_view_image_a", json!({"path":"invalid.png"}))
                 .await
                 .is_error()
         );
@@ -152,7 +152,7 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
     fixture.write("a/large", &bytes);
     assert!(
         !fixture
-            .call("a_view_image_a", json!({"path":"large"}))
+            .call("a-tools_view_image_a", json!({"path":"large"}))
             .await
             .is_error()
     );
@@ -160,7 +160,7 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
     fixture.write("a/large", bytes);
     assert!(
         fixture
-            .call("a_view_image_a", json!({"path":"large"}))
+            .call("a-tools_view_image_a", json!({"path":"large"}))
             .await
             .is_error()
     );
@@ -171,7 +171,7 @@ async fn read_preserves_lines_and_reports_eof_and_partial_pages() {
     let fixture = Fixture::new();
     fixture.write("a/text", "\u{feff}one\r\n\n三\nlast");
     let data = fixture
-        .data("a_read_a", json!({"path":"text","limit":2}))
+        .data("a-tools_read_a", json!({"path":"text","limit":2}))
         .await;
     assert_eq!(
         data["lines"],
@@ -184,7 +184,7 @@ async fn read_preserves_lines_and_reports_eof_and_partial_pages() {
     assert_eq!(data["nextOffset"], 3);
     assert!(data.get("totalLines").is_none());
     let data = fixture
-        .data("a_read_a", json!({"path":"text","offset":3}))
+        .data("a-tools_read_a", json!({"path":"text","offset":3}))
         .await;
     assert_eq!(
         data["lines"],
@@ -195,32 +195,35 @@ async fn read_preserves_lines_and_reports_eof_and_partial_pages() {
     assert_eq!(data["nextOffset"], Value::Null);
     assert_eq!(data["truncated"], false);
     let data = fixture
-        .data("a_read_a", json!({"path":"text","offset":20}))
+        .data("a-tools_read_a", json!({"path":"text","offset":20}))
         .await;
     assert_eq!(data["totalLines"], 4);
     assert_eq!(data["lineCount"], 0);
     assert_eq!(data["endLine"], Value::Null);
     fixture.write("a/text", "");
-    let data = fixture.data("a_read_a", json!({"path":"text"})).await;
+    let data = fixture.data("a-tools_read_a", json!({"path":"text"})).await;
     assert_eq!(data["totalLines"], 0);
     assert_eq!(data["lines"], json!([]));
     fixture.write("a/text", "a\nb\n");
     let data = fixture
-        .data("a_read_a", json!({"path":"text","limit":2}))
+        .data("a-tools_read_a", json!({"path":"text","limit":2}))
         .await;
     assert_eq!(data["totalLines"], 2);
     assert_eq!(data["truncated"], false);
     fixture.write("a/text", "x\n".repeat(501));
-    let data = fixture.data("a_read_a", json!({"path":"text"})).await;
+    let data = fixture.data("a-tools_read_a", json!({"path":"text"})).await;
     assert_eq!(data["lineCount"], 80);
     assert_eq!(data["nextOffset"], 81);
     let data = fixture
-        .data("a_read_a", json!({"path":"text","limit":500}))
+        .data("a-tools_read_a", json!({"path":"text","limit":500}))
         .await;
     assert_eq!(data["lineCount"], 500);
     assert_eq!(data["nextOffset"], 501);
     let data = fixture
-        .data("a_read_a", json!({"path":"text","offset":2.0,"limit":1.0}))
+        .data(
+            "a-tools_read_a",
+            json!({"path":"text","offset":2.0,"limit":1.0}),
+        )
         .await;
     assert_eq!(data["lineCount"], 1);
     assert_eq!(data["startLine"], 2);
@@ -230,21 +233,21 @@ async fn read_preserves_lines_and_reports_eof_and_partial_pages() {
 async fn read_bounds_complete_lines_and_decodes_only_requested_lines() {
     let fixture = Fixture::new();
     fixture.write("a/text", format!("{}\nnext", "a".repeat(READ_BYTES - 1)));
-    let data = fixture.data("a_read_a", json!({"path":"text"})).await;
+    let data = fixture.data("a-tools_read_a", json!({"path":"text"})).await;
     assert_eq!(data["lineCount"], 1);
     assert_eq!(data["nextOffset"], 2);
     fixture.write("a/text", format!("ok\n{}\n", "界".repeat(30_000)));
-    let data = fixture.data("a_read_a", json!({"path":"text"})).await;
+    let data = fixture.data("a-tools_read_a", json!({"path":"text"})).await;
     assert_eq!(data["lines"], json!([{"number":1,"text":"ok\n"}]));
     assert!(
         fixture
-            .call("a_read_a", json!({"path":"text","offset":2}))
+            .call("a-tools_read_a", json!({"path":"text","offset":2}))
             .await
             .is_error()
     );
     fixture.write("a/text", format!("{}\né\n", "a".repeat(READ_BYTES + 1)));
     let data = fixture
-        .data("a_read_a", json!({"path":"text","offset":2}))
+        .data("a-tools_read_a", json!({"path":"text","offset":2}))
         .await;
     assert_eq!(data["lines"][0]["text"], "é\n");
     for invalid in [
@@ -255,24 +258,24 @@ async fn read_bounds_complete_lines_and_decodes_only_requested_lines() {
         fixture.write("a/text", invalid);
         assert!(
             fixture
-                .call("a_read_a", json!({"path":"text"}))
+                .call("a-tools_read_a", json!({"path":"text"}))
                 .await
                 .is_error()
         );
         let data = fixture
-            .data("a_read_a", json!({"path":"text","offset":2}))
+            .data("a-tools_read_a", json!({"path":"text","offset":2}))
             .await;
         assert_eq!(data["lines"][0]["text"], "valid\n");
     }
     fixture.write("a/text", b"valid\n\xff\0");
     assert!(
         !fixture
-            .call("a_read_a", json!({"path":"text","limit":1}))
+            .call("a-tools_read_a", json!({"path":"text","limit":1}))
             .await
             .is_error()
     );
     fixture.write("a/text", format!("{}é\r\n", "a".repeat(8191)));
-    let data = fixture.data("a_read_a", json!({"path":"text"})).await;
+    let data = fixture.data("a-tools_read_a", json!({"path":"text"})).await;
     assert!(
         data["lines"][0]["text"]
             .as_str()
@@ -304,14 +307,14 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
     paths.extend(special_files.paths().iter().copied());
     for path in paths {
         for tool in [
-            "a_read_a",
-            "a_list_a",
-            "a_glob_a",
-            "a_grep_a",
-            "a_view_image_a",
+            "a-tools_read_a",
+            "a-tools_list_a",
+            "a-tools_glob_a",
+            "a-tools_grep_a",
+            "a-tools_view_image_a",
         ] {
             let mut args = json!({"path":path});
-            if tool == "a_glob_a" || tool == "a_grep_a" {
+            if tool == "a-tools_glob_a" || tool == "a-tools_grep_a" {
                 args["pattern"] = json!(".*");
             }
             assert!(fixture.call(tool, args).await.is_error(), "{tool} {path}");
@@ -319,18 +322,20 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
     }
     assert!(
         fixture
-            .call("a_read_a", json!({"path":"data"}))
+            .call("a-tools_read_a", json!({"path":"data"}))
             .await
             .is_error()
     );
-    let data = fixture.data("a_glob_a", json!({"pattern":"**/*"})).await;
+    let data = fixture
+        .data("a-tools_glob_a", json!({"pattern":"**/*"}))
+        .await;
     assert_eq!(data["files"], json!(["data/file"]));
     let config = read_workspace_config(&fixture.root).unwrap();
     let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     fs::rename(fixture.root.join("a"), fixture.root.join("old-a")).unwrap();
     let read = || {
         registry.call(
-            "a_read_a",
+            "a-tools_read_a",
             json!({"path":"data/file"}),
             &fixture.root,
             CancellationToken::new(),
@@ -353,41 +358,49 @@ async fn missing_paths_and_links_report_their_cause() {
     };
     let symlink = "Cannot open Artifact input without symlink traversal.";
     let mut cases = vec![
-        ("a_read_a", "notes.md", r#"No "notes.md" in Artifact a."#),
         (
-            "a_grep_a",
+            "a-tools_read_a",
+            "notes.md",
+            r#"No "notes.md" in Artifact a."#,
+        ),
+        (
+            "a-tools_grep_a",
             "data/missing",
             r#"No "data/missing" in Artifact a."#,
         ),
         (
-            "a_read_a",
+            "a-tools_read_a",
             "a/data/file",
             r#"No "a/data/file" in Artifact a; paths are relative to the Artifact (for example "data/file"), without its name."#,
         ),
         (
-            "a_view_image_a",
+            "a-tools_view_image_a",
             "a/image.png",
             r#"No "a/image.png" in Artifact a; paths are relative to the Artifact (for example "image.png"), without its name."#,
         ),
         (
-            "a_list_a",
+            "a-tools_list_a",
             "a",
             r#"No "a" in Artifact a; paths are relative to the Artifact, without its name (its root is "")."#,
         ),
         // Only the Artifact's own name, not a longer component that starts with it, earns the hint.
-        ("a_list_a", "ab/data", r#"No "ab/data" in Artifact a."#),
+        (
+            "a-tools_list_a",
+            "ab/data",
+            r#"No "ab/data" in Artifact a."#,
+        ),
     ];
     let a = fixture.root.join("a");
     file_link(&a.join("data/file"), &a.join("link"));
     link_dir(&a.join("data"), &a.join("linkdir"));
     cases.extend([
-        ("a_read_a", "link", symlink),
-        ("a_list_a", "linkdir", symlink),
-        ("a_read_a", "linkdir/file", symlink),
+        ("a-tools_read_a", "link", symlink),
+        ("a-tools_list_a", "linkdir", symlink),
+        ("a-tools_read_a", "linkdir/file", symlink),
     ]);
     for (tool, path, message) in cases {
         let mut args = json!({"path":path});
-        if tool == "a_grep_a" {
+        if tool == "a-tools_grep_a" {
             args["pattern"] = json!(".*");
         }
         assert_eq!(
@@ -398,7 +411,7 @@ async fn missing_paths_and_links_report_their_cause() {
     }
     let message = error(
         fixture
-            .call("a_read_a", json!({"path":"data/file/x"}))
+            .call("a-tools_read_a", json!({"path":"data/file/x"}))
             .await,
     );
     if let Some(cause) = crate::test_os::not_a_directory_error() {
@@ -412,7 +425,7 @@ async fn descriptions_say_paths_are_relative_to_the_artifact_without_its_name() 
     let config = read_workspace_config(&fixture.root).unwrap();
     let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     for tool in registry.list() {
-        let example = if tool.name == "a_view_image_a" {
+        let example = if tool.name == "a-tools_view_image_a" {
             r#"use "image.png", not "a/image.png"."#
         } else {
             r#"use "notes.md", not "a/notes.md"."#
@@ -438,39 +451,42 @@ async fn descriptions_say_paths_are_relative_to_the_artifact_without_its_name() 
 async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in() {
     let fixture = Fixture::new();
     for (tool, args) in [
-        ("a_read_a", json!({})),
-        ("a_view_image_a", json!({})),
-        ("a_view_image_a", json!({"path":"x","extra":true})),
-        ("a_read_a", json!({"path":"x","offset":0})),
-        ("a_read_a", json!({"path":"x","limit":501})),
-        ("a_read_a", json!({"path":"x","extra":true})),
-        ("a_list_a", json!({"offset":-1})),
-        ("a_list_a", json!({"limit":201})),
-        ("a_glob_a", json!({"pattern":""})),
-        ("a_grep_a", json!({"pattern":"a","maxResults":201})),
-        ("a_grep_a", json!({"pattern":"a","caseInsensitive":1})),
-        ("a_read_a", json!({"path":null})),
-        ("a_read_a", json!({"path":"x","offset":null})),
-        ("a_read_a", json!({"path":"x","limit":null})),
-        ("a_read_a", json!({"path":"x","offset":1.5})),
+        ("a-tools_read_a", json!({})),
+        ("a-tools_view_image_a", json!({})),
+        ("a-tools_view_image_a", json!({"path":"x","extra":true})),
+        ("a-tools_read_a", json!({"path":"x","offset":0})),
+        ("a-tools_read_a", json!({"path":"x","limit":501})),
+        ("a-tools_read_a", json!({"path":"x","extra":true})),
+        ("a-tools_list_a", json!({"offset":-1})),
+        ("a-tools_list_a", json!({"limit":201})),
+        ("a-tools_glob_a", json!({"pattern":""})),
+        ("a-tools_grep_a", json!({"pattern":"a","maxResults":201})),
+        ("a-tools_grep_a", json!({"pattern":"a","caseInsensitive":1})),
+        ("a-tools_read_a", json!({"path":null})),
+        ("a-tools_read_a", json!({"path":"x","offset":null})),
+        ("a-tools_read_a", json!({"path":"x","limit":null})),
+        ("a-tools_read_a", json!({"path":"x","offset":1.5})),
         (
-            "a_read_a",
+            "a-tools_read_a",
             json!({"path":"x","offset":9007199254740992_u64}),
         ),
-        ("a_list_a", json!({"path":null})),
-        ("a_list_a", json!({"offset":null})),
-        ("a_list_a", json!({"limit":0})),
-        ("a_list_a", json!({"limit":null})),
-        ("a_glob_a", json!({})),
-        ("a_glob_a", json!({"pattern":null})),
-        ("a_glob_a", json!({"pattern":"*","extra":true})),
-        ("a_grep_a", json!({})),
-        ("a_grep_a", json!({"pattern":null})),
-        ("a_grep_a", json!({"pattern":"a","glob":null})),
-        ("a_grep_a", json!({"pattern":"a","maxResults":null})),
-        ("a_grep_a", json!({"pattern":"a","caseInsensitive":null})),
-        ("a_grep_a", json!({"pattern":"a","maxResults":0})),
-        ("a_view_image_a", json!({"path":null})),
+        ("a-tools_list_a", json!({"path":null})),
+        ("a-tools_list_a", json!({"offset":null})),
+        ("a-tools_list_a", json!({"limit":0})),
+        ("a-tools_list_a", json!({"limit":null})),
+        ("a-tools_glob_a", json!({})),
+        ("a-tools_glob_a", json!({"pattern":null})),
+        ("a-tools_glob_a", json!({"pattern":"*","extra":true})),
+        ("a-tools_grep_a", json!({})),
+        ("a-tools_grep_a", json!({"pattern":null})),
+        ("a-tools_grep_a", json!({"pattern":"a","glob":null})),
+        ("a-tools_grep_a", json!({"pattern":"a","maxResults":null})),
+        (
+            "a-tools_grep_a",
+            json!({"pattern":"a","caseInsensitive":null}),
+        ),
+        ("a-tools_grep_a", json!({"pattern":"a","maxResults":0})),
+        ("a-tools_view_image_a", json!({"path":null})),
     ] {
         let result = fixture.call(tool, args).await;
         assert!(result.is_error());
@@ -488,11 +504,11 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>(),
         [
-            "a_glob_a",
-            "a_grep_a",
-            "a_list_a",
-            "a_read_a",
-            "a_view_image_a"
+            "a-tools_glob_a",
+            "a-tools_grep_a",
+            "a-tools_list_a",
+            "a-tools_read_a",
+            "a-tools_view_image_a"
         ]
     );
     for tool in registry.list() {
@@ -509,7 +525,7 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
     cancelled.cancel();
     assert!(
         registry
-            .call("a_list_a", json!({}), &fixture.root, cancelled)
+            .call("a-tools_list_a", json!({}), &fixture.root, cancelled)
             .await
             .is_error()
     );
@@ -537,13 +553,13 @@ async fn listing_pages_are_sorted_and_reach_referenced_nested_artifacts() {
     compose();
     // A nested folder Artifact is another Artifact: only a reference brings it in.
     let refused = fixture
-        .call("a_read_a", json!({"path":"nested/cases/input.txt"}))
+        .call("a-tools_read_a", json!({"path":"nested/cases/input.txt"}))
         .await;
     assert!(refused.is_error(), "{refused:?}");
     fixture.artifact("a", "a", "Review {b} and {cases}.");
     compose();
     fixture.write("a/nested/cases/notes.md", "notes");
-    let data = fixture.data("a_list_a", json!({})).await;
+    let data = fixture.data("a-tools_list_a", json!({})).await;
     assert_eq!(
         data["entries"]
             .as_array()
@@ -554,34 +570,36 @@ async fn listing_pages_are_sorted_and_reach_referenced_nested_artifacts() {
         ["nested", "source"]
     );
     assert_eq!(data["entries"][1]["kind"], "directory");
-    let data = fixture.data("a_list_a", json!({"path":"nested"})).await;
+    let data = fixture
+        .data("a-tools_list_a", json!({"path":"nested"}))
+        .await;
     assert_eq!(
         data["entries"][0],
         json!({"name":"cases","path":"nested/cases","kind":"directory"})
     );
     let data = fixture
-        .data("a_list_a", json!({"path":"nested/cases","limit":1}))
+        .data("a-tools_list_a", json!({"path":"nested/cases","limit":1}))
         .await;
     assert_eq!(data["totalEntries"], 2);
     assert_eq!(data["entries"][0]["path"], "nested/cases/input.txt");
     assert_eq!(data["nextOffset"], 1);
     let data = fixture
-        .data("a_list_a", json!({"path":"nested/cases","offset":1}))
+        .data("a-tools_list_a", json!({"path":"nested/cases","offset":1}))
         .await;
     assert_eq!(data["entries"][0]["name"], "notes.md");
     assert_eq!(data["nextOffset"], Value::Null);
     let data = fixture
-        .data("a_read_a", json!({"path":"nested/cases/input.txt"}))
+        .data("a-tools_read_a", json!({"path":"nested/cases/input.txt"}))
         .await;
     assert_eq!(data["resolvedArtifactId"], "cases");
     assert_eq!(
         fixture
-            .data("a_read_a", json!({"path":"source/input.txt"}))
+            .data("a-tools_read_a", json!({"path":"source/input.txt"}))
             .await["resolvedArtifactId"],
         "b"
     );
     let data = fixture
-        .data("a_glob_a", json!({"pattern":"**/*.txt"}))
+        .data("a-tools_glob_a", json!({"pattern":"**/*.txt"}))
         .await;
     assert_eq!(
         data["files"],
@@ -598,16 +616,16 @@ async fn listing_pages_are_sorted_and_reach_referenced_nested_artifacts() {
     for i in 0..201 {
         fixture.write(&format!("a/page/{i:03}"), "");
     }
-    let data = fixture.data("a_list_a", json!({"path":"page"})).await;
+    let data = fixture.data("a-tools_list_a", json!({"path":"page"})).await;
     assert_eq!(data["entries"].as_array().unwrap().len(), 200);
     assert_eq!(data["nextOffset"], 200);
     let data = fixture
-        .data("a_list_a", json!({"path":"page","offset":200}))
+        .data("a-tools_list_a", json!({"path":"page","offset":200}))
         .await;
     assert_eq!(data["entries"][0]["name"], "200");
     assert_eq!(data["nextOffset"], Value::Null);
     let data = fixture
-        .data("a_list_a", json!({"path":"page","offset":500}))
+        .data("a-tools_list_a", json!({"path":"page","offset":500}))
         .await;
     assert_eq!(data["entries"], json!([]));
     assert_eq!(data["totalEntries"], 201);
@@ -630,7 +648,7 @@ async fn glob_and_grep_are_bounded_sorted_and_skip_binary_and_symlinks() {
         &fixture.root.join("a/search/joined.txt"),
     );
     let data = fixture
-        .data("a_glob_a", json!({"path":"search","pattern":"*.txt"}))
+        .data("a-tools_glob_a", json!({"path":"search","pattern":"*.txt"}))
         .await;
     assert_eq!(
         data["files"],
@@ -643,7 +661,7 @@ async fn glob_and_grep_are_bounded_sorted_and_skip_binary_and_symlinks() {
     );
     let data = fixture
         .data(
-            "a_grep_a",
+            "a-tools_grep_a",
             json!({"path":"search","pattern":"^alpha","glob":"**/*.txt","caseInsensitive":true}),
         )
         .await;
@@ -659,7 +677,7 @@ async fn glob_and_grep_are_bounded_sorted_and_skip_binary_and_symlinks() {
     assert_eq!(data["truncated"], false);
     let data = fixture
         .data(
-            "a_grep_a",
+            "a-tools_grep_a",
             json!({"path":"search","pattern":"alpha","caseInsensitive":true,"maxResults":2}),
         )
         .await;
@@ -667,7 +685,7 @@ async fn glob_and_grep_are_bounded_sorted_and_skip_binary_and_symlinks() {
     assert_eq!(data["truncated"], true);
     let data = fixture
         .data(
-            "a_grep_a",
+            "a-tools_grep_a",
             json!({"path":"search/a.txt","pattern":"beta$","maxResults":2}),
         )
         .await;
@@ -675,13 +693,13 @@ async fn glob_and_grep_are_bounded_sorted_and_skip_binary_and_symlinks() {
     assert_eq!(data["truncated"], false);
     assert!(
         fixture
-            .call("a_grep_a", json!({"pattern":"["}))
+            .call("a-tools_grep_a", json!({"pattern":"["}))
             .await
             .is_error()
     );
     assert!(
         fixture
-            .call("a_glob_a", json!({"pattern":"../*"}))
+            .call("a-tools_glob_a", json!({"pattern":"../*"}))
             .await
             .is_error()
     );
@@ -689,25 +707,28 @@ async fn glob_and_grep_are_bounded_sorted_and_skip_binary_and_symlinks() {
         fixture.write(&format!("a/many/{i:03}.txt"), "match\n");
     }
     let data = fixture
-        .data("a_glob_a", json!({"path":"many","pattern":"**/*.txt"}))
+        .data(
+            "a-tools_glob_a",
+            json!({"path":"many","pattern":"**/*.txt"}),
+        )
         .await;
     assert_eq!(data["files"].as_array().unwrap().len(), 200);
     assert_eq!(data["files"][0], "many/000.txt");
     assert_eq!(data["truncated"], true);
     let data = fixture
-        .data("a_grep_a", json!({"path":"many","pattern":"match"}))
+        .data("a-tools_grep_a", json!({"path":"many","pattern":"match"}))
         .await;
     assert_eq!(data["matches"].as_array().unwrap().len(), 200);
     assert_eq!(data["truncated"], true);
     fixture.write("a/large", "x".repeat(SEARCH_FILE_BYTES + 1));
     let data = fixture
-        .data("a_grep_a", json!({"path":"large","pattern":"x"}))
+        .data("a-tools_grep_a", json!({"path":"large","pattern":"x"}))
         .await;
     assert_eq!(data["matches"], json!([]));
     assert_eq!(data["truncated"], true);
     fixture.write("a/large", format!("ok\n{}\n", "x".repeat(RESULT_BYTES)));
     let data = fixture
-        .data("a_grep_a", json!({"path":"large","pattern":"."}))
+        .data("a-tools_grep_a", json!({"path":"large","pattern":"."}))
         .await;
     assert_eq!(data["matches"].as_array().unwrap().len(), 1);
     assert_eq!(data["truncated"], true);
@@ -719,19 +740,21 @@ async fn typed_inputs_preserve_defaults_integral_float_pages_and_grep_options() 
     fixture.write("a/page.txt", "first\nSECOND\nlast\n");
     let read = fixture
         .data(
-            "a_read_a",
+            "a-tools_read_a",
             json!({"path":"page.txt","offset":2.0,"limit":1.0}),
         )
         .await;
     assert_eq!(read["lines"], json!([{"number":2,"text":"SECOND\n"}]));
-    let read = fixture.data("a_read_a", json!({"path":"page.txt"})).await;
+    let read = fixture
+        .data("a-tools_read_a", json!({"path":"page.txt"}))
+        .await;
     assert_eq!(read["startLine"], 1);
     assert_eq!(read["lineCount"], 3);
-    let list = fixture.data("a_list_a", json!({})).await;
+    let list = fixture.data("a-tools_list_a", json!({})).await;
     assert_eq!(list["path"], "");
     let grep = fixture
         .data(
-            "a_grep_a",
+            "a-tools_grep_a",
             json!({"pattern":"second","glob":"*.txt","caseInsensitive":true,"maxResults":1.0}),
         )
         .await;
@@ -739,9 +762,13 @@ async fn typed_inputs_preserve_defaults_integral_float_pages_and_grep_options() 
         grep["matches"],
         json!([{"path":"page.txt","line":2,"text":"SECOND"}])
     );
-    let grep = fixture.data("a_grep_a", json!({"pattern":"second"})).await;
+    let grep = fixture
+        .data("a-tools_grep_a", json!({"pattern":"second"}))
+        .await;
     assert_eq!(grep["matches"], json!([]));
-    let glob = fixture.data("a_glob_a", json!({"pattern":"*.txt"})).await;
+    let glob = fixture
+        .data("a-tools_glob_a", json!({"pattern":"*.txt"}))
+        .await;
     assert_eq!(glob["files"], json!(["page.txt"]));
 }
 
@@ -760,7 +787,7 @@ async fn file_artifact_image_view_is_limited_to_the_target() {
     let registry = Registry::for_artifact(&config, &"hero".parse().unwrap()).unwrap();
     let result = registry
         .call(
-            "hero_view_image_hero",
+            "hero-tools_view_image_hero",
             json!({"path":"hero.png"}),
             &fixture.root.join("never-created"),
             CancellationToken::new(),
@@ -770,7 +797,7 @@ async fn file_artifact_image_view_is_limited_to_the_target() {
     assert!(matches!(result.content(), [Content::Image { .. }]));
     let result = registry
         .call(
-            "hero_view_image_hero",
+            "hero-tools_view_image_hero",
             json!({"path":"sibling.png"}),
             &fixture.root.join("never-created"),
             CancellationToken::new(),

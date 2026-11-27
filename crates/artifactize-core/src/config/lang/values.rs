@@ -132,23 +132,6 @@ impl<'a> Expander<'a> {
                                         span,
                                     }));
                                 }
-                                SlotKind::Tool => {
-                                    let (target, target_span) = word(0);
-                                    let (audience, audience_span) = word(1);
-                                    let (tool, _) = word(2);
-                                    if !matches!(audience.as_str(), "agent" | "human") {
-                                        return Err(self.error(
-                                            audience_span,
-                                            "A tool slot's audience is `agent` or `human`.",
-                                        ));
-                                    }
-                                    pieces.push(Piece::Slot(SlotRef::Tool {
-                                        target: self.slot_target(&target, target_span)?,
-                                        audience,
-                                        tool,
-                                        span,
-                                    }));
-                                }
                             }
                         }
                     }
@@ -158,6 +141,34 @@ impl<'a> Expander<'a> {
             Expr::Number(number, _) => Ok(vec![Piece::Text(number.clone())]),
             Expr::Bool(value, _) => Ok(vec![Piece::Text(value.to_string())]),
             other => Err(self.error(other.span(), format!("{what} takes a string."))),
+        }
+    }
+
+    /// Prose (a title, an instruction, a description) is written out where it stands: no
+    /// parameter fills it, whole or as `@{param …}`.
+    pub(super) fn written_out(
+        &self,
+        expr: &'a Expr,
+        env: &Rc<Env<'a>>,
+        what: &str,
+    ) -> Result<(), LangError> {
+        let message = || {
+            format!(
+                "{what} is written out where it stands: a macro's parameters fill paths and arguments, not prose."
+            )
+        };
+        match expr {
+            Expr::Ident(name) if env.get(&name.text).is_some() => {
+                Err(self.error(name.span, message()))
+            }
+            Expr::Str(literal, span)
+                if literal.parts.iter().any(
+                    |part| matches!(part, Part::Slot(slot) if slot.kind == SlotKind::Param),
+                ) =>
+            {
+                Err(self.error(*span, message()))
+            }
+            _ => Ok(()),
         }
     }
 
@@ -217,20 +228,10 @@ impl<'a> Expander<'a> {
                 Piece::Text(text) => Ok(text),
                 Piece::Slot(slot) => Err(self.error(
                     slot.span(),
-                    format!("{what} takes text; `@{{artf}}`, `@{{path}}` and `@{{tool}}` slots belong in instructions and arguments."),
+                    format!("{what} takes text; `@{{artf}}` belongs in instructions and `@{{path}}` in arguments."),
                 )),
             })
             .collect()
-    }
-
-    /// `none` means the field is not given.
-    pub(super) fn optional(
-        &self,
-        expr: &'a Expr,
-        env: &Rc<Env<'a>>,
-    ) -> Result<Option<(&'a Expr, Rc<Env<'a>>)>, LangError> {
-        let (expr, env) = self.chase(expr, env.clone())?;
-        Ok((!matches!(expr, Expr::None(_))).then_some((expr, env)))
     }
 
     pub(super) fn boolean(
@@ -310,14 +311,16 @@ impl<'a> Expander<'a> {
             .collect()
     }
 
-    /// JSON for a constructor's arguments or a schema: blocks are objects and `none` leaves a
-    /// field out.
+    /// JSON for a constructor's arguments: blocks are objects.
     pub(super) fn json(
         &self,
         expr: &'a Expr,
         env: &Rc<Env<'a>>,
         strings: Strings,
     ) -> Result<Value, LangError> {
+        if strings == Strings::Described {
+            self.written_out(expr, env, "A description")?;
+        }
         let (expr, env) = self.chase(expr, env.clone())?;
         Ok(match expr {
             Expr::Str(..) => Value::String(self.string(expr, &env, strings)?),
@@ -327,12 +330,6 @@ impl<'a> Expander<'a> {
                     .map_err(|_| self.error(*span, "This number has no JSON form."))?,
             ),
             Expr::Bool(value, _) => Value::Bool(*value),
-            Expr::None(span) => {
-                return Err(self.error(
-                    *span,
-                    "`none` leaves a field out; it is not a value in a list.",
-                ));
-            }
             Expr::Array(..) => Value::Array(
                 self.list(expr, &env, "This value")?
                     .into_iter()
@@ -345,10 +342,9 @@ impl<'a> Expander<'a> {
                     let Entry::Field { key, value } = entry else {
                         return Err(self.error(block.span, "An object holds `key = value` fields."));
                     };
-                    if let Some((value, env)) = self.optional(value, &env)?
-                        && object
-                            .insert(key.text.clone(), self.json(value, &env, strings)?)
-                            .is_some()
+                    if object
+                        .insert(key.text.clone(), self.json(value, &env, strings)?)
+                        .is_some()
                     {
                         return Err(
                             self.error(key.span, format!("Field `{}` is given twice.", key.text))
@@ -434,7 +430,7 @@ impl<'a> Expander<'a> {
         }
     }
 
-    /// Named arguments of a constructor as one JSON object; `none` leaves an argument out.
+    /// Named arguments of a constructor as one JSON object.
     pub(super) fn arguments(
         &self,
         args: &'a [super::ast::Arg],
@@ -443,13 +439,12 @@ impl<'a> Expander<'a> {
     ) -> Result<Map<String, Value>, LangError> {
         let mut object = Map::new();
         for arg in args {
-            if let Some((value, env)) = self.optional(&arg.value, env)?
-                && object
-                    .insert(
-                        arg.name.text.clone(),
-                        self.json(value, &env, strings(&arg.name.text))?,
-                    )
-                    .is_some()
+            if object
+                .insert(
+                    arg.name.text.clone(),
+                    self.json(&arg.value, env, strings(&arg.name.text))?,
+                )
+                .is_some()
             {
                 return Err(self.error(
                     arg.name.span,

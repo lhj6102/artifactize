@@ -120,7 +120,7 @@ fn openai_review_calls_tools_against_the_fake_and_passes_reasoning_exactly() {
             )
         } else {
             let call =
-                openai::function_call("call_1", "spec_read_spec", &json!({"path":"spec.md"}));
+                openai::function_call("call_1", "spec-tools_read_spec", &json!({"path":"spec.md"}));
             openai::completed(request, vec![call], openai::usage(30, 5))
         }
     });
@@ -155,7 +155,7 @@ fn openai_review_calls_tools_against_the_fake_and_passes_reasoning_exactly() {
         assert_eq!(call.body["model"], "fake-model");
         assert_eq!(call.body["reasoning"], json!({"effort":"max"}));
         assert_eq!(call.body["stream"], true);
-        assert_eq!(call.body["tools"][0]["name"], "spec_read_spec");
+        assert_eq!(call.body["tools"][0]["name"], "spec-tools_read_spec");
     }
     let output = calls[1].body["input"]
         .as_array()
@@ -467,12 +467,18 @@ fn fixed_builtin_tools_have_closed_schemas_and_return_content_in_offline_agent_t
             .collect();
         let turn = outputs.len();
         let call = match turn {
-            0 => openai::function_call("fixed", "spec_fixed_spec", &json!({})),
-            1 => openai::function_call("section", "spec_section_spec", &json!({"heading":"First"})),
-            2 => {
-                openai::function_call("missing", "spec_section_spec", &json!({"heading":"Absent"}))
-            }
-            3 => openai::function_call("help", "spec_help_spec", &json!({})),
+            0 => openai::function_call("fixed", "spec-tools_fixed_spec", &json!({})),
+            1 => openai::function_call(
+                "section",
+                "spec-tools_section_spec",
+                &json!({"heading":"First"}),
+            ),
+            2 => openai::function_call(
+                "missing",
+                "spec-tools_section_spec",
+                &json!({"heading":"Absent"}),
+            ),
+            3 => openai::function_call("help", "spec-tools_help_spec", &json!({})),
             _ => {
                 return openai::completed(
                     request,
@@ -498,16 +504,16 @@ fn fixed_builtin_tools_have_closed_schemas_and_return_content_in_offline_agent_t
     let requests = provider.requests();
     let tools = requests[0].body["tools"].as_array().unwrap();
     for name in [
-        "spec_fixed_spec",
-        "spec_fixed_section_spec",
-        "spec_help_spec",
+        "spec-tools_fixed_spec",
+        "spec-tools_fixed_section_spec",
+        "spec-tools_help_spec",
     ] {
         let tool = tools.iter().find(|tool| tool["name"] == name).unwrap();
         assert_eq!(tool["parameters"]["properties"], json!({}));
     }
     let section = tools
         .iter()
-        .find(|tool| tool["name"] == "spec_section_spec")
+        .find(|tool| tool["name"] == "spec-tools_section_spec")
         .unwrap();
     assert_eq!(section["parameters"]["required"], json!(["heading"]));
     assert_eq!(

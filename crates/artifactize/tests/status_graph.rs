@@ -251,14 +251,24 @@ fn status_selection_policy_and_final_obligations_match_verify() {
 }
 
 #[test]
-fn status_refuses_an_unknown_profile_without_creating_state() {
+fn status_refuses_a_profile_branch_no_profile_has_without_creating_state() {
     let fixture = Fixture::new("runtime");
-    let refused = fixture.json(&["status", "red", "--profile", "unknown"], 2);
+    fs::write(
+        fixture.repo.join(".artifactize/profiles.artfprofiles"),
+        "profile reviewer : agent = match ARTIFACTIZE_TEST_TIER {\n  default => { backend = \"openai\", model = \"everyday\" },\n  heavy => { backend = \"openai\", model = \"careful\" },\n}\n",
+    )
+    .unwrap();
+    let output = fixture
+        .command()
+        .env("ARTIFACTIZE_TEST_TIER", "haevy")
+        .args(["status", "red", "--json"])
+        .record_output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let refused: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let error = refused["error"].as_str().unwrap();
     assert!(
-        refused["error"]
-            .as_str()
-            .unwrap()
-            .contains("Unknown profile unknown"),
+        error.contains("ARTIFACTIZE_TEST_TIER=haevy") && error.contains("`heavy`"),
         "{refused}"
     );
     assert!(!fixture.state.exists());
@@ -357,12 +367,12 @@ fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
     );
     let command = support::os::python_program();
     let review = format!(
-        r#"tool review = {{
+        r#"tool review-tools = {{
   agent read = command(command = {command:?}, args = ["hook.py"], protocol = "plain", description = "Read @{{artf self}}", input_schema = {{ type = "object" }}, timeout_ms = 1000)
   human read = command(command = {command:?}, args = ["hook.py"], description = "Read @{{artf self}}", kind = "output")
 }}
 
-artf review : review = {{
+artf review : review-tools = {{
   fingerprint = script(command = {command:?}, args = ["hook.py"], files = ["hook.py"], timeout_ms = 1000)
   path = "review/"
 
@@ -377,10 +387,10 @@ artf review : review = {{
     instruction = "Inspect @{{artf input}}."
   }}
 
+  // Check input.
   eval runtime : runtime(command = {command:?}, args = ["hook.py"], timeout_ms = 1000) = {{
     title = "Check input"
-    instruction = "Check input."
-    inputs = [input]
+    deps = [input]
   }}
 }}
 "#

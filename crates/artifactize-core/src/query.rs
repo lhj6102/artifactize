@@ -33,6 +33,10 @@ pub struct GraphView<'a> {
     pub evals: Vec<&'a Eval>,
     pub relations: Vec<GraphRelation<'a>>,
     pub components: Vec<GraphComponent<'a>>,
+    /// The environment variables the project's profiles read, each with its value (`null`
+    /// while unset); a Run's saved graph records the branch every Agent eval ran with.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub environment: BTreeMap<&'a str, Option<&'a str>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -106,6 +110,12 @@ pub fn graph<'a>(
         evals,
         relations,
         components,
+        environment: config
+            .program
+            .iter()
+            .flat_map(|program| &program.environment)
+            .map(|(name, value)| (name.as_str(), value.as_deref()))
+            .collect(),
     })
 }
 

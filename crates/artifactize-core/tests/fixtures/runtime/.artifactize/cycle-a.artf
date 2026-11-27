@@ -2,9 +2,9 @@ artf cycle-a = {
   fingerprint = false
   path = "cycle-a/"
 
+  // Check cycle-b.
   eval check : runtime(command = "/bin/true", args = []) = {
     title = "Check cycle-a"
-    instruction = "Check cycle-b."
-    inputs = [cycle-b]
+    deps = [cycle-b]
   }
 }

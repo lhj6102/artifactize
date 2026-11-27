@@ -52,6 +52,7 @@ pub fn convert(
         toolsets: Vec::new(),
         plugins,
         warnings: Vec::new(),
+        artifacts: declarations.iter().map(|old| old.name.clone()).collect(),
     };
     for (name, profile) in profiles {
         converter.profile_name(Some(name), profile)?;
@@ -66,11 +67,11 @@ pub fn convert(
     }
     let mut converted = Converted::default();
     let taken: BTreeSet<PathBuf> = declarations.iter().map(|old| old.file.clone()).collect();
-    let shared_file = |stem: &str| {
-        let mut file = PathBuf::from(format!("{stem}.artf"));
+    let shared_file = |stem: &str, extension: &str| {
+        let mut file = PathBuf::from(format!("{stem}.{extension}"));
         let mut index = 2;
         while taken.contains(&file) {
-            file = PathBuf::from(format!("{stem}-{index}.artf"));
+            file = PathBuf::from(format!("{stem}-{index}.{extension}"));
             index += 1;
         }
         file
@@ -102,22 +103,20 @@ pub fn convert(
         .collect();
     if !shared.is_empty() {
         converted.files.push((
-            shared_file("tools"),
+            shared_file("tools", "artf"),
             format!("// Tools several Artifacts compose.\n{}", shared.join("\n")),
         ));
     }
     if !converter.profiles.is_empty() {
-        let mut text =
-            String::from("// The project's Agent profiles: what an Agent eval runs with.\n");
+        let mut text = String::from("// How the Agent evals run.\n");
         for (name, profile) in &converter.profiles {
-            writeln!(
-                text,
-                "profile {name} = {}",
-                call("agent", profile, 0, Strings::Plain)
-            )
-            .expect("write to String");
+            writeln!(text, "profile {name} : agent = {}", setting(profile, 0))
+                .expect("write to String");
         }
-        converted.files.push((shared_file("profiles"), text));
+        converted.files.push((
+            shared_file("profiles", super::lang::PROFILES_EXTENSION),
+            text,
+        ));
     }
     converted.warnings = converter.warnings;
     Ok(converted)
@@ -136,6 +135,9 @@ struct Converter<'a> {
     toolsets: Vec<Toolset>,
     plugins: &'a BTreeSet<String>,
     warnings: Vec<String>,
+    /// The Artifacts' names, which a toolset or profile does not take: names are one
+    /// namespace.
+    artifacts: BTreeSet<String>,
 }
 
 /// The old local Artifacts without a type that an Agent or Human eval reads, its own or one
@@ -312,6 +314,8 @@ impl Converter<'_> {
         while RESERVED.contains(&namespace.as_str())
             || BUILTIN_TOOLSETS.contains(&namespace.as_str())
             || self.plugins.contains(&namespace)
+            || self.artifacts.contains(&namespace)
+            || self.profiles.iter().any(|(name, _)| *name == namespace)
             || self
                 .toolsets
                 .iter()
@@ -375,7 +379,25 @@ impl Converter<'_> {
             "agent" => self.profile_name(None, &Value::Object(profile.clone()))?,
             other => return Err(format!("eval {id} has an unknown profile kind `{other}`")),
         };
-        let mut out = format!("  eval {new_id} : {header} = {{\n");
+        let mut out = String::new();
+        if kind == "runtime" && !instruction.is_empty() {
+            // Its verdict is the command's exit code; the old prose stays as a comment, an old
+            // `{name}` read as the name.
+            let mut text = instruction.to_owned();
+            for (start, end, name) in references.iter().rev() {
+                text.replace_range(*start..*end, name);
+            }
+            for line in text.trim().lines() {
+                writeln!(
+                    out,
+                    "  //{}{}",
+                    if line.is_empty() { "" } else { " " },
+                    line.trim_end()
+                )
+                .expect("write to String");
+            }
+        }
+        writeln!(out, "  eval {new_id} : {header} = {{").expect("write to String");
         if let Some(title) = eval.get("title") {
             writeln!(out, "    title = {}", plain(title, 2)).expect("write to String");
         }
@@ -385,18 +407,13 @@ impl Converter<'_> {
         if let Some(mutex) = eval.get("mutex") {
             writeln!(out, "    mutex = {}", plain(mutex, 2)).expect("write to String");
         }
-        if !instruction.is_empty() {
-            let text = if kind == "runtime" {
-                // Prose nothing hashes: an old `{name}` reads as the name.
-                let mut text = instruction.to_owned();
-                for (start, end, name) in references.iter().rev() {
-                    text.replace_range(*start..*end, name);
-                }
-                quote_text(&text)
-            } else {
+        if !instruction.is_empty() && kind != "runtime" {
+            writeln!(
+                out,
+                "    instruction = {}",
                 instruction_text(instruction, &references)
-            };
-            writeln!(out, "    instruction = {text}").expect("write to String");
+            )
+            .expect("write to String");
         }
         if kind == "runtime" {
             // Its own Artifact is what it checks, and one its arguments name is already read.
@@ -412,16 +429,16 @@ impl Converter<'_> {
                         .map(|(_, _, name)| name)
                 })
                 .collect();
-            let inputs: BTreeSet<&str> = references
+            let deps: BTreeSet<&str> = references
                 .iter()
                 .map(|reference| reference.2.as_str())
                 .filter(|name| *name != artifact && !argued.contains(*name))
                 .collect();
-            if !inputs.is_empty() {
+            if !deps.is_empty() {
                 writeln!(
                     out,
-                    "    inputs = [{}]",
-                    inputs.into_iter().collect::<Vec<_>>().join(", ")
+                    "    deps = [{}]",
+                    deps.into_iter().collect::<Vec<_>>().join(", ")
                 )
                 .expect("write to String");
             }
@@ -499,9 +516,23 @@ impl Converter<'_> {
         );
         let mut name = base.clone();
         let mut index = 2;
-        while self.profiles.iter().any(|(taken, _)| *taken == name) {
+        while self.profiles.iter().any(|(taken, _)| *taken == name)
+            || self.artifacts.contains(&name)
+            || self
+                .toolsets
+                .iter()
+                .any(|toolset| toolset.namespace == name)
+            || RESERVED.contains(&name.as_str())
+        {
             name = format!("{base}-{index}");
             index += 1;
+        }
+        if let Some(wanted) = wanted
+            && wanted != name
+        {
+            self.warnings.push(format!(
+                "Profile `{wanted}` shares its name with another declaration; it is profile `{name}`."
+            ));
         }
         self.profiles.push((name.clone(), profile));
         Ok(name)
@@ -717,51 +748,21 @@ fn reference_spans(source: &str) -> Vec<(usize, usize, String)> {
     found
 }
 
-/// An instruction with its old references as slots: `{name}` an `@{artf …}`, and `{name}/sub`,
-/// a path under it, an `@{path name/sub}`.
+/// An instruction with its old references as `@{artf …}` slots; a `{name}/sub` keeps its
+/// `/sub` as text after the slot.
 fn instruction_text(text: &str, references: &[(usize, usize, String)]) -> String {
     let mut pieces = Vec::new();
     let mut cursor = 0;
     for (start, end, name) in references {
         pieces.push(super::lang::Piece::Text(text[cursor..*start].to_owned()));
-        let target = super::lang::SlotTarget::Named(name.clone(), super::lang::Span::default());
-        let path = sub_path(&text[*end..]);
-        pieces.push(super::lang::Piece::Slot(if path.is_empty() {
-            super::lang::SlotRef::Artf {
-                target,
-                span: super::lang::Span::default(),
-            }
-        } else {
-            super::lang::SlotRef::Path {
-                target,
-                path: path[1..].to_owned(),
-                span: super::lang::Span::default(),
-            }
+        pieces.push(super::lang::Piece::Slot(super::lang::SlotRef::Artf {
+            target: super::lang::SlotTarget::Named(name.clone(), super::lang::Span::default()),
+            span: super::lang::Span::default(),
         }));
-        cursor = *end + path.len();
+        cursor = *end;
     }
     pieces.push(super::lang::Piece::Text(text[cursor..].to_owned()));
     render::template(&pieces, 2)
-}
-
-/// The `/sub/path` that follows an old reference, without a sentence's closing punctuation.
-fn sub_path(rest: &str) -> &str {
-    if !rest.starts_with('/') {
-        return "";
-    }
-    let end = rest
-        .char_indices()
-        .skip(1)
-        .find(|(_, character)| {
-            !(character.is_ascii_alphanumeric() || matches!(character, '/' | '.' | '_' | '-'))
-        })
-        .map_or(rest.len(), |(index, _)| index);
-    let path = rest[..end].trim_end_matches(['.', '/']);
-    if path.len() > 1 { path } else { "" }
-}
-
-fn quote_text(text: &str) -> String {
-    render::template(&[super::lang::Piece::Text(text.to_owned())], 2)
 }
 
 /// One old argument: `{name}[/path]`, after an optional `--flag=`, is a path slot.
@@ -824,7 +825,8 @@ fn plain(value: &Value, depth: usize) -> String {
 
 fn expression(value: &Value, depth: usize, strings: Strings) -> String {
     match value {
-        Value::Null => "none".into(),
+        // A JSON builder's `null` leaves a field out; callers skip it, so only a list holds one.
+        Value::Null => "\"\"".into(),
         Value::Bool(value) => value.to_string(),
         Value::Number(number) => number.to_string(),
         Value::String(text) => string(text, strings),
@@ -848,6 +850,7 @@ fn expression(value: &Value, depth: usize, strings: Strings) -> String {
         Value::Object(object) => {
             let fields: Vec<_> = object
                 .iter()
+                .filter(|(_, value)| !value.is_null())
                 .map(|(key, value)| {
                     format!(
                         "{} = {}",
@@ -886,8 +889,41 @@ fn key_text(key: &str) -> String {
     }
 }
 
+/// A profile's complete setting `{ backend = …, model = …, … }`, in the order an author reads it.
+fn setting(fields: &Map<String, Value>, depth: usize) -> String {
+    let arguments = ordered_arguments(fields, depth, Strings::Plain);
+    let line = format!("{{ {} }}", arguments.join(", "));
+    if line.len() <= 100 {
+        line
+    } else {
+        let indent = "  ".repeat(depth + 1);
+        format!(
+            "{{\n{indent}{},\n{}}}",
+            arguments.join(&format!(",\n{indent}")),
+            "  ".repeat(depth)
+        )
+    }
+}
+
 /// `name(key = value, …)`, `args` and `command` written in `strings`, a description as one.
 fn call(name: &str, fields: &Map<String, Value>, depth: usize, strings: Strings) -> String {
+    let arguments = ordered_arguments(fields, depth, strings);
+    let line = format!("{name}({})", arguments.join(", "));
+    if line.len() <= 100 && !line.contains('\n') {
+        line
+    } else {
+        let indent = "  ".repeat(depth + 1);
+        format!(
+            "{name}(\n{indent}{},\n{})",
+            arguments.join(&format!(",\n{indent}")),
+            "  ".repeat(depth)
+        )
+    }
+}
+
+/// `key = value` for each field that has a value: what a call is first, then what it runs with,
+/// the authored order a JSON map has lost.
+fn ordered_arguments(fields: &Map<String, Value>, depth: usize, strings: Strings) -> Vec<String> {
     // What a call is, then what it runs with: authored order, which a JSON map has lost.
     const FIRST: [&str; 9] = [
         "op",
@@ -900,14 +936,17 @@ fn call(name: &str, fields: &Map<String, Value>, depth: usize, strings: Strings)
         "description",
         "start",
     ];
-    let mut ordered: Vec<(&String, &Value)> = fields.iter().collect();
+    let mut ordered: Vec<(&String, &Value)> = fields
+        .iter()
+        .filter(|(_, value)| !value.is_null())
+        .collect();
     ordered.sort_by_key(|(key, _)| {
         FIRST
             .iter()
             .position(|first| first == key)
             .unwrap_or(FIRST.len())
     });
-    let arguments: Vec<_> = ordered
+    ordered
         .into_iter()
         .map(|(key, value)| {
             let mode = match key.as_str() {
@@ -917,18 +956,7 @@ fn call(name: &str, fields: &Map<String, Value>, depth: usize, strings: Strings)
             };
             format!("{key} = {}", expression(value, depth + 1, mode))
         })
-        .collect();
-    let line = format!("{name}({})", arguments.join(", "));
-    if line.len() <= 100 && !line.contains('\n') {
-        line
-    } else {
-        let indent = "  ".repeat(depth + 1);
-        format!(
-            "{name}(\n{indent}{},\n{})",
-            arguments.join(&format!(",\n{indent}")),
-            "  ".repeat(depth)
-        )
-    }
+        .collect()
 }
 
 #[cfg(test)]

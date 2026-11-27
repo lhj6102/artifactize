@@ -19,9 +19,9 @@ struct Fixture(
     tempfile::TempDir,
 );
 
-const DEFINITIONS: &str = r#"profile reviewer = agent(backend = "openai", model = "fixture")
+const PROFILES: &str = "profile reviewer : agent = { backend = \"openai\", model = \"fixture\" }\n";
 
-artf! crate(dir) : files = {
+const DEFINITIONS: &str = r#"artf! crate(dir) : files = {
   path = "crates/@{param dir}/"
   eval readable : reviewer = {
     title = "Readable"
@@ -77,11 +77,12 @@ impl Fixture {
 #[test]
 fn expand_and_symbols_show_what_the_code_declares() {
     let fixture = Fixture::new();
+    fixture.write(".artifactize/profiles.artfprofiles", PROFILES);
     fixture.write(".artifactize/project.artf", DEFINITIONS);
     let output = fixture.run(&["config", "expand", "core"]);
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(
-        text.starts_with("// .artifactize/project.artf:13 (by crate!)\n"),
+        text.starts_with("// .artifactize/project.artf:11 (by crate!)\n"),
         "{text}"
     );
     assert!(
@@ -116,6 +117,7 @@ fn expand_and_symbols_show_what_the_code_declares() {
 #[test]
 fn check_prints_the_line_and_the_macro_call_of_an_error() {
     let fixture = Fixture::new();
+    fixture.write(".artifactize/profiles.artfprofiles", PROFILES);
     fixture.write(
         ".artifactize/project.artf",
         &DEFINITIONS.replace(
@@ -127,7 +129,7 @@ fn check_prints_the_line_and_the_macro_call_of_an_error() {
     assert!(!output.status.success());
     let error = String::from_utf8(output.stderr).unwrap();
     assert!(
-        error.contains("line 13") && error.contains("size"),
+        error.contains("line 11") && error.contains("size"),
         "{error}"
     );
 }
@@ -186,13 +188,13 @@ fn rename_and_migrate_refuse_a_file_whose_name_differs_only_in_case() {
     );
     assert!(fixture.0.join(".artifactize/docs.artf").exists());
 
-    // Migration writes the profiles it collects to `profiles.artf`.
+    // Migration writes the profiles it collects to `profiles.artfprofiles`.
     let fixture = Fixture::new();
     fixture.write(
         ".artifactize/docs.artf",
         "path = \"docs/guide.md\"\ntype = \"markdown\"\n[evals.clear]\ntitle = \"Clear\"\nprofile = { kind = \"agent\", backend = \"openai\", model = \"fixture\" }\npayload = { instruction = \"Is {docs} clear?\" }\n",
     );
-    fixture.write(".artifactize/Profiles.artf", NOTES);
+    fixture.write(".artifactize/Profiles.artfprofiles", NOTES);
     let migrated = fixture.run(&["config", "migrate"]);
     assert!(!migrated.status.success());
     assert!(
@@ -201,7 +203,7 @@ fn rename_and_migrate_refuse_a_file_whose_name_differs_only_in_case() {
         String::from_utf8_lossy(&migrated.stderr)
     );
     assert_eq!(
-        fs::read_to_string(fixture.0.join(".artifactize/Profiles.artf")).unwrap(),
+        fs::read_to_string(fixture.0.join(".artifactize/Profiles.artfprofiles")).unwrap(),
         NOTES
     );
 }

@@ -420,8 +420,11 @@ fn valid_lifecycle_json_is_byte_identical_and_legacy_completion_rules_survive() 
 fn run_lifecycle_keeps_legacy_bytes_and_rejects_every_illegal_combination() {
     // Independent schema-5 fixture: field order, nulls and omission rules are historical.
     let wire = r#"{"id":"legacy-run","repoPath":"repo","stateDir":"state","status":"RUNNING","createdAt":"2026-01-01T00:00:00.000000000Z","completedAt":null,"selection":{"kind":"all"},"profile":null,"definitions":null,"recursive":false,"force":false,"ignoreGates":false,"jobs":2,"maxExecutions":null,"executionsStarted":0,"waitTimeoutMs":null,"waitTimedOut":false,"validation":null,"error":null}"#;
-    // Removed saved keys are ignored on read, without a schema migration.
-    let historical = wire.replace("\"ignoreGates\":false", "\"ignoreGates\":true");
+    // Removed saved keys (`ignoreGates`, the profile `verify --profile` chose) are ignored on
+    // read, without a schema migration.
+    let historical = wire
+        .replace("\"ignoreGates\":false", "\"ignoreGates\":true")
+        .replace("\"profile\":null", "\"profile\":\"careful\"");
     let decoded = serde_json::from_str::<store::Run>(&historical).unwrap();
     assert_eq!(decoded.jobs, Some(2), "legacy numeric caps remain explicit");
     assert_eq!(serde_json::to_value(&decoded).unwrap()["jobs"], 2);
@@ -460,6 +463,7 @@ fn run_lifecycle_keeps_legacy_bytes_and_rejects_every_illegal_combination() {
                     assert_eq!(
                         serde_json::to_string(&run).unwrap(),
                         text.replace("\"ignoreGates\":false,", "")
+                            .replace("\"profile\":null,", "")
                     );
                 }
             }

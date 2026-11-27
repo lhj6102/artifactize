@@ -1,4 +1,5 @@
-//! Parser tests: the four item forms and what the syntax alone refuses.
+//! Parser tests: the item forms of `.artf` and `.artfprofiles` files and what the syntax alone
+//! refuses.
 
 use super::*;
 
@@ -11,8 +12,7 @@ fn items_take_macro_bangs_params_headers_and_bodies() {
     let parsed = items(
         r#"artf! crate(dir, extra = {}) : files & cargo = { path = "x", ...extra }
 tool cargo = { agent test = command(command = "cargo", args = []) }
-profile fast = agent(backend = "openai", model = "m")
-eval! style() : fast = { title = "S", instruction = "I" }
+artf core = crate!(dir = "core")
 "#,
     );
     let kinds: Vec<_> = parsed
@@ -24,8 +24,7 @@ eval! style() : fast = { title = "S", instruction = "I" }
         [
             (ItemKind::Artf, true),
             (ItemKind::Tool, false),
-            (ItemKind::Profile, false),
-            (ItemKind::Eval, true),
+            (ItemKind::Artf, false),
         ]
     );
     assert!(matches!(parsed[0].header, Some(Expr::And(..))));
@@ -46,5 +45,59 @@ fn syntax_errors_point_at_the_token() {
     ] {
         let error = parse(FileId(0), source).unwrap_err();
         assert_eq!(error.span.start, at, "{source}: {}", error.message);
+    }
+}
+
+#[test]
+fn removed_forms_say_what_replaced_them() {
+    for (source, says) in [
+        (
+            "eval style : human = { title = \"t\" }",
+            "inside the `artf` block",
+        ),
+        (
+            "eval! style() : human = { title = \"t\" }",
+            "inside the `artf` block",
+        ),
+        ("profile fast = { model = \"m\" }", "`.artfprofiles` files"),
+        ("tool! docs(file) = {}", "no `tool!` macros"),
+        (
+            "artf x = { path = \"x\", fingerprint = none }",
+            "leave the field out",
+        ),
+    ] {
+        let error = parse(FileId(0), source).unwrap_err();
+        assert!(error.message.contains(says), "{source}: {}", error.message);
+    }
+}
+
+#[test]
+fn a_profile_is_one_setting_or_a_match_with_a_branch_per_value() {
+    let parsed = parse_profiles(
+        FileId(0),
+        r#"profile reviewer : agent = match TIER {
+  default => { backend = "codex", model = "gpt-6-luna", reasoning = "max" },
+  heavy => { backend = "codex", model = "gpt-6.2-sol", reasoning = "high" },
+}
+profile translator : agent = { backend = "codex", model = "gpt-6-luna" }
+"#,
+    )
+    .unwrap();
+    assert_eq!(parsed.len(), 2);
+    let ProfileBody::Match { variable, arms } = &parsed[0].body else {
+        panic!("a match");
+    };
+    assert_eq!(variable.text, "TIER");
+    let labels: Vec<_> = arms.iter().map(|(label, _)| label.text.as_str()).collect();
+    assert_eq!(labels, ["default", "heavy"]);
+    assert_eq!(parsed[0].kind.text, "agent");
+    assert!(matches!(parsed[1].body, ProfileBody::Setting(_)));
+    for bad in [
+        "artf x = { path = \"x\" }",
+        "profile x = { model = \"m\" }",
+        "profile! x() : agent = {}",
+        "profile x : agent = match TIER { default { } }",
+    ] {
+        assert!(parse_profiles(FileId(0), bad).is_err(), "{bad}");
     }
 }

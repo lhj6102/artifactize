@@ -171,11 +171,6 @@ pub struct Eval {
     pub references: BTreeMap<crate::config::ReferenceName, ArtifactName>,
     pub deps: Vec<ArtifactName>,
     pub declaration: EvalDeclaration,
-    /// The named profile `verify --profile` ran this Agent eval with instead of its own, if
-    /// any: an execution option, recorded with results but never part of the saved
-    /// declaration.
-    #[serde(skip)]
-    pub variant: Option<ProfileName>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,7 +188,7 @@ pub struct RepoConfig {
     pub artifacts: BTreeMap<ArtifactName, Artifact>,
     pub evals: Vec<Eval>,
     pub relations: Vec<crate::scope::Relation>,
-    /// The project's named Agent profiles, which `verify --profile` chooses from.
+    /// The project's profiles, each in the branch the environment selects.
     pub profiles: BTreeMap<ProfileName, Profile>,
     /// The code the declarations were read from; absent for configurations saved with Runs.
     pub(crate) program: Option<Arc<super::lang::Program>>,

@@ -96,7 +96,7 @@ async fn unsolicited_repair_tool_calls_never_execute_or_continue() {
             openai_response(
                 "exact-model",
                 "completed",
-                vec![call("c1", "a_inspect_a")],
+                vec![call("c1", "a-tools_inspect_a")],
                 Value::Null,
             ),
             final_openai(),

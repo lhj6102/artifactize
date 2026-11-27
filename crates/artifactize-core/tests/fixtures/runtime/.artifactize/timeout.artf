@@ -2,8 +2,8 @@ artf timeout = {
   fingerprint = false
   path = "timeout/"
 
+  // Check runtime.
   eval check : runtime(command = "/bin/sleep", args = ["30"], timeout_ms = 100) = {
     title = "Check timeout"
-    instruction = "Check runtime."
   }
 }

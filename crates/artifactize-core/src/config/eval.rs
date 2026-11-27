@@ -1,7 +1,7 @@
 //! An Eval declaration: its local id, title, profile, instruction with the typed slots it was
 //! written with, a runtime eval's inputs, and the priority at which an Agent eval turns RED.
 
-use super::{ArtifactName, MutexTag, Profile, ProfileKind, ProfileName, ToolFqn, identifier};
+use super::{ArtifactName, MutexTag, Profile, ProfileKind, identifier};
 use crate::scope::LogicalTarget;
 use serde::{Deserialize, Serialize};
 use std::ops::Range;
@@ -107,19 +107,12 @@ pub enum Slot {
         artifact: ArtifactName,
         path: LogicalTarget,
     },
-    Tool {
-        artifact: ArtifactName,
-        audience: Audience,
-        tool: ToolFqn,
-    },
 }
 
 impl Slot {
     pub fn artifact(&self) -> &ArtifactName {
         match self {
-            Self::Artf { artifact } | Self::Path { artifact, .. } | Self::Tool { artifact, .. } => {
-                artifact
-            }
+            Self::Artf { artifact } | Self::Path { artifact, .. } => artifact,
         }
     }
 }
@@ -246,20 +239,5 @@ impl EvalDeclaration {
     #[cfg(test)]
     pub(crate) fn profile_mut(&mut self) -> &mut Profile {
         &mut self.body.profile
-    }
-    /// Run this Agent eval with another named profile: an execution option, never hashed.
-    pub(crate) fn select_profile(
-        &mut self,
-        name: &ProfileName,
-        profile: &Profile,
-    ) -> Result<(), String> {
-        if self.body.profile.kind() != ProfileKind::Agent || profile.kind() != ProfileKind::Agent {
-            return Err(format!(
-                "Profile {name} replaces only an Agent eval's Agent profile."
-            ));
-        }
-        self.body.profile = profile.clone();
-        self.body.profile_name = Some(name.to_string());
-        Ok(())
     }
 }

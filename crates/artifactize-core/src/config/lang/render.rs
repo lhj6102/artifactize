@@ -96,20 +96,18 @@ fn render_eval(out: &mut String, eval: &LoweredEval) {
     if let Some((pieces, _)) = &eval.instruction {
         field(out, 2, "instruction", &template(pieces, 2));
     }
-    if !eval.inputs.is_empty() {
-        let inputs: Vec<_> = eval
-            .inputs
-            .iter()
-            .map(|(input, _)| input.as_str())
-            .collect();
-        field(out, 2, "inputs", &format!("[{}]", inputs.join(", ")));
+    if !eval.deps.is_empty() {
+        let deps: Vec<_> = eval.deps.iter().map(|(dep, _)| dep.as_str()).collect();
+        field(out, 2, "deps", &format!("[{}]", deps.join(", ")));
     }
     writeln!(out, "{INDENT}}}").expect("write to String");
 }
 
 fn render_fingerprint(fingerprint: &Fingerprint) -> String {
     match fingerprint {
-        Fingerprint::Graph => "none".into(),
+        Fingerprint::Graph => {
+            unreachable!("a declaration never writes the definitions fingerprint")
+        }
         Fingerprint::Artifactsum { files, ignore } => {
             let files: Vec<_> = files.iter().map(|file| file.as_str().to_owned()).collect();
             format!(
@@ -249,11 +247,5 @@ fn slot_text(slot: &SlotRef) -> String {
         SlotRef::Path {
             target: name, path, ..
         } => format!("@{{path {}/{path}}}", target(name)),
-        SlotRef::Tool {
-            target: name,
-            audience,
-            tool,
-            ..
-        } => format!("@{{tool {} {audience} {tool}}}", target(name)),
     }
 }

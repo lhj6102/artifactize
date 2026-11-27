@@ -36,7 +36,7 @@ pub use backend::{Backend, CustomBackendName, DirectBackend, HttpProvider, Provi
 pub use declaration::{Fingerprint, Views};
 use discovery::logical_join;
 pub use discovery::read_workspace_config;
-pub(crate) use discovery::read_workspace_declarations;
+pub(crate) use discovery::{read_workspace_declarations, read_workspace_declarations_with};
 pub use eval::{
     Audience, EvalDeclaration, EvalPayload, InstructionSlot, LocalEvalId, Priority, Slot,
 };
@@ -101,12 +101,24 @@ pub struct ParsedDeclaration {
 
 #[doc(hidden)]
 pub fn parse_declaration(text: &str) -> Result<ParsedDeclaration, String> {
-    // Nothing is read from this root: the one file is in memory, and only built-in plugins.
+    parse_declaration_files(&[(PathBuf::from("test.artf"), text.to_owned())])
+}
+
+/// [`parse_declaration`] for one Artifact's `.artf` file with other files beside it, such as
+/// the `.artfprofiles` file of its Agent evals' profiles; paths are relative to `.artifactize/`.
+#[doc(hidden)]
+pub fn parse_declaration_files(files: &[(PathBuf, String)]) -> Result<ParsedDeclaration, String> {
+    // Nothing is read from this root: the files are in memory, and only built-in plugins.
     let root = std::env::temp_dir().join("artifactize-unread-project");
-    let sources = BTreeMap::from([(
-        root.join(discovery::DEFINITION_DIR).join("test.artf"),
-        text.to_owned(),
-    )]);
+    let sources = files
+        .iter()
+        .map(|(file, text)| {
+            (
+                root.join(discovery::DEFINITION_DIR).join(file),
+                text.clone(),
+            )
+        })
+        .collect();
     let catalog = plugins::builtin_catalog();
     let program =
         discovery::program(&root, &sources, &catalog).map_err(|error| error.to_string())?;

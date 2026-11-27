@@ -1,11 +1,11 @@
 #[path = "../tests/support/declaration.rs"]
 mod shared;
-pub use shared::{read, read_file, read_text, remove_file, source_path, to_artf, write};
+pub use shared::{read, read_file, read_text, remove_file, source_path, to_artf, to_files, write};
 
 /// One eval as a project reads it, from a builder, for strategy and hashing tests.
 pub fn eval(value: serde_json::Value) -> Result<crate::config::EvalDeclaration, String> {
     let root = tempfile::tempdir().map_err(|error| error.to_string())?;
-    let text = to_artf(serde_json::json!({
+    let files = to_files(serde_json::json!({
         "name": "test",
         "path": "./",
         "type": "files",
@@ -13,7 +13,9 @@ pub fn eval(value: serde_json::Value) -> Result<crate::config::EvalDeclaration, 
     }))?;
     let definitions = root.path().join(".artifactize");
     std::fs::create_dir_all(&definitions).map_err(|error| error.to_string())?;
-    std::fs::write(definitions.join("test.artf"), text).map_err(|error| error.to_string())?;
+    for (file, text) in files {
+        std::fs::write(definitions.join(file), text).map_err(|error| error.to_string())?;
+    }
     // The Artifacts it names exist, as inputs with nothing to review.
     let mut named =
         crate::config::convert::references(value_text(&value["payload"]["instruction"]).as_str());

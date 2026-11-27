@@ -2,10 +2,10 @@ use super::*;
 
 #[tokio::test]
 async fn tool_budget_counts_unknown_and_invalid_calls_before_validation() {
-    let mut invalid = call("first", "a_inspect_a");
+    let mut invalid = call("first", "a-tools_inspect_a");
     invalid["arguments"] = json!("{}");
     for (first, failed) in [
-        (call("first", "a_inspect_a"), false),
+        (call("first", "a-tools_inspect_a"), false),
         (call("first", "unknown"), true),
         (invalid, true),
     ] {
@@ -23,8 +23,8 @@ async fn tool_budget_counts_unknown_and_invalid_calls_before_validation() {
                     "completed",
                     vec![
                         first.clone(),
-                        call("second", "a_inspect_a"),
-                        call("third", "a_inspect_a"),
+                        call("second", "a-tools_inspect_a"),
+                        call("third", "a-tools_inspect_a"),
                     ],
                     Value::Null,
                 ),
@@ -51,14 +51,17 @@ async fn tool_budget_and_duplicate_ids_span_turns() {
             unreachable!()
         };
         *max_tool_calls = if duplicate { None } else { Some(1) };
-        let mut second = call(if duplicate { "first" } else { "second" }, "a_inspect_a");
+        let mut second = call(
+            if duplicate { "first" } else { "second" },
+            "a-tools_inspect_a",
+        );
         second["id"] = json!("different_item_id");
         let (review, http) = fixture
             .run(vec![
                 openai_response(
                     "exact-model",
                     "completed",
-                    vec![call("first", "a_inspect_a")],
+                    vec![call("first", "a-tools_inspect_a")],
                     Value::Null,
                 ),
                 openai_response("exact-model", "completed", vec![second], Value::Null),
@@ -95,13 +98,13 @@ async fn token_budget_is_cumulative_and_crosses_before_tools() {
             openai_response(
                 "exact-model",
                 "completed",
-                vec![call("c1", "a_inspect_a")],
+                vec![call("c1", "a-tools_inspect_a")],
                 json!({"input_tokens":5,"output_tokens":2,"total_tokens":7}),
             ),
             openai_response(
                 "exact-model",
                 "completed",
-                vec![call("c2", "a_inspect_a")],
+                vec![call("c2", "a-tools_inspect_a")],
                 json!({"input_tokens":6,"output_tokens":2,"total_tokens":8}),
             ),
             final_openai(),
@@ -120,7 +123,7 @@ async fn token_budget_is_cumulative_and_crosses_before_tools() {
             openai_response(
                 "exact-model",
                 "completed",
-                vec![call("c1", "a_inspect_a")],
+                vec![call("c1", "a-tools_inspect_a")],
                 Value::Null,
             ),
             final_openai(),

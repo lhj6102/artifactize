@@ -246,10 +246,13 @@ fn verify_and_config_check_require_tools_for_the_actual_eval_scope() {
         "notes",
         "artf notes = { path = \"notes.md\", basis = true }\n",
     );
+    project.write(
+        ".artifactize/profiles.artfprofiles",
+        "profile fixture : agent = { backend = \"openai\", model = \"fixture\" }\n",
+    );
     project.node(
         "app",
-        r#"profile fixture = agent(backend = "openai", model = "fixture")
-artf app = {
+        r#"artf app = {
   path = "app/"
   eval inspect : fixture = { title = "Inspect notes", instruction = "Inspect @{artf notes}." }
 }

@@ -290,8 +290,7 @@ pub enum InstructionPart {
     Artifact(ArtifactName),
 }
 
-/// The instruction with its `@{artf …}` slots as the Artifacts they name; paths and tools
-/// read as their rendered text.
+/// The instruction with its `@{artf …}` slots as the Artifacts they name.
 pub(crate) fn artifact_instruction(eval: &Eval) -> Vec<InstructionPart> {
     let Some(source) = eval.declaration.instruction() else {
         return Vec::new();

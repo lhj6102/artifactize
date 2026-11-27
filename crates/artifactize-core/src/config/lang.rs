@@ -1,7 +1,8 @@
-//! The `.artf` language: four primitives (`artf`, `tool`, `profile`, `eval`), their static
-//! `!` macros, typed `@{…}` slots and `&` tool composition. Every `.artf` file of a project
-//! shares one scope; reading resolves names in two passes, so declaration order is free, and
-//! expands macros into plain Artifacts without running anything.
+//! The `.artf` language: `artf` bindings with their `eval`s, `tool` sets composed with `&`,
+//! `artf!` macros and typed `@{…}` slots; and `.artfprofiles` files, whose profiles say how
+//! Agent evals run, each branch chosen by the environment. Every file of a project shares one
+//! scope; reading resolves names in two passes, so declaration order is free, and expands
+//! macros into plain Artifacts without running anything.
 
 pub(crate) mod ast;
 mod expand;
@@ -14,7 +15,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 pub(crate) use ast::{FileId, Span};
 pub(crate) use expand::{
-    LoweredArtifact, LoweredEval, LoweredFingerprint, Piece, SlotRef, SlotTarget,
+    Environment, LoweredArtifact, LoweredEval, LoweredFingerprint, Piece, SlotRef, SlotTarget,
 };
 
 /// Where a definition file comes from: the project's `.artifactize/`, or a plugin, whose
@@ -37,6 +38,18 @@ pub(crate) struct SourceFile {
     pub path: PathBuf,
     pub text: String,
     pub origin: Origin,
+}
+
+/// The extension of a file of profiles.
+pub(crate) const PROFILES_EXTENSION: &str = "artfprofiles";
+
+impl SourceFile {
+    /// Whether it holds profiles rather than declarations.
+    pub(crate) fn holds_profiles(&self) -> bool {
+        self.path
+            .extension()
+            .is_some_and(|extension| extension == PROFILES_EXTENSION)
+    }
 }
 
 /// Every file read together, so spans can be shown as `file: line, column`.
@@ -129,12 +142,15 @@ impl LangError {
     }
 }
 
-/// What reading a project produces: its Artifacts, expanded, and its named profiles.
+/// What reading a project produces: its Artifacts, expanded, and its profiles, each in the
+/// branch the environment selects.
 #[derive(Debug, Clone)]
 pub(crate) struct Program {
     pub sources: Arc<Sources>,
     pub artifacts: Vec<LoweredArtifact>,
     pub profiles: BTreeMap<String, (super::Profile, Span)>,
+    /// The environment variables the profiles read, each with its value.
+    pub environment: BTreeMap<String, Option<String>>,
     pub symbols: Vec<Symbol>,
     /// Every span that names an Artifact: its bindings, the names it is listed by and the
     /// slots that name it, each once.
@@ -164,26 +180,39 @@ pub struct SymbolParam {
     pub default: Option<String>,
 }
 
-/// Parse and expand every file. A file that fails to parse names its own position.
-pub(crate) fn read(files: Vec<SourceFile>) -> Result<Program, (Arc<Sources>, LangError)> {
+/// Parse and expand every file, choosing each profile's branch by `environment`. A file that
+/// fails to parse names its own position.
+pub(crate) fn read(
+    files: Vec<SourceFile>,
+    environment: Environment<'_>,
+) -> Result<Program, (Arc<Sources>, LangError)> {
     let sources = Arc::new(Sources::new(files));
     let mut parsed = Vec::new();
+    let mut profiles = Vec::new();
     for (id, file) in sources.ids() {
-        match parse::parse(id, &file.text) {
-            Ok(items) => parsed.push((id, items)),
-            Err(error) => {
-                return Err((sources.clone(), LangError::new(error.span, error.message)));
-            }
+        let failed =
+            |error: parse::ParseError| (sources.clone(), LangError::new(error.span, error.message));
+        if file.holds_profiles() {
+            profiles.push((id, parse::parse_profiles(id, &file.text).map_err(failed)?));
+        } else {
+            parsed.push((id, parse::parse(id, &file.text).map_err(failed)?));
         }
     }
-    let expanded = expand::expand(&sources, &parsed).map_err(|error| (sources.clone(), error))?;
+    let expanded = expand::expand(&sources, &parsed, &profiles, environment)
+        .map_err(|error| (sources.clone(), error))?;
     Ok(Program {
         sources,
         artifacts: expanded.artifacts,
         profiles: expanded.profiles,
+        environment: expanded.environment,
         symbols: expanded.symbols,
         names: expanded.names,
     })
+}
+
+/// The process environment, as a project's profiles read it.
+pub(crate) fn process_environment(name: &str) -> Option<String> {
+    crate::platform::environment::var_text(name)
 }
 
 /// Whether a project file is written in the language at all, or is an older TOML definition
@@ -197,7 +226,7 @@ pub(crate) fn looks_like_toml(text: &str) -> bool {
                 || line
                     .split_once('=')
                     .is_some_and(|(key, _)| !key.trim().contains(' ') && !key.trim().is_empty())
-                    && !["artf", "tool", "profile", "eval"]
+                    && !["artf", "tool", "profile"]
                         .iter()
                         .any(|keyword| line.starts_with(keyword))
         })
@@ -241,7 +270,7 @@ pub(crate) fn span_of(artifact: &LoweredArtifact, keys: &[&str]) -> Span {
                 .as_ref()
                 .map_or(eval.id_span, |instruction| instruction.1),
             ["profile", ..] => eval.profile_span,
-            ["inputs", ..] => eval.inputs.first().map_or(eval.id_span, |input| input.1),
+            ["inputs" | "deps", ..] => eval.deps.first().map_or(eval.id_span, |dep| dep.1),
             _ => eval.id_span,
         }),
         _ => artifact.name_span,

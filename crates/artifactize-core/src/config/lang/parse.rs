@@ -1,5 +1,5 @@
-//! Parse `.artf` tokens into items. Only the syntax is checked here; names and kinds resolve
-//! once every file has been read.
+//! Parse `.artf` and `.artfprofiles` tokens into items. Only the syntax is checked here; names
+//! and kinds resolve once every file has been read.
 
 use super::ast::*;
 use artifactize_tools::artf::lexer::{self, Kind, Token};
@@ -14,19 +14,20 @@ pub struct ParseError {
 }
 
 pub fn parse(file: FileId, source: &str) -> Result<Vec<Item>, ParseError> {
-    let lexed = lexer::lex(source).map_err(|error| ParseError {
-        span: Span::new(file, error.offset..error.offset),
-        message: error.message,
-    })?;
-    let mut parser = Parser {
-        file,
-        tokens: lexed.tokens,
-        position: 0,
-        end: source.len(),
-    };
+    let mut parser = Parser::new(file, source)?;
     let mut items = Vec::new();
     while parser.peek().is_some() {
         items.push(parser.item()?);
+    }
+    Ok(items)
+}
+
+/// An `.artfprofiles` file: `profile` declarations only.
+pub fn parse_profiles(file: FileId, source: &str) -> Result<Vec<ProfileItem>, ParseError> {
+    let mut parser = Parser::new(file, source)?;
+    let mut items = Vec::new();
+    while parser.peek().is_some() {
+        items.push(parser.profile()?);
     }
     Ok(items)
 }
@@ -39,6 +40,19 @@ struct Parser {
 }
 
 impl Parser {
+    fn new(file: FileId, source: &str) -> Result<Self, ParseError> {
+        let lexed = lexer::lex(source).map_err(|error| ParseError {
+            span: Span::new(file, error.offset..error.offset),
+            message: error.message,
+        })?;
+        Ok(Self {
+            file,
+            tokens: lexed.tokens,
+            position: 0,
+            end: source.len(),
+        })
+    }
+
     fn peek(&self) -> Option<&Kind> {
         self.tokens.get(self.position).map(|token| &token.kind)
     }
@@ -115,8 +129,8 @@ impl Parser {
         Ok(name)
     }
 
-    fn binding(&mut self, kind: ItemKind, is_macro: bool) -> Result<Name, ParseError> {
-        let name = if kind == ItemKind::Tool && !is_macro {
+    fn binding(&mut self, kind: ItemKind) -> Result<Name, ParseError> {
+        let name = if kind == ItemKind::Tool {
             self.dotted("the tool's name")?
         } else {
             self.ident("a name")?
@@ -136,15 +150,31 @@ impl Parser {
             Some(Kind::Ident(word)) => match word.as_str() {
                 "artf" => ItemKind::Artf,
                 "tool" => ItemKind::Tool,
-                "profile" => ItemKind::Profile,
-                "eval" => ItemKind::Eval,
-                _ => return self.error("a declaration: `artf`, `tool`, `profile` or `eval`"),
+                "eval" => {
+                    return Err(ParseError {
+                        span: start,
+                        message: "An eval is declared inside the `artf` block it judges: `eval ID : PROFILE = { … }`.".into(),
+                    });
+                }
+                "profile" => {
+                    return Err(ParseError {
+                        span: start,
+                        message: "Profiles are declared in `.artfprofiles` files: `profile NAME : agent = { … }`.".into(),
+                    });
+                }
+                _ => return self.error("a declaration: `artf` or `tool`"),
             },
-            _ => return self.error("a declaration: `artf`, `tool`, `profile` or `eval`"),
+            _ => return self.error("a declaration: `artf` or `tool`"),
         };
         self.position += 1;
         let is_macro = self.eat(&Kind::Bang);
-        let name = self.binding(kind, is_macro)?;
+        if is_macro && kind == ItemKind::Tool {
+            return Err(ParseError {
+                span: start.to(self.previous_span()),
+                message: "There are no `tool!` macros: declare a toolset once with `tool NAME = { … }` and compose it with `&`.".into(),
+            });
+        }
+        let name = self.binding(kind)?;
         let params = if is_macro { Some(self.params()?) } else { None };
         let header = if self.eat(&Kind::Colon) {
             Some(self.expr()?)
@@ -253,10 +283,10 @@ impl Parser {
                 self.position += 1;
                 Ok(Expr::Bool(word == "true", span))
             }
-            Kind::Ident(word) if word == "none" => {
-                self.position += 1;
-                Ok(Expr::None(span))
-            }
+            Kind::Ident(word) if word == "none" => Err(ParseError {
+                span,
+                message: "`none` is not a value: leave the field out.".into(),
+            }),
             Kind::Ident(_) => {
                 let name = self.dotted("a value")?;
                 if self.peek() == Some(&Kind::Bang) && self.peek_at(1) == Some(&Kind::LParen) {
@@ -335,6 +365,55 @@ impl Parser {
             name,
             header,
             value,
+        })
+    }
+
+    /// `profile NAME : KIND = { … }` or `profile NAME : KIND = match VAR { LABEL => { … }, … }`.
+    fn profile(&mut self) -> Result<ProfileItem, ParseError> {
+        let start = self.span_here();
+        if !matches!(self.peek(), Some(Kind::Ident(word)) if word == "profile") {
+            return self
+                .error("a `profile` declaration: an `.artfprofiles` file holds only profiles");
+        }
+        self.position += 1;
+        if self.peek() == Some(&Kind::Bang) {
+            return self.error("a profile's name: there are no `profile!` macros");
+        }
+        let name = self.ident("the profile's name")?;
+        if RESERVED.contains(&name.text.as_str()) {
+            return Err(ParseError {
+                span: name.span,
+                message: format!("`{}` is reserved and cannot name a declaration.", name.text),
+            });
+        }
+        self.expect(
+            &Kind::Colon,
+            "`:` and what evaluates with the profile: `profile NAME : agent = { … }`",
+        )?;
+        let kind = self.ident("what evaluates with the profile: `agent`")?;
+        self.expect(&Kind::Eq, "`=`")?;
+        let body = if matches!(self.peek(), Some(Kind::Ident(word)) if word == "match") {
+            self.position += 1;
+            let variable = self.ident("the environment variable the profile matches")?;
+            self.expect(&Kind::LBrace, "`{` and the profile's branches")?;
+            let mut arms = Vec::new();
+            while !self.eat(&Kind::RBrace) {
+                let label = self.ident("a branch: `LABEL => { … }`, or `}`")?;
+                self.expect(&Kind::Arrow, "`=>` after the branch's label")?;
+                arms.push((label, self.block()?));
+                if !self.eat(&Kind::Comma) && self.peek() != Some(&Kind::RBrace) {
+                    return self.error("`,` or `}`");
+                }
+            }
+            ProfileBody::Match { variable, arms }
+        } else {
+            ProfileBody::Setting(self.block()?)
+        };
+        Ok(ProfileItem {
+            name,
+            kind,
+            body,
+            span: start.to(self.previous_span()),
         })
     }
 }

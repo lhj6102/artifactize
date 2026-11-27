@@ -301,10 +301,10 @@ where
 #[tokio::test]
 async fn a_review_runs_its_tools_in_artifactize_and_returns_the_issues_with_the_derived_verdict() {
     let outcome = review(limits(None), |mut claude| async move {
-        assert_eq!(claude.start(VERSION).await, ["a_read_a"]);
+        assert_eq!(claude.start(VERSION).await, ["a-tools_read_a"]);
         assert!(claude.prompt().await.starts_with("Review a."));
         let result = claude
-            .call("toolu_1", "a_read_a", json!({"path": "notes.txt"}))
+            .call("toolu_1", "a-tools_read_a", json!({"path": "notes.txt"}))
             .await;
         assert_eq!(result["isError"], false);
         assert!(
@@ -351,7 +351,7 @@ async fn a_review_runs_its_tools_in_artifactize_and_returns_the_issues_with_the_
         }),
         _ => None,
     });
-    assert_eq!(call.as_deref(), Some("a_read_a"));
+    assert_eq!(call.as_deref(), Some("a-tools_read_a"));
     let delivered = saved
         .wire_events()
         .iter()
@@ -365,7 +365,7 @@ async fn a_tool_call_past_the_budget_is_refused_and_ends_the_review() {
         claude.start(VERSION).await;
         claude.prompt().await;
         let result = claude
-            .call("toolu_1", "a_read_a", json!({"path": "notes.txt"}))
+            .call("toolu_1", "a-tools_read_a", json!({"path": "notes.txt"}))
             .await;
         assert_eq!(result["isError"], true);
     })
@@ -440,7 +440,7 @@ async fn an_invalid_answer_gets_one_repair_without_tools() {
             "{repair}"
         );
         let result = claude
-            .call("toolu_2", "a_read_a", json!({"path": "notes.txt"}))
+            .call("toolu_2", "a-tools_read_a", json!({"path": "notes.txt"}))
             .await;
         assert_eq!(result["isError"], true);
     })

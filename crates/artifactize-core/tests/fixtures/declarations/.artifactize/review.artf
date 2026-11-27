@@ -1,4 +1,4 @@
-tool review = {
+tool review-tools = {
   agent read = command(
       command = "sh",
       args = ["hook.sh"],
@@ -10,7 +10,7 @@ tool review = {
   human read = command(command = "sh", args = ["hook.sh"], description = "Read @{artf self}", kind = "output")
 }
 
-artf review : review = {
+artf review : review-tools = {
   fingerprint = script(command = "hook.sh", args = [], files = ["hook.sh"], timeout_ms = 1000)
   path = "review/"
 
@@ -25,9 +25,9 @@ artf review : review = {
     instruction = "Inspect @{artf input}."
   }
 
+  // Check input.
   eval runtime : runtime(command = "sh", args = ["hook.sh"], timeout_ms = 1000) = {
     title = "Check input"
-    instruction = "Check input."
-    inputs = [input]
+    deps = [input]
   }
 }

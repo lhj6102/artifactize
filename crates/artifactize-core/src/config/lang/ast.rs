@@ -1,4 +1,5 @@
-//! The syntax tree of `.artf` files, every node with the span it was written at.
+//! The syntax tree of `.artf` and `.artfprofiles` files, every node with the span it was
+//! written at.
 
 use artifactize_tools::artf::lexer::Literal;
 
@@ -38,13 +39,12 @@ impl Span {
     }
 }
 
-/// The four kinds of top-level declarations; each has its own namespace.
+/// The top-level declarations of an `.artf` file. Their names share one namespace with the
+/// profiles of `.artfprofiles` files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ItemKind {
     Artf,
     Tool,
-    Profile,
-    Eval,
 }
 
 impl ItemKind {
@@ -52,8 +52,6 @@ impl ItemKind {
         match self {
             Self::Artf => "artf",
             Self::Tool => "tool",
-            Self::Profile => "profile",
-            Self::Eval => "eval",
         }
     }
 }
@@ -71,7 +69,7 @@ pub struct Param {
     pub default: Option<Expr>,
 }
 
-/// `kind name = body`, `kind name : header = body`, or a macro definition `kind! name(params) …`.
+/// `kind name = body`, `kind name : header = body`, or an `artf! name(params) …` macro.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Item {
     pub kind: ItemKind,
@@ -93,18 +91,17 @@ pub enum Expr {
     Str(Literal, Span),
     Number(String, Span),
     Bool(bool, Span),
-    None(Span),
     /// A parameter or a global, by name.
     Ident(Name),
     Array(Vec<Element>, Span),
     Block(Block),
-    /// A built-in constructor: `builtin(…)`, `runtime(…)`, `agent(…)`.
+    /// A built-in constructor: `builtin(…)`, `command(…)`, `runtime(…)`, `script(…)`.
     Call {
         name: Name,
         args: Vec<Arg>,
         span: Span,
     },
-    /// A macro invocation `name!(…)`.
+    /// An `artf!` macro invocation `name!(…)`.
     Macro {
         name: Name,
         args: Vec<Arg>,
@@ -120,7 +117,6 @@ impl Expr {
             Self::Str(_, span)
             | Self::Number(_, span)
             | Self::Bool(_, span)
-            | Self::None(span)
             | Self::Array(_, span)
             | Self::Call { span, .. }
             | Self::Macro { span, .. }
@@ -150,7 +146,7 @@ pub enum Entry {
         key: Name,
         value: Expr,
     },
-    /// `eval id (: profile)? = body` or `agent|human|session name = tool`.
+    /// `eval id : profile = body` or `agent|human|session name = tool`.
     Declare {
         keyword: Name,
         name: Name,
@@ -159,4 +155,26 @@ pub enum Entry {
         span: Span,
     },
     Spread(Expr, Span),
+}
+
+/// One profile of an `.artfprofiles` file: `profile NAME : agent = { … }`, or
+/// `profile NAME : agent = match VAR { default => { … }, LABEL => { … } }`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProfileItem {
+    pub name: Name,
+    /// What evaluates with it, after `:`.
+    pub kind: Name,
+    pub body: ProfileBody,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProfileBody {
+    /// One complete setting.
+    Setting(Block),
+    /// A complete setting per value of an environment variable, `default` among them.
+    Match {
+        variable: Name,
+        arms: Vec<(Name, Block)>,
+    },
 }

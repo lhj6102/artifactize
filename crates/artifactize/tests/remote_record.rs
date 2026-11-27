@@ -413,7 +413,12 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
             at: completed,
         },
         profile: artifactize_core::config::StoredProfile::from(&variant),
-        options: ExecutionOptions::new(&variant, Some(&"fast".parse().unwrap())),
+        // Saved before profiles chose their settings from the environment, by a Run that
+        // chose another profile.
+        options: ExecutionOptions {
+            variant: Some("fast".parse().unwrap()),
+            ..ExecutionOptions::new(&variant)
+        },
         usage: Some(
             serde_json::from_value(json!([{"turn":1,"attempt":1,"usage":{"inputTokens":10}}]))
                 .unwrap(),

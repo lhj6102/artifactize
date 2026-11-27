@@ -328,7 +328,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
     }
     assert_eq!(
         first_requests["tip/style"]["title"],
-        "The brief post fits in 40 words and follows the house style"
+        "The post fits its word limit and follows the house style"
     );
     let second = session.json(&repo, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(second["executionsStarted"], 0);
@@ -486,15 +486,19 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
         names,
         [
             vec![
+                "files_glob_requirements",
+                "files_glob_spec",
+                "files_grep_requirements",
+                "files_grep_spec",
+                "files_list_requirements",
+                "files_list_spec",
+                "files_read_requirements",
+                "files_read_spec",
                 "review_coverage_spec",
                 "review_section_spec",
-                "review_view_image_spec",
-                "text_grep_requirements",
-                "text_grep_spec",
-                "text_read_requirements",
-                "text_read_spec"
+                "review_view_image_spec"
             ],
-            vec!["review_notes_spec", "review_open_spec"],
+            vec!["files_view_spec", "review_notes_spec", "review_open_spec"],
         ]
     );
 

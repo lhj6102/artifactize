@@ -31,8 +31,6 @@ pub struct EvalSite {
     #[serde(serialize_with = "crate::platform::path_serde::serialize")]
     pub file: PathBuf,
     pub line: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub from: Option<String>,
 }
 
 /// The expansion of `artifact` in a configuration read from code.
@@ -61,7 +59,6 @@ fn of(program: &lang::Program, lowered: &lang::LoweredArtifact) -> Expansion {
                 id: eval.id.clone(),
                 file: program.sources.file(eval.id_span.file).path.clone(),
                 line: program.sources.line_column(eval.id_span).0,
-                from: eval.source.clone(),
             })
             .collect(),
     }

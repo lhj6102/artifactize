@@ -156,7 +156,7 @@ fn reviewer(request: &Request) -> Reply {
             request,
             vec![openai::function_call(
                 "call_1",
-                "spec_read_spec",
+                "spec-tools_read_spec",
                 &json!({"path":"spec.md"}),
             )],
             openai::usage(30, 5),
@@ -224,7 +224,7 @@ fn a_review_calls_tools_with_codex_headers_and_exact_max_reasoning() {
         assert_eq!(body["stream"], true);
         assert_eq!(body["include"], json!(["reasoning.encrypted_content"]));
         assert_eq!(body["tools"][0]["type"], "function");
-        assert_eq!(body["tools"][0]["name"], "spec_read_spec");
+        assert_eq!(body["tools"][0]["name"], "spec-tools_read_spec");
         let instructions = body["instructions"].as_str().unwrap();
         assert!(instructions.starts_with("You are an artifactize evaluator."));
         assert_eq!(body["text"]["format"]["type"], "json_schema");
@@ -739,7 +739,7 @@ fn sign_in_endpoints_are_loopback_only_and_guard_the_review_store() {
 fn removed_backend_messages_name_codex_without_a_version() {
     let project = Project::new();
     // Profiles are declared once for the project.
-    let path = project.repo.join(".artifactize/profiles.artf");
+    let path = project.repo.join(".artifactize/profiles.artfprofiles");
     let profiles = std::fs::read_to_string(&path)
         .unwrap()
         .replace("backend = \"codex\"", "backend = \"chatgpt\"");

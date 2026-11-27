@@ -100,7 +100,7 @@ impl Project {
                 "--audience",
                 "human",
                 "--tool",
-                "test_launch",
+                "test-tools_launch",
             ],
             0,
         )
@@ -183,7 +183,7 @@ fn declared_eval_fingerprint_agent_and_human_share_path_lookup_and_literal_argum
                 "--audience",
                 audience,
                 "--tool",
-                "test_argv",
+                "test-tools_argv",
             ],
             0,
         );
@@ -284,7 +284,7 @@ fn batch_argument_refusal_is_clear_for_runtime_agent_human_output_and_launch() {
                 "--audience",
                 audience,
                 "--tool",
-                "test_argv",
+                "test-tools_argv",
             ],
             1,
         );
@@ -311,7 +311,7 @@ fn batch_argument_refusal_is_clear_for_runtime_agent_human_output_and_launch() {
             "--audience",
             "human",
             "--tool",
-            "test_launch",
+            "test-tools_launch",
         ],
         1,
     );

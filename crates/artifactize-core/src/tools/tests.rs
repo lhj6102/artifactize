@@ -44,7 +44,12 @@ impl Fixture {
         let config = read_workspace_config(&self.repo).unwrap();
         let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
         let result = registry
-            .call("a_inspect_a", args, &self.output, CancellationToken::new())
+            .call(
+                "a-tools_inspect_a",
+                args,
+                &self.output,
+                CancellationToken::new(),
+            )
             .await;
         assert_eq!(self.output_entries(), [self.output.join("retained")]);
         result
@@ -114,7 +119,7 @@ fn owned_call_with_cleanup(
     let work = async move {
         let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
         registry
-            .call_with_cleanup("a_inspect_a", json!({}), &output, token, cleanup)
+            .call_with_cleanup("a-tools_inspect_a", json!({}), &output, token, cleanup)
             .await
     };
     (cancellation, work)
@@ -208,7 +213,7 @@ async fn argument_validation_precedes_spawn_and_output_creation() {
     ] {
         let result = registry
             .call(
-                "a_inspect_a",
+                "a-tools_inspect_a",
                 args,
                 &fixture.repo.join("must-not-create"),
                 CancellationToken::new(),
@@ -551,7 +556,7 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
             assert!(
                 registry
                     .call(
-                        "a_inspect_a",
+                        "a-tools_inspect_a",
                         json!({}),
                         &fixture.output,
                         CancellationToken::new()
@@ -573,7 +578,7 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
     let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     let result = registry
         .call(
-            "a_inspect_a",
+            "a-tools_inspect_a",
             json!({}),
             &fixture.repo.join("output"),
             CancellationToken::new(),
@@ -634,13 +639,13 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>(),
         // b's nested folder Artifact is not b's, so a's eval does not see its tools.
-        ["a_inspect_a", "b_read_b"]
+        ["a-tools_inspect_a", "b-tools_read_b"]
     );
     assert_eq!(registry.list().next().unwrap().description, "Inspect a");
     assert!(
         !registry
             .call(
-                "b_read_b",
+                "b-tools_read_b",
                 json!({"path":"notes.md"}),
                 &fixture.output,
                 CancellationToken::new()
@@ -652,7 +657,7 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
         text(
             &registry
                 .call(
-                    "c_grep_c",
+                    "c-tools_grep_c",
                     json!({}),
                     &fixture.output,
                     CancellationToken::new()
@@ -760,7 +765,7 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
     assert!(
         text(
             &registry
-                .call("a_inspect_a", json!({}), &fixture.output, cancel)
+                .call("a-tools_inspect_a", json!({}), &fixture.output, cancel)
                 .await
         )
         .contains("cancelled")
@@ -820,11 +825,15 @@ async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
             .list()
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>(),
-        ["a_inspect_a", "fixture_read_leaf", "fixture_read_part"]
+        [
+            "a-tools_inspect_a",
+            "fixture_read_leaf",
+            "fixture_read_part"
+        ]
     );
     let result = registry
         .call(
-            "a_inspect_a",
+            "a-tools_inspect_a",
             json!({}),
             &fixture.output,
             CancellationToken::new(),

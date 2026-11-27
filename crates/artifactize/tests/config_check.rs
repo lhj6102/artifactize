@@ -257,16 +257,16 @@ Inspect {{input}}."""
         config.artifacts["review"].path.local(),
         Some(Path::new("review"))
     );
-    assert_eq!(
-        config.evals[2]
-            .declaration
-            .payload()
-            .as_ref()
-            .unwrap()
-            .instruction,
-        // A runtime instruction is prose: it names its inputs in `inputs`, not by slots.
-        "Check input."
-    );
+    // A runtime eval asks nothing, its verdict being its exit code; it lists what it reads in
+    // `deps`.
+    assert!(config.evals[2].declaration.payload().is_none());
+    let deps: Vec<_> = config.evals[2]
+        .declaration
+        .inputs()
+        .iter()
+        .map(|dep| dep.as_str())
+        .collect();
+    assert_eq!(deps, ["input"]);
 
     fixture.write(
         "other/index.artf",
@@ -290,7 +290,7 @@ Inspect {{input}}."""
         json_output(&output)["error"]
             .as_str()
             .unwrap()
-            .contains("`artf review` is declared twice.")
+            .contains("`review` is already declared as `artf review`")
     );
     let output = fixture
         .command()
@@ -299,7 +299,7 @@ Inspect {{input}}."""
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("is declared twice"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("is already declared as"));
     fs::remove_dir_all(fixture.0.join(".artifactize/collision")).unwrap();
 
     fs::write(
@@ -387,7 +387,10 @@ fn config_check_names_the_replacements_for_removed_backends() {
             assert_eq!(output.status.code(), Some(2));
             let error = json_output(&output)["error"].as_str().unwrap().to_owned();
             // A profile is declared once for the project, where its error is located.
-            assert!(error.contains(".artifactize/profiles.artf"), "{error}");
+            assert!(
+                error.contains(".artifactize/profiles.artfprofiles"),
+                "{error}"
+            );
             assert!(
                 error.contains(&format!(
                     r#"backend "{backend}" was removed in 0.5.0; use "openai", "anthropic" or "gemini" with an API key, "codex""#

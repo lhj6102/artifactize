@@ -2,8 +2,8 @@ artf green = {
   fingerprint = false
   path = "review/"
 
+  // Check runtime.
   eval check : runtime(command = "/bin/sh", args = ["check.sh", "@{path input/data.txt}"]) = {
     title = "Check green"
-    instruction = "Check runtime."
   }
 }

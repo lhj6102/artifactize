@@ -51,7 +51,10 @@ async fn call(repo: &Path) -> ToolResult {
     let config = read_workspace_config(repo).unwrap();
     Registry::new(&config, &"a/review".parse().unwrap())
         .unwrap()
-        .call(&"a_inspect_a".parse().unwrap(), CancellationToken::new())
+        .call(
+            &"a-tools_inspect_a".parse().unwrap(),
+            CancellationToken::new(),
+        )
         .await
 }
 
@@ -60,7 +63,7 @@ async fn call_launch(launched: &Launched) -> ToolResult {
     Registry::new(&config, &"a/review".parse().unwrap())
         .unwrap()
         .call_logged(
-            &"a_inspect_a".parse().unwrap(),
+            &"a-tools_inspect_a".parse().unwrap(),
             CancellationToken::new(),
             launched.observe(artifactize_core::review::log::Run::unwatched()),
         )
@@ -212,8 +215,9 @@ async fn catalog_is_human_only_scoped_and_collision_checked() {
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>(),
         // `child` is nested in b's folder, which makes it no part of b's scope.
-        // Identical tools are one toolset, named after the first Artifact with them.
-        ["a_inspect_a", "a_inspect_b"]
+        // Identical tools are one toolset, named after the first Artifact with them but apart
+        // from every Artifact's name.
+        ["a-tools_inspect_a", "a-tools_inspect_b"]
     );
     assert_eq!(registry.list().next().unwrap().description, "Inspect a");
     assert_eq!(
@@ -312,7 +316,10 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
     support::os::link_dir(&support::os::temp_root(), &input);
     assert!(
         registry
-            .call(&"a_inspect_a".parse().unwrap(), CancellationToken::new())
+            .call(
+                &"a-tools_inspect_a".parse().unwrap(),
+                CancellationToken::new()
+            )
             .await
             .is_error()
     );
@@ -435,7 +442,7 @@ async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_pro
     let config = read_workspace_config(repo.path()).unwrap();
     let (sink, mut events) = channel();
     let request = "run-1-1".parse().unwrap();
-    let name = "a_inspect_a".parse().unwrap();
+    let name = "a-tools_inspect_a".parse().unwrap();
     let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     let result = registry
         .call_logged(
@@ -553,7 +560,7 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
     assert!(
         Registry::new(&config, &"a/review".parse().unwrap())
             .unwrap()
-            .call(&"a_inspect_a".parse().unwrap(), cancellation)
+            .call(&"a-tools_inspect_a".parse().unwrap(), cancellation)
             .await
             .is_error()
     );
@@ -768,7 +775,7 @@ async fn human_environment_and_launch_probe() {
     let result = tools::Registry::new(&config, &"a/agent".parse().unwrap())
         .unwrap()
         .call(
-            "a_inspect_a",
+            "a-tools_inspect_a",
             json!({}),
             output.path(),
             CancellationToken::new(),

@@ -2,9 +2,9 @@ artf blocked = {
   fingerprint = false
   path = "blocked/"
 
+  // Check red.
   eval check : runtime(command = "/bin/sh", args = ["-c", "printf 'must not execute\\n'"]) = {
     title = "Check blocked"
-    instruction = "Check red."
-    inputs = [red]
+    deps = [red]
   }
 }

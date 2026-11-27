@@ -172,7 +172,14 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
                 &check(
                     &repo,
                     &state,
-                    &["--artifact", "a", "--audience", "agent", "--tool", "a_env"]
+                    &[
+                        "--artifact",
+                        "a",
+                        "--audience",
+                        "agent",
+                        "--tool",
+                        "a-tools_env"
+                    ]
                 ),
                 1
             )["ok"],
@@ -192,7 +199,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
                 "--audience",
                 "agent",
                 "--tool",
-                "a_env",
+                "a-tools_env",
             ],
         ),
         0,
@@ -226,7 +233,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
                 "--audience",
                 "human",
                 "--tool",
-                "a_env",
+                "a-tools_env",
             ],
         ),
         0,
@@ -247,7 +254,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
                 "--audience",
                 "agent",
                 "--tool",
-                "a_error",
+                "a-tools_error",
             ],
         ),
         1,
@@ -266,7 +273,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
                 "--eval",
                 "a/review",
                 "--tool",
-                "b_read_b",
+                "b-tools_read_b",
                 "--args",
                 r#"{"path":"notes.md"}"#,
             ],
@@ -281,7 +288,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
         &check(
             &repo,
             &state,
-            &["--execute", "--eval", "a/human", "--tool", "b_read_b"],
+            &["--execute", "--eval", "a/human", "--tool", "b-tools_read_b"],
         ),
         1,
     );
@@ -296,7 +303,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
             "a/human",
             "--execute",
             "--tool",
-            "a_env_a",
+            "a-tools_env_a",
             "--args",
             "{}",
         ],
@@ -309,7 +316,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
             "--audience",
             "human",
             "--tool",
-            "a_env",
+            "a-tools_env",
             "--args",
             "{}",
         ],

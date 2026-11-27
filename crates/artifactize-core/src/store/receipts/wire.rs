@@ -54,7 +54,6 @@ pub struct Run {
     pub comment: Option<crate::types::RunComment>,
     pub created_at: Timestamp,
     pub selection: crate::project::selection::Selection,
-    pub profile: Option<crate::project::selection::ProfileSelection>,
     pub definitions: store::definitions::Definitions,
     pub recursive: bool,
     pub force: bool,
@@ -107,8 +106,6 @@ struct RunWire {
     pub completed_at: Option<Timestamp>,
     pub selection: crate::project::selection::Selection,
     #[serde(default)]
-    pub profile: Option<crate::project::selection::ProfileSelection>,
-    #[serde(default)]
     pub definitions: store::definitions::Definitions,
     #[serde(default)]
     pub recursive: bool,
@@ -159,7 +156,6 @@ impl TryFrom<RunWire> for Run {
             state_dir: wire.state_dir,
             created_at: wire.created_at,
             selection: wire.selection,
-            profile: wire.profile,
             definitions: wire.definitions,
             recursive: wire.recursive,
             force: wire.force,
@@ -194,7 +190,6 @@ impl From<Run> for RunWire {
             state_dir: record.state_dir,
             created_at: record.created_at,
             selection: record.selection,
-            profile: record.profile,
             definitions: record.definitions,
             recursive: record.recursive,
             force: record.force,

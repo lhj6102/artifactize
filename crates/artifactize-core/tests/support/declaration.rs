@@ -42,9 +42,16 @@ fn registry() -> std::sync::MutexGuard<'static, Registry> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// One builder as `.artf` text on its own: its Artifact with its tools and profiles. Written
-/// through [`write`], it joins its project's other builders instead.
+/// One builder as `.artf` text on its own: its Artifact with its tools. An Agent eval's profile
+/// is in the `.artfprofiles` file [`to_files`] adds. Written through [`write`], it joins its
+/// project's other builders instead.
 pub fn to_artf(value: Value) -> Result<String, String> {
+    Ok(to_files(value)?.remove(0).1)
+}
+
+/// One builder as the files of a project of its own, relative to `.artifactize/`: its `.artf`
+/// file first, then the `.artfprofiles` file of its Agent evals' profiles, if any.
+pub fn to_files(value: Value) -> Result<Vec<(PathBuf, String)>, String> {
     let name = value
         .get("name")
         .and_then(Value::as_str)
@@ -73,18 +80,26 @@ pub fn to_artf(value: Value) -> Result<String, String> {
         &BTreeSet::new(),
     )?;
     let mut text = marker(&name, &table);
-    // Its own file first, then its toolsets and profiles.
-    for (index, (_, file)) in converted.files.into_iter().enumerate() {
-        text.push_str(&if index == 0 {
-            composing(&file, &name, &fallback)
+    let mut profiles = Vec::new();
+    // Its own file first, then its toolsets; profiles go in a file of their own.
+    for (index, (file, contents)) in converted.files.into_iter().enumerate() {
+        if index == 0 {
+            text.push_str(&composing(&contents, &name, &fallback));
+        } else if file
+            .extension()
+            .is_some_and(|extension| extension == "artfprofiles")
+        {
+            profiles.push((file, contents));
         } else {
-            file
-        });
+            text.push_str(&contents);
+        }
     }
     if !fallback.is_empty() {
         text.push_str(FIXTURE_TOOLS);
     }
-    Ok(text)
+    let mut files = vec![(PathBuf::from(format!("{name}.artf")), text)];
+    files.extend(profiles);
+    Ok(files)
 }
 
 fn marker(name: &str, table: &Value) -> String {
@@ -453,11 +468,11 @@ fn regenerate(registry: &mut Registry, root: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Simple tools for reviews that test another seam, in the `fixture` namespace, so a provider
-/// sees `fixture_read_<artifact>` and a person `fixture.help`. Admission tests write their exact
+/// Simple tools for reviews that test another seam, so a provider sees
+/// `fixture_read_<artifact>` and a person `fixture-human.help`. Admission tests write their exact
 /// production declarations directly, not through here.
-const FIXTURE_TOOLS: &str = r#"tool! fixture-agent() = { namespace = "fixture", agent read = builtin(op = "read") }
-tool! fixture-human() = { namespace = "fixture", human help = builtin(op = "help", args = ["artifactize"]) }
+const FIXTURE_TOOLS: &str = r#"tool fixture = { agent read = builtin(op = "read") }
+tool fixture-human = { human help = builtin(op = "help", args = ["artifactize"]) }
 "#;
 
 /// The fixture toolsets an Artifact a review reads composes: one for each kind of review it
@@ -475,9 +490,9 @@ fn fallback_tools(table: &Value, kinds: &BTreeSet<&'static str>) -> Vec<&'static
         })
         .map(|kind| {
             if *kind == "agent" {
-                "fixture-agent!()"
+                "fixture"
             } else {
-                "fixture-human!()"
+                "fixture-human"
             }
         })
         .collect()

@@ -403,7 +403,7 @@ fn an_aspect_selects_part_of_a_folder_and_reuses_while_the_rest_changes() {
                 "--audience",
                 "agent",
                 "--tool",
-                "fireball_list",
+                "fireball-tools_list",
                 "--args",
                 &args,
             ],

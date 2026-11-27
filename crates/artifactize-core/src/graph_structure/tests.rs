@@ -135,7 +135,7 @@ async fn graph_agent_tool_prints_current_extracted_structure_from_any_artifact()
     .unwrap();
     let result = registry
         .call(
-            "app_structure_app",
+            "app-tools_structure_app",
             json!({}),
             repo.path(),
             CancellationToken::new(),
@@ -150,7 +150,9 @@ async fn graph_agent_tool_prints_current_extracted_structure_from_any_artifact()
     assert!(text.contains("graph/review: Changed graph title"));
     let human =
         crate::tools::human::Registry::for_artifact(&config, &"app".parse().unwrap()).unwrap();
-    human.preflight(&"app_viewer_app".parse().unwrap()).unwrap();
+    human
+        .preflight(&"app-tools_viewer_app".parse().unwrap())
+        .unwrap();
     assert_eq!(
         human.list().next().unwrap().kind,
         crate::config::HumanToolKind::Launch
@@ -182,10 +184,13 @@ async fn artifact_type_exposes_the_same_scoped_declarations_to_both_tools() {
     )
     .unwrap();
     fs::write(
+        definitions.join("profiles.artfprofiles"),
+        "profile fixture : agent = { backend = \"openai\", model = \"fixture\" }\n",
+    )
+    .unwrap();
+    fs::write(
         definitions.join("design-definitions.artf"),
-        r#"profile fixture = agent(backend = "openai", model = "fixture")
-
-artf design-definitions : artifactize = {
+        r#"artf design-definitions : artifactize = {
   path = ".artifactize/design/"
   eval inspect : fixture = {
     title = "Inspect design declarations"

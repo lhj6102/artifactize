@@ -18,10 +18,23 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
 }
 
 pub(crate) fn read_workspace_declarations(repo: &Path) -> Result<RepoConfig, ConfigError> {
+    read_workspace_declarations_with(repo, &lang::process_environment)
+}
+
+/// [`read_workspace_declarations`] with the profiles reading `environment`, such as the one a
+/// Run was submitted with.
+pub(crate) fn read_workspace_declarations_with(
+    repo: &Path,
+    environment: lang::Environment<'_>,
+) -> Result<RepoConfig, ConfigError> {
     let root =
         crate::platform::canonicalize(repo).map_err(|error| ConfigError::new(repo, error))?;
     let sources = sources(&root)?;
-    let mut config = read_sources(root, &sources)?;
+    let catalog = super::plugins::catalog(&root)?;
+    let program = program_with(&root, &sources, &catalog, environment)?;
+    let mut config = build(root, program, catalog)?;
+    crate::scope::resolve_config(&mut config)?;
+    crate::scope::validate_eval_tools(&config)?;
     inspect_targets(&mut config);
     Ok(config)
 }
@@ -67,10 +80,23 @@ pub(crate) fn program(
     sources: &BTreeMap<PathBuf, String>,
     catalog: &super::plugins::Catalog,
 ) -> Result<lang::Program, ConfigError> {
+    program_with(root, sources, catalog, &lang::process_environment)
+}
+
+/// [`program`] with the profiles reading `environment`.
+fn program_with(
+    root: &Path,
+    sources: &BTreeMap<PathBuf, String>,
+    catalog: &super::plugins::Catalog,
+    environment: lang::Environment<'_>,
+) -> Result<lang::Program, ConfigError> {
     let mut files = Vec::new();
     for (path, text) in sources {
         let relative = path.strip_prefix(root).unwrap_or(path).to_owned();
-        if lang::looks_like_toml(text) {
+        let profiles = relative
+            .extension()
+            .is_some_and(|extension| extension == lang::PROFILES_EXTENSION);
+        if !profiles && lang::looks_like_toml(text) {
             return Err(ConfigError::new(
                 path,
                 "line 1, column 1: This definition is in the TOML format of artifactize 0.26 and before; run artifactize config migrate to convert the project.",
@@ -85,7 +111,7 @@ pub(crate) fn program(
     for plugin in catalog.values() {
         files.extend(plugin.source_files());
     }
-    lang::read(files).map_err(|(sources, error)| {
+    lang::read(files, environment).map_err(|(sources, error)| {
         let mut located = sources.error(error);
         located.path = root.join(&located.path);
         located
@@ -107,16 +133,15 @@ fn build(
     catalog: super::plugins::Catalog,
 ) -> Result<RepoConfig, ConfigError> {
     let program = Arc::new(program);
-    let profiles = program
-        .profiles
-        .iter()
-        .map(|(name, (profile, _))| {
-            (
-                name.parse().expect("a profile's name is an identifier"),
-                profile.clone(),
-            )
-        })
-        .collect();
+    let mut profiles = BTreeMap::new();
+    for (name, (profile, span)) in &program.profiles {
+        let name = name.parse().map_err(|message: String| {
+            let mut error = program.sources.error(lang::LangError::new(*span, message));
+            error.path = root.join(&error.path);
+            error
+        })?;
+        profiles.insert(name, profile.clone());
+    }
     let mut config = RepoConfig {
         root,
         artifacts: BTreeMap::new(),
@@ -144,7 +169,6 @@ fn build(
                 references: BTreeMap::new(),
                 deps: Vec::new(),
                 declaration,
-                variant: None,
             });
         }
     }
@@ -515,51 +539,6 @@ fn declaration(
                             path: suffix,
                         }
                     }
-                    SlotRef::Tool {
-                        audience,
-                        tool,
-                        span,
-                        ..
-                    } => {
-                        let fqn: ToolFqn = tool
-                            .parse()
-                            .map_err(|message: String| fail(*span, message))?;
-                        let (audience, known): (eval::Audience, Vec<&ToolFqn>) =
-                            if audience == "agent" {
-                                (
-                                    eval::Audience::Agent,
-                                    artifact.views.agent_tools.keys().collect(),
-                                )
-                            } else {
-                                (
-                                    eval::Audience::Human,
-                                    artifact.views.human_tools.keys().collect(),
-                                )
-                            };
-                        if !known.contains(&&fqn) {
-                            return Err(fail(
-                                *span,
-                                format!(
-                                    "Artifact {name} has no {} tool `{fqn}`; it has {}.",
-                                    if audience == eval::Audience::Agent {
-                                        "agent"
-                                    } else {
-                                        "human"
-                                    },
-                                    lang_names(&known)
-                                ),
-                            ));
-                        }
-                        match audience {
-                            eval::Audience::Agent => text.push_str(fqn.published(name).as_str()),
-                            eval::Audience::Human => text.push_str(fqn.as_str()),
-                        }
-                        eval::Slot::Tool {
-                            artifact: artifact.name.clone(),
-                            audience,
-                            tool: fqn,
-                        }
-                    }
                 };
                 slots.push(eval::InstructionSlot {
                     range: start..text.len(),
@@ -580,25 +559,13 @@ fn declaration(
         profile_name: eval.profile_name.clone(),
         instruction,
         inputs: eval
-            .inputs
+            .deps
             .iter()
             .map(|(input, _)| input.parse().expect("a declared Artifact name"))
             .collect(),
         red_at: eval.red_at,
     })
     .map_err(|message| fail(eval.id_span, format!("Eval {}: {message}", eval.id)))
-}
-
-fn lang_names(names: &[&ToolFqn]) -> String {
-    if names.is_empty() {
-        "none".into()
-    } else {
-        names
-            .iter()
-            .map(|name| format!("`{name}`"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
 }
 
 /// How an instruction shows `@{path name/sub}`: the target as declared, then the sub path.
@@ -705,9 +672,10 @@ pub(super) fn files(root: &Path) -> Result<Vec<(PathBuf, crate::platform::FileKi
             let kind = entry
                 .file_type()
                 .map_err(|error| ConfigError::new(&file, error))?;
-            let definition = file
-                .file_name()
-                .is_some_and(|name| name.as_encoded_bytes().ends_with(b".artf"));
+            let definition = file.file_name().is_some_and(|name| {
+                let name = name.as_encoded_bytes();
+                name.ends_with(b".artf") || name.ends_with(b".artfprofiles")
+            });
             if definition {
                 files.push((file, kind));
             } else if kind == crate::platform::FileKind::Directory {

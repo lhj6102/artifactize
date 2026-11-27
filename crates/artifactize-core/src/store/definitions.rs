@@ -29,6 +29,13 @@ impl Definitions {
     pub fn from_view(view: &crate::query::GraphView<'_>) -> Result<Self, serde_json::Error> {
         serde_json::from_value(serde_json::to_value(view)?)
     }
+    /// The environment values the project's profiles read when these definitions were saved.
+    pub fn environment(&self) -> BTreeMap<String, Option<String>> {
+        self.graph()
+            .and_then(|graph| graph.extra.get("environment"))
+            .and_then(|environment| serde_json::from_value(environment.clone()).ok())
+            .unwrap_or_default()
+    }
 }
 impl Serialize for Definitions {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {

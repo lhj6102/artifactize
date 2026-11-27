@@ -2087,10 +2087,10 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
 }
 #[test]
 fn canonical_definition_hash_covers_the_strategy_but_no_agent_setting_or_name() {
-    use artifactize_core::{cache::eval_definition_hash, config::parse_declaration};
+    use artifactize_core::{cache::eval_definition_hash, config::parse_declaration_files};
     let parse = |value| {
-        parse_declaration(
-            &support::declaration::to_artf(json!({"name":"app","evals":[value]})).unwrap(),
+        parse_declaration_files(
+            &support::declaration::to_files(json!({"name":"app","evals":[value]})).unwrap(),
         )
         .unwrap()
         .evals

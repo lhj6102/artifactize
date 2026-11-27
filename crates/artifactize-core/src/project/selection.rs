@@ -9,7 +9,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::{ArtifactName, Eval, EvalId, ProfileKind, ProfileName, RepoConfig},
+    config::{ArtifactName, Eval, EvalId, RepoConfig},
     graph::Graph,
 };
 
@@ -172,83 +172,6 @@ fn selected_artifact<'a>(config: &'a RepoConfig, id: &str) -> Result<&'a Artifac
         .get_key_value(id)
         .map(|(id, _)| id)
         .ok_or_else(|| format!("Unknown Artifact: {id}"))
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum ProfileSelection {
-    /// Every included Agent eval runs with this named profile.
-    Named(ProfileName),
-    Evals(BTreeMap<EvalId, ProfileName>),
-}
-
-/// Run included Agent evals with a project's named profile instead of their own, in owned
-/// configuration, never rewriting source files. A profile's execution options are not
-/// criteria, so reuse keys stay the same.
-pub fn select_profiles(
-    mut config: RepoConfig,
-    selection: &Selection,
-    profile: Option<&ProfileSelection>,
-    recursive: bool,
-) -> Result<RepoConfig, String> {
-    let Some(profile) = profile else {
-        return Ok(config);
-    };
-    let evals = selection.included_evals(&config, recursive)?;
-    let included: BTreeMap<_, _> = evals.iter().map(|eval| (&eval.id, *eval)).collect();
-    let agent = |eval: &Eval| eval.declaration.profile().kind() == ProfileKind::Agent;
-    let mapping: Vec<(EvalId, ProfileName)> = match profile {
-        ProfileSelection::Named(name) => evals
-            .iter()
-            .filter(|eval| agent(eval))
-            .map(|eval| (eval.id.clone(), name.clone()))
-            .collect(),
-        ProfileSelection::Evals(mapping) => mapping
-            .iter()
-            .map(|(id, name)| (id.clone(), name.clone()))
-            .collect(),
-    };
-    let unknown = |name: &ProfileName| {
-        let known: Vec<_> = config.profiles.keys().map(|name| name.as_str()).collect();
-        format!(
-            "Unknown profile {name}; the project's Agent profiles are {}.",
-            if known.is_empty() {
-                "none".to_owned()
-            } else {
-                known.join(", ")
-            }
-        )
-    };
-    // A name is checked even when no included eval is an Agent eval to run with it.
-    if let ProfileSelection::Named(name) = profile
-        && !config.profiles.contains_key(name)
-    {
-        return Err(unknown(name));
-    }
-    let mut chosen = BTreeMap::new();
-    for (id, name) in mapping {
-        let eval = included.get(&id).ok_or_else(|| {
-            format!("Profile selection is outside the submitted Eval scope: {id}")
-        })?;
-        if !agent(eval) {
-            return Err(format!(
-                "{id} is not an Agent eval; only Agent evals run with a chosen profile."
-            ));
-        }
-        let profile = config
-            .profiles
-            .get(&name)
-            .cloned()
-            .ok_or_else(|| unknown(&name))?;
-        chosen.insert(id, (name, profile));
-    }
-    for eval in &mut config.evals {
-        if let Some((name, profile)) = chosen.remove(&eval.id) {
-            eval.declaration.select_profile(&name, &profile)?;
-            eval.variant = Some(name);
-        }
-    }
-    Ok(config)
 }
 
 /// Bound selection-file parsing/allocation before resolving any project work.

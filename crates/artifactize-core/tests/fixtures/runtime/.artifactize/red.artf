@@ -2,8 +2,8 @@ artf red = {
   fingerprint = false
   path = "red/"
 
+  // Check runtime.
   eval check : runtime(command = "/bin/sh", args = ["-c", "printf 'RED finding\\n'; exit 7"]) = {
     title = "Check red"
-    instruction = "Check runtime."
   }
 }

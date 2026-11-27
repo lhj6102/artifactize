@@ -257,11 +257,11 @@ fn each_review_has_its_own_session_id() {
             continue;
         }
         // Its tool, offered or called earlier, names the review's Artifact. The three share one
-        // toolset, named after the first.
+        // toolset, named after the first but apart from its name.
         let body = call.body.to_string();
         let artifact = ["a", "b", "c"]
             .into_iter()
-            .find(|name| body.contains(&format!("\"a_read_{name}\"")))
+            .find(|name| body.contains(&format!("\"a-tools_read_{name}\"")))
             .unwrap_or_else(|| panic!("{body}"));
         let session = session_of(artifact);
         assert_eq!(call.body["prompt_cache_key"], session);

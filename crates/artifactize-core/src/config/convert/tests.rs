@@ -95,7 +95,8 @@ fn old_declarations_read_back_as_the_same_project() {
     let config = read_back(&converted);
     let app = &config.artifacts[&name("app")];
     assert_eq!(app.tags, ["core"]);
-    assert_eq!(app.toolsets, ["app"]);
+    // A toolset never takes an Artifact's name: names are one namespace.
+    assert_eq!(app.toolsets, ["app-tools"]);
     let spec = &config.artifacts[&name("spec")];
     assert_eq!(spec.toolsets, ["markdown"]);
     assert_eq!(config.profiles.len(), 1, "one profile, shared");
@@ -114,6 +115,21 @@ fn old_declarations_read_back_as_the_same_project() {
         .find(|eval| eval.id.as_str() == "app/e1-tests")
         .unwrap();
     assert_eq!(tests.declaration.inputs(), [name("spec")]);
+    // A runtime eval's verdict is its exit code: its old prose stays as a comment.
+    assert_eq!(tests.declaration.instruction(), None);
+    let (_, app_text) = &converted.files[0];
+    assert!(
+        app_text.contains("  // Run the tests of spec.\n  eval e1-tests : runtime(")
+            && app_text.contains("deps = [spec]"),
+        "{app_text}"
+    );
+    let (profiles_file, profiles_text) = converted.files.last().unwrap();
+    assert_eq!(profiles_file, &PathBuf::from("profiles.artfprofiles"));
+    assert!(
+        profiles_text
+            .contains("profile codex : agent = { backend = \"codex\", model = \"gpt-5.5\" }"),
+        "{profiles_text}"
+    );
     let warnings = converted.warnings.join("\n");
     assert!(warnings.contains("app/1-tests"), "{warnings}");
     assert!(warnings.contains("fail_schema"), "{warnings}");
@@ -151,10 +167,10 @@ fn identical_tools_are_one_shared_toolset_and_variants_named_profiles() {
         .collect();
     assert_eq!(
         names,
-        ["a.artf", "b.artf", "tools.artf", "profiles.artf"].map(PathBuf::from)
+        ["a.artf", "b.artf", "tools.artf", "profiles.artfprofiles"].map(PathBuf::from)
     );
     let config = read_back(&converted);
-    assert_eq!(config.artifacts[&name("b")].toolsets, ["a"]);
+    assert_eq!(config.artifacts[&name("b")].toolsets, ["a-tools"]);
     let profiles: Vec<_> = config
         .profiles
         .keys()

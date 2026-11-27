@@ -155,12 +155,12 @@ async fn fixed_agent_reads_sections_and_schemas_but_not_nested_artifacts() {
             .input_schema
             .clone()
     };
-    assert_eq!(schema("a_fixed_a")["properties"], json!({}));
-    assert_eq!(schema("a_help_a")["properties"], json!({}));
-    assert_eq!(schema("a_fixed_section_a")["properties"], json!({}));
-    assert_eq!(schema("a_section_a")["required"], json!(["heading"]));
+    assert_eq!(schema("a-tools_fixed_a")["properties"], json!({}));
+    assert_eq!(schema("a-tools_help_a")["properties"], json!({}));
+    assert_eq!(schema("a-tools_fixed_section_a")["properties"], json!({}));
+    assert_eq!(schema("a-tools_section_a")["required"], json!(["heading"]));
     assert_eq!(
-        schema("a_section_a")["properties"]
+        schema("a-tools_section_a")["properties"]
             .as_object()
             .unwrap()
             .keys()
@@ -169,7 +169,7 @@ async fn fixed_agent_reads_sections_and_schemas_but_not_nested_artifacts() {
     );
     let call =
         |name: &'static str, args| registry.call(name, args, root.path(), CancellationToken::new());
-    let fixed = call("a_fixed_a", json!({})).await;
+    let fixed = call("a-tools_fixed_a", json!({})).await;
     assert_eq!(
         fixed.content(),
         vec![tools::Content::Text {
@@ -177,19 +177,19 @@ async fn fixed_agent_reads_sections_and_schemas_but_not_nested_artifacts() {
         }]
     );
     assert!(
-        call("a_fixed_a", json!({"path":"other.md"}))
+        call("a-tools_fixed_a", json!({"path":"other.md"}))
             .await
             .is_error()
     );
-    let section = call("a_section_a", json!({"heading":"First"})).await;
+    let section = call("a-tools_section_a", json!({"heading":"First"})).await;
     assert_eq!(
         section.content(),
         vec![tools::Content::Text {
             text: "# First\nbody\n## Nested\nchild\n".into()
         }]
     );
-    assert_eq!(call("a_fixed_section_a", json!({})).await, section);
-    let missing = call("a_section_a", json!({"heading":"missing"})).await;
+    assert_eq!(call("a-tools_fixed_section_a", json!({})).await, section);
+    let missing = call("a-tools_section_a", json!({"heading":"missing"})).await;
     assert!(missing.is_error());
     assert!(
         serde_json::to_string(&missing)
@@ -277,10 +277,13 @@ async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition()
     let config = read_workspace_config(&repo).unwrap();
     let registry = tools::human::Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     registry
-        .preflight(&"a_reference_a".parse().unwrap())
+        .preflight(&"a-tools_reference_a".parse().unwrap())
         .unwrap();
     let result = registry
-        .call(&"a_reference_a".parse().unwrap(), CancellationToken::new())
+        .call(
+            &"a-tools_reference_a".parse().unwrap(),
+            CancellationToken::new(),
+        )
         .await;
     assert!(!result.is_error(), "{result:?}");
     assert_eq!(
@@ -291,7 +294,10 @@ async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition()
     );
     let outside = tools::human::Registry::for_artifact(&config, &"a".parse().unwrap())
         .unwrap()
-        .call(&"a_reference_a".parse().unwrap(), CancellationToken::new())
+        .call(
+            &"a-tools_reference_a".parse().unwrap(),
+            CancellationToken::new(),
+        )
         .await;
     assert!(outside.is_error(), "{outside:?}");
 }
@@ -378,11 +384,11 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
         0,
     );
     for (name, expected) in [
-        ("a_read_a", "# First"),
-        ("a_section_a", "## Nested"),
-        ("a_list_a", "notes.md"),
-        ("a_large_a", "[output truncated]"),
-        ("a_help_a", "human help: sub --help"),
+        ("a-tools_read_a", "# First"),
+        ("a-tools_section_a", "## Nested"),
+        ("a-tools_list_a", "notes.md"),
+        ("a-tools_large_a", "[output truncated]"),
+        ("a-tools_help_a", "human help: sub --help"),
     ] {
         let output = command(&repo, &state)
             .args(["request", "tool", id, name])
@@ -392,7 +398,7 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
         let text = String::from_utf8(output.stdout).unwrap();
         assert!(text.contains(expected), "{text}");
         assert!(text.len() <= TEXT_BYTES + 1, "{}", text.len());
-        if name == "a_section_a" {
+        if name == "a-tools_section_a" {
             assert!(!text.contains("# Next"));
         }
     }
@@ -433,7 +439,7 @@ fn request_open_hands_one_target_to_the_shared_opener() {
     let mut request = command(&repo, &state);
     opener.configure(&mut request);
     let output = request
-        .args(["request", "tool", id, "a_open_a", "--json"])
+        .args(["request", "tool", id, "a-tools_open_a", "--json"])
         .record_output()
         .unwrap();
     let result = parsed(output, 0);
@@ -461,7 +467,7 @@ async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
     let registry = tools::human::Registry::new(&config, &"notes/review".parse().unwrap()).unwrap();
     let read = registry
         .call(
-            &"notes_read_notes".parse().unwrap(),
+            &"notes-tools_read_notes".parse().unwrap(),
             CancellationToken::new(),
         )
         .await;
@@ -474,7 +480,7 @@ async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
     );
     let section = registry
         .call(
-            &"notes_section_notes".parse().unwrap(),
+            &"notes-tools_section_notes".parse().unwrap(),
             CancellationToken::new(),
         )
         .await;

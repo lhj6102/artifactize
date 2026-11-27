@@ -275,7 +275,7 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
             "request",
             "tool",
             id,
-            "child_inspect_child",
+            "child-tools_inspect_child",
             "--reviewer",
             "bob",
         ],
@@ -298,14 +298,14 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
     }
     let tool = fixture
         .command()
-        .args(["request", "tool", id, "child_inspect_child"])
+        .args(["request", "tool", id, "child-tools_inspect_child"])
         .record_output()
         .unwrap();
     assert!(tool.status.success());
     assert!(String::from_utf8_lossy(&tool.stdout).contains("review-v1"));
     let launch = fixture
         .command()
-        .args(["request", "tool", id, "child_open_child"])
+        .args(["request", "tool", id, "child-tools_open_child"])
         .record_output()
         .unwrap();
     assert!(launch.status.success());

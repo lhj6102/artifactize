@@ -11,7 +11,7 @@ use crate::{
     cache,
     config::{ProfileKind, read_workspace_config},
     graph::{EvalStatus, Evidence, Graph},
-    project::selection::{ProfileSelection, Selection, select_profiles},
+    project::selection::Selection,
     remote::Session,
     store::{self, ExecutionOptions, Receipts, Request, Run, RunView},
     workspace,
@@ -29,7 +29,6 @@ pub struct VerifyOptions {
     /// Kinds whose evals only reuse a result, from the cache or the review store; one with
     /// nothing to reuse is not executed, and the Run ends INCOMPLETE.
     pub reuse_only: BTreeSet<ProfileKind>,
-    pub profile: Option<ProfileSelection>,
     pub recursive: bool,
     /// Force only explicitly selected Evals, never recursive dependencies.
     pub force: bool,
@@ -65,13 +64,7 @@ pub(crate) async fn reserve(
         return Err("jobs must be at least 1.".into());
     }
     let parallelism = super::fingerprint_parallelism(options)?;
-    let config = read_workspace_config(repo).map_err(|e| e.to_string())?;
-    let config = Arc::new(select_profiles(
-        config,
-        selection,
-        options.profile.as_ref(),
-        options.recursive,
-    )?);
+    let config = Arc::new(read_workspace_config(repo).map_err(|e| e.to_string())?);
     Graph::new(&config).map_err(|e| e.to_string())?;
     let selected = selection.resolve(&config)?;
     let selected_ids: BTreeSet<_> = selected.evals.iter().map(|eval| &eval.id).collect();
@@ -109,7 +102,6 @@ pub(crate) async fn reserve(
             state: crate::store::RunState::Running,
             created_at: now(),
             selection: selection.clone(),
-            profile: options.profile.clone(),
             definitions,
             jobs: options.jobs,
             fingerprint_jobs: Some(parallelism.limit()),
@@ -145,7 +137,7 @@ pub(crate) async fn reserve(
                 eval_def_hash: cache::eval_definition_hash(&eval.declaration),
                 options: ExecutionOptions {
                     mutex: eval.declaration.mutex.clone(),
-                    ..ExecutionOptions::new(eval.declaration.profile(), eval.variant.as_ref())
+                    ..ExecutionOptions::new(eval.declaration.profile())
                 },
                 execution_id: None,
                 provenance: None,
@@ -227,7 +219,6 @@ pub(crate) async fn execute(
         fingerprint_jobs: run.fingerprint_jobs,
         max_executions: run.max_executions,
         reuse_only: run.reuse_only.clone(),
-        profile: run.profile.clone(),
         recursive: run.recursive,
         force: run.force,
         comment: run.comment.clone(),
@@ -238,16 +229,13 @@ pub(crate) async fn execute(
         return Err("jobs must be at least 1.".into());
     }
     let parallelism = super::fingerprint_parallelism(options)?;
-    let config = crate::config::read_workspace_declarations(repo)
-        .map_err(|e| Error::InputChanged(e.to_string()))?;
+    // The profiles read the environment the Run was submitted with, not this process's.
+    let saved = run.definitions.environment();
     let config = Arc::new(
-        select_profiles(
-            config,
-            selection,
-            options.profile.as_ref(),
-            options.recursive,
-        )
-        .map_err(Error::InputChanged)?,
+        crate::config::read_workspace_declarations_with(repo, &|name| {
+            saved.get(name).cloned().flatten()
+        })
+        .map_err(|e| Error::InputChanged(e.to_string()))?,
     );
     let graph = Graph::new(&config).map_err(|e| Error::InputChanged(e.to_string()))?;
     let selected = selection
@@ -311,7 +299,7 @@ pub(crate) async fn execute(
             )
             .await?;
     }
-    unchanged_declarations(repo, selection, options, &run.definitions)?;
+    unchanged_declarations(repo, selection, &run.definitions)?;
     let mut requests = store::read_run_requests_only(&state, &run.id).await?;
     for request in &mut requests {
         request.fingerprint = fingerprints
@@ -648,17 +636,14 @@ pub(crate) fn gate_reason(eval: &crate::graph::EvalEvaluation<'_>) -> String {
 fn unchanged_declarations(
     repo: &Path,
     selection: &Selection,
-    options: &VerifyOptions,
     saved: &store::definitions::Definitions,
 ) -> Result<(), Error> {
     let check = || -> Result<(), String> {
-        let config = crate::config::read_workspace_declarations(repo).map_err(|e| e.to_string())?;
-        let config = select_profiles(
-            config,
-            selection,
-            options.profile.as_ref(),
-            options.recursive,
-        )?;
+        let environment = saved.environment();
+        let config = crate::config::read_workspace_declarations_with(repo, &|name| {
+            environment.get(name).cloned().flatten()
+        })
+        .map_err(|e| e.to_string())?;
         let current =
             store::definitions::Definitions::from_view(&crate::query::graph(&config, selection)?)
                 .map_err(|e| e.to_string())?;

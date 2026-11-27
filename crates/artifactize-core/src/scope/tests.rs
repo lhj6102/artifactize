@@ -219,10 +219,11 @@ fn references_keep_canonical_ids() {
     let source = &eval.declaration.payload().as_ref().unwrap().instruction;
     assert_eq!(
         artifact_instruction(eval),
-        // `{input}/file` was a path under input: it reads as that path, input's target and the
-        // file under it.
+        // An old `{input}/file` names input; the rest of the path stays text after it.
         vec![
-            InstructionPart::Text("Read data/file, ".into()),
+            InstructionPart::Text("Read ".into()),
+            InstructionPart::Artifact("input".parse().unwrap()),
+            InstructionPart::Text("/file, ".into()),
             InstructionPart::Artifact("input".parse().unwrap()),
             InstructionPart::Text(", ".into()),
             InstructionPart::Artifact("review".parse().unwrap()),
@@ -517,13 +518,12 @@ fn argument_only_reference_is_an_edge() {
 #[test]
 fn invalid_runtime_references_fail_statically_but_literals_stay_literal() {
     let fixture = Fixture::new();
-    let review = |args: &str, instruction: &str| {
+    let review = |args: &str| {
         format!(
             r#"artf review = {{
   path = "review/"
   eval check : runtime(command = {}, args = [{args}]) = {{
     title = "Check"
-    instruction = {instruction:?}
   }}
 }}
 "#,
@@ -542,22 +542,12 @@ fn invalid_runtime_references_fail_statically_but_literals_stay_literal() {
         r#""--input=@{path review/a\\b}""#,
         r#""@{artf review}""#,
     ] {
-        fixture.write("review/index.artf", &review(argument, "Inspect."));
+        fixture.write("review/index.artf", &review(argument));
         assert!(read_workspace_config(&fixture.0).is_err(), "{argument}");
     }
-    // A runtime instruction is not hashed: it names no Artifact.
     fixture.write(
         "review/index.artf",
-        &review(r#""x""#, "Unknown @{artf missing}."),
-    );
-    let error = fixture.error();
-    assert!(error.contains("names no Artifact"), "{error}");
-    fixture.write(
-        "review/index.artf",
-        &review(
-            r#""--input=@{path review/a}", "@@{path review}", "{review}", "${review}""#,
-            r"Literal {missing} ${missing} @@{artf missing} { unmatched",
-        ),
+        &review(r#""--input=@{path review/a}", "@@{path review}", "{review}", "${review}""#),
     );
     let config = fixture.config();
     let crate::config::Profile::Runtime { args, .. } = config.evals[0].declaration.profile() else {

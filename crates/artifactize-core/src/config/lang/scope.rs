@@ -1,21 +1,25 @@
-//! The project scope: one namespace per kind of declaration, each holding concrete bindings and
-//! macros apart, read from every file before anything resolves. Parameters shadow globals
-//! inside a macro's body; arguments are read in their caller's scope.
+//! The project scope: every `artf`, `artf!`, `tool` and profile name in one namespace, read
+//! from every file before anything resolves. Parameters shadow globals inside a macro's body;
+//! arguments are read in their caller's scope.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    rc::Rc,
-};
+use std::{collections::BTreeMap, rc::Rc};
 
 use super::{
     LangError, Origin, Sources,
-    ast::{Arg, Block, Element, Entry, Expr, FileId, Item, ItemKind, Span},
+    ast::{Arg, Expr, FileId, Item, ItemKind, ProfileItem, Span},
 };
 
 /// A declaration with the file it came from.
 #[derive(Clone, Copy)]
 pub(super) struct Decl<'a> {
     pub item: &'a Item,
+    pub file: FileId,
+}
+
+/// A profile with the file it came from.
+#[derive(Clone, Copy)]
+pub(super) struct ProfileDecl<'a> {
+    pub item: &'a ProfileItem,
     pub file: FileId,
 }
 
@@ -29,8 +33,7 @@ pub(super) struct Namespace<'a> {
 pub(super) struct Globals<'a> {
     pub artf: Namespace<'a>,
     pub tool: Namespace<'a>,
-    pub profile: Namespace<'a>,
-    pub eval: Namespace<'a>,
+    pub profiles: BTreeMap<&'a str, ProfileDecl<'a>>,
 }
 
 impl<'a> Globals<'a> {
@@ -38,8 +41,6 @@ impl<'a> Globals<'a> {
         match kind {
             ItemKind::Artf => &self.artf,
             ItemKind::Tool => &self.tool,
-            ItemKind::Profile => &self.profile,
-            ItemKind::Eval => &self.eval,
         }
     }
 
@@ -47,17 +48,28 @@ impl<'a> Globals<'a> {
         match kind {
             ItemKind::Artf => &mut self.artf,
             ItemKind::Tool => &mut self.tool,
-            ItemKind::Profile => &mut self.profile,
-            ItemKind::Eval => &mut self.eval,
         }
     }
 
-    /// Pass one: every declaration of every file, duplicates rejected with both places.
+    /// Pass one: every declaration of every file. A name is declared once across every kind,
+    /// so what follows `:` or `&` reads unambiguously where it stands.
     pub fn collect(
         sources: &Sources,
         parsed: &'a [(FileId, Vec<Item>)],
+        profiles: &'a [(FileId, Vec<ProfileItem>)],
     ) -> Result<Self, LangError> {
         let mut globals = Self::default();
+        let mut taken: BTreeMap<&'a str, (String, Span)> = BTreeMap::new();
+        let mut claim = |name: &'a str, what: String, span: Span| -> Result<(), LangError> {
+            match taken.insert(name, (what.clone(), span)) {
+                Some((previous, previous_span)) => Err(LangError::new(
+                    span,
+                    format!("`{name}` is already declared as {previous}; a name is declared once across `artf`, `tool` and profiles."),
+                )
+                .note(previous_span, format!("the {previous}"))),
+                None => Ok(()),
+            }
+        };
         for (file, items) in parsed {
             let origin = &sources.file(*file).origin;
             for item in items {
@@ -65,187 +77,38 @@ impl<'a> Globals<'a> {
                     plugin_item(item, &plugin.namespace)?;
                 }
                 let is_macro = item.params.is_some();
+                let bang = if is_macro { "!" } else { "" };
+                claim(
+                    &item.name.text,
+                    format!("`{}{bang} {}`", item.kind.keyword(), item.name.text),
+                    item.name.span,
+                )?;
                 let namespace = globals.kind_mut(item.kind);
                 let table = if is_macro {
                     &mut namespace.macros
                 } else {
                     &mut namespace.concrete
                 };
-                if let Some(previous) =
-                    table.insert(item.name.text.as_str(), Decl { item, file: *file })
-                {
-                    let bang = if is_macro { "!" } else { "" };
-                    return Err(LangError::new(
-                        item.name.span,
-                        format!(
-                            "`{}{bang} {}` is declared twice.",
-                            item.kind.keyword(),
-                            item.name.text
-                        ),
-                    )
-                    .note(previous.item.name.span, "first declared here"));
-                }
+                table.insert(item.name.text.as_str(), Decl { item, file: *file });
             }
         }
-        globals.acyclic()?;
+        for (file, items) in profiles {
+            for item in items {
+                claim(
+                    &item.name.text,
+                    format!("`profile {}`", item.name.text),
+                    item.name.span,
+                )?;
+                globals
+                    .profiles
+                    .insert(item.name.text.as_str(), ProfileDecl { item, file: *file });
+            }
+        }
         Ok(globals)
     }
-
-    /// Macros expand statically: no macro may reach itself through the macros it calls.
-    fn acyclic(&self) -> Result<(), LangError> {
-        let mut calls: CallGraph<'_> = BTreeMap::new();
-        for kind in [
-            ItemKind::Artf,
-            ItemKind::Tool,
-            ItemKind::Profile,
-            ItemKind::Eval,
-        ] {
-            for (name, decl) in &self.kind(kind).macros {
-                let mut found = Vec::new();
-                item_calls(decl.item, &mut found);
-                let resolved = found
-                    .into_iter()
-                    .flat_map(|(expected, callee, span)| {
-                        let kinds: Vec<ItemKind> = match expected {
-                            Some(kind) => vec![kind],
-                            None => vec![
-                                ItemKind::Artf,
-                                ItemKind::Tool,
-                                ItemKind::Profile,
-                                ItemKind::Eval,
-                            ],
-                        };
-                        kinds
-                            .into_iter()
-                            .filter(|kind| self.kind(*kind).macros.contains_key(callee))
-                            .map(move |kind| (kind, callee, span))
-                            .collect::<Vec<_>>()
-                    })
-                    .collect();
-                calls.insert((kind, name), resolved);
-            }
-        }
-        let mut done = BTreeSet::new();
-        for start in calls.keys() {
-            let mut stack = Vec::new();
-            visit(*start, &calls, &mut done, &mut stack)?;
-        }
-        Ok(())
-    }
 }
 
-type CallGraph<'a> = BTreeMap<(ItemKind, &'a str), Vec<(ItemKind, &'a str, Span)>>;
-
-fn visit<'a>(
-    node: (ItemKind, &'a str),
-    calls: &CallGraph<'a>,
-    done: &mut BTreeSet<(ItemKind, &'a str)>,
-    stack: &mut Vec<((ItemKind, &'a str), Span)>,
-) -> Result<(), LangError> {
-    if done.contains(&node) {
-        return Ok(());
-    }
-    for (kind, callee, span) in calls.get(&node).into_iter().flatten() {
-        let next = (*kind, *callee);
-        if next == node || stack.iter().any(|(entry, _)| *entry == next) {
-            let mut error = LangError::new(
-                *span,
-                format!("Macro `{callee}!` calls itself; a macro expands once, without recursion."),
-            );
-            for (frame, call) in stack.iter().rev() {
-                error = error.note(*call, format!("called from `{}!`", frame.1));
-            }
-            return Err(error);
-        }
-        stack.push((node, *span));
-        visit(next, calls, done, stack)?;
-        stack.pop();
-    }
-    done.insert(node);
-    Ok(())
-}
-
-/// The macro calls in an item, each with the kind its position expects when that is known.
-fn item_calls<'a>(item: &'a Item, found: &mut Vec<(Option<ItemKind>, &'a str, Span)>) {
-    for param in item.params.iter().flatten() {
-        if let Some(default) = &param.default {
-            expr_calls(default, None, found);
-        }
-    }
-    let header = match item.kind {
-        ItemKind::Artf => Some(ItemKind::Tool),
-        ItemKind::Eval => Some(ItemKind::Profile),
-        ItemKind::Tool | ItemKind::Profile => None,
-    };
-    if let Some(expr) = &item.header {
-        expr_calls(expr, header, found);
-    }
-    let body = match item.kind {
-        ItemKind::Artf => Some(ItemKind::Artf),
-        ItemKind::Tool => Some(ItemKind::Tool),
-        ItemKind::Profile => Some(ItemKind::Profile),
-        ItemKind::Eval => Some(ItemKind::Eval),
-    };
-    expr_calls(&item.body, body, found);
-}
-
-fn expr_calls<'a>(
-    expr: &'a Expr,
-    expected: Option<ItemKind>,
-    found: &mut Vec<(Option<ItemKind>, &'a str, Span)>,
-) {
-    match expr {
-        Expr::Macro { name, args, span } => {
-            found.push((expected, &name.text, *span));
-            args_calls(args, found);
-        }
-        Expr::Call { args, .. } => args_calls(args, found),
-        Expr::And(terms, _) => {
-            for term in terms {
-                expr_calls(term, Some(ItemKind::Tool), found);
-            }
-        }
-        Expr::Array(elements, _) => {
-            for element in elements {
-                match element {
-                    Element::Value(value) | Element::Spread(value, _) => {
-                        expr_calls(value, None, found);
-                    }
-                }
-            }
-        }
-        Expr::Block(block) => block_calls(block, found),
-        Expr::Str(..) | Expr::Number(..) | Expr::Bool(..) | Expr::None(_) | Expr::Ident(_) => {}
-    }
-}
-
-fn args_calls<'a>(args: &'a [Arg], found: &mut Vec<(Option<ItemKind>, &'a str, Span)>) {
-    for arg in args {
-        expr_calls(&arg.value, None, found);
-    }
-}
-
-fn block_calls<'a>(block: &'a Block, found: &mut Vec<(Option<ItemKind>, &'a str, Span)>) {
-    for entry in &block.entries {
-        match entry {
-            Entry::Field { value, .. } | Entry::Spread(value, _) => expr_calls(value, None, found),
-            Entry::Declare {
-                keyword,
-                header,
-                value,
-                ..
-            } => {
-                let eval = keyword.text == "eval";
-                if let Some(header) = header {
-                    expr_calls(header, eval.then_some(ItemKind::Profile), found);
-                }
-                expr_calls(value, eval.then_some(ItemKind::Eval), found);
-            }
-        }
-    }
-}
-
-/// A plugin contributes its namespace's toolsets and macros, nothing project-specific.
+/// A plugin contributes its namespace's toolsets and `artf!` macros, nothing project-specific.
 fn plugin_item(item: &Item, namespace: &str) -> Result<(), LangError> {
     let within = item.name.text == namespace
         || item

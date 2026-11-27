@@ -678,7 +678,7 @@ async fn a_folder_whole_with_parts_can_be_claimed_inspected_submitted_and_reused
         &receipts,
         &request.id,
         &reviewer,
-        &"review_inspect_review".parse().unwrap(),
+        &"review-tools_inspect_review".parse().unwrap(),
         CancellationToken::new(),
         artifactize_core::review::log::Run::unwatched(),
     )
@@ -772,7 +772,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
             &receipts,
             id,
             &"bob".parse().unwrap(),
-            &"review_inspect_review".parse().unwrap(),
+            &"review-tools_inspect_review".parse().unwrap(),
             CancellationToken::new(),
             artifactize_core::review::log::Run::unwatched()
         )
@@ -795,7 +795,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
             &receipts,
             id,
             &"alice".parse().unwrap(),
-            &"review_read_review".parse().unwrap(),
+            &"review-tools_read_review".parse().unwrap(),
             CancellationToken::new(),
             artifactize_core::review::log::Run::unwatched()
         )
@@ -806,7 +806,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         &receipts,
         id,
         &"alice".parse().unwrap(),
-        &"review_inspect_review".parse().unwrap(),
+        &"review-tools_inspect_review".parse().unwrap(),
         CancellationToken::new(),
         artifactize_core::review::log::Run::unwatched(),
     )
@@ -817,7 +817,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         &receipts,
         id,
         &"alice".parse().unwrap(),
-        &"review_fail_review".parse().unwrap(),
+        &"review-tools_fail_review".parse().unwrap(),
         CancellationToken::new(),
         artifactize_core::review::log::Run::unwatched(),
     )
@@ -886,7 +886,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
             &receipts,
             id,
             &"alice".parse().unwrap(),
-            &"review_inspect_review".parse().unwrap(),
+            &"review-tools_inspect_review".parse().unwrap(),
             CancellationToken::new(),
             artifactize_core::review::log::Run::unwatched()
         )
@@ -928,7 +928,7 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
                 &receipts,
                 id,
                 &"alice".parse().unwrap(),
-                &"review_inspect_review".parse().unwrap(),
+                &"review-tools_inspect_review".parse().unwrap(),
                 CancellationToken::new(),
                 artifactize_core::review::log::Run::unwatched(),
             )
@@ -1039,7 +1039,7 @@ async fn changed_declarations_end_the_request_error_and_the_next_verify_asks_aga
                 &receipts,
                 &id,
                 &alice,
-                &"review_inspect_review".parse().unwrap(),
+                &"review-tools_inspect_review".parse().unwrap(),
                 CancellationToken::new(),
                 artifactize_core::review::log::Run::unwatched(),
             )
@@ -1159,7 +1159,7 @@ async fn human_actions_never_read_the_runs_saved_definitions() {
                 receipts,
                 &id,
                 &alice,
-                &"review_inspect_review".parse().unwrap(),
+                &"review-tools_inspect_review".parse().unwrap(),
                 CancellationToken::new(),
                 artifactize_core::review::log::Run::unwatched(),
             )
@@ -1411,7 +1411,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         &receipts,
         follower,
         &"alice".parse().unwrap(),
-        &"review_inspect_review".parse().unwrap(),
+        &"review-tools_inspect_review".parse().unwrap(),
         CancellationToken::new(),
         artifactize_core::review::log::Run::unwatched(),
     )
@@ -1910,7 +1910,7 @@ async fn a_removed_original_leaves_review_and_a_remaining_follower_takes_its_sig
                 receipts,
                 &follower_id,
                 &bob,
-                &"review_inspect_review".parse().unwrap(),
+                &"review-tools_inspect_review".parse().unwrap(),
                 CancellationToken::new(),
                 artifactize_core::review::log::Run::unwatched(),
             )

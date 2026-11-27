@@ -1,0 +1,2 @@
+// How the Agent evals run.
+profile not-called : agent = { backend = "openai", model = "not-called", reasoning = "high" }
