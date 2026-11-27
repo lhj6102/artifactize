@@ -143,22 +143,26 @@
         <p data-locale="ko" class="kicker">한눈에 보기</p>
         <h2 data-locale="en" id="glance-title">Declare the checks first. Fix what fails until verify turns GREEN.</h2>
         <h2 data-locale="ko" id="glance-title">먼저 eval을 선언하세요. 문제를 고친 뒤 verify를 다시 실행하세요. GREEN이 나올 때까지 반복하세요.</h2>
-        <p data-locale="en" class="download-note">Describe each Artifact in <code>.artifactize/&lt;name&gt;.artf</code>. Reference the Artifacts an eval reads in braces by name—for example, <code>{api}</code> and <code>{spec}</code>—so a change to any of those inputs runs the eval again.</p>
-        <p data-locale="ko" class="download-note"><code>.artifactize/&lt;name&gt;.artf</code> 파일에 각 Artifact를 선언합니다. eval에서 Artifact를 참조하려면 <code>{api}</code>나 <code>{spec}</code>처럼 이름을 중괄호로 감싸세요. 참조한 입력 중 하나라도 바뀌면 해당 eval을 다시 실행합니다.</p>
+        <p data-locale="en" class="download-note">Describe each Artifact with an <code>artf</code> statement in <code>.artifactize/</code>. Name the Artifacts an eval reads—for example, <code>@{artf spec}</code>—so a change to any of those inputs runs the eval again.</p>
+        <p data-locale="ko" class="download-note"><code>.artifactize/</code> 아래에 <code>artf</code> 문으로 각 Artifact를 선언합니다. eval이 읽는 Artifact는 <code>@{artf spec}</code>처럼 이름으로 가리키세요. 가리킨 입력 중 하나라도 바뀌면 해당 eval을 다시 실행합니다.</p>
       </div>
       <div class="panel start-panel">
-<pre class="code"><code><span class="t-dim"># .artifactize/api.artf</span>
-path = "crates/api/"
+<pre class="code"><code><span class="t-dim">// .artifactize/api.artf</span>
+profile sol = agent(backend = "codex", model = "gpt-6.2-sol", reasoning = "high")
 
-[evals.tests]
-title = "API tests pass"
-profile = { kind = "runtime", command = "cargo", args = ["test", "--locked"] }
-payload.instruction = "Run the test suite of {api}."
+artf api : files = {
+  path = "crates/api/"
 
-[evals.matches-spec]
-title = "API implementation matches the specification"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high" }
-payload.instruction = "Review {api} against {spec}. Submit GREEN only when every route matches."</code></pre>
+  eval tests : runtime(command = "cargo", args = ["test", "--locked"]) = {
+    title = "API tests pass"
+    instruction = "Run the API's test suite."
+  }
+
+  eval matches-spec : sol = {
+    title = "API implementation matches the specification"
+    instruction = "Review @{artf self} against @{artf spec}. Each route that does not match is an issue."
+  }
+}</code></pre>
       </div>
       <div class="panel start-panel">
 <pre class="code term"><code><span class="t-prompt">$</span> artifactize verify --all --wait
@@ -169,9 +173,9 @@ Summary: executed 2 (runtime 1, agent 1, human 0), reused 1 (human 1)</code></pr
       </div>
       <figure class="hero-graph">
         <img src="/media/graph-example.en.png" width="1600" height="900" loading="lazy" decoding="async"
-             alt="Example Artifact Graph: a project's PROBLEM.md, SPEC.md, code/ and docs/ are each declared by an .artf file, connected by command checks, AI agent reviews and a person's sign-off."
+             alt="Example Artifact Graph: a project's PROBLEM.md, SPEC.md, code/ and docs/ are each declared as an Artifact in .artf code, connected by command checks, AI agent reviews and a person's sign-off."
              data-ko-src="/media/graph-example.ko.png"
-             data-ko-alt="Artifact Graph 예시: PROBLEM.md, SPEC.md, code/, docs/를 각각 별도의 .artf 파일에서 Artifact로 선언했습니다. 명령 실행, AI 에이전트 리뷰, 담당자 승인에 각각 어떤 입력이 필요한지 선으로 표시했습니다.">
+             data-ko-alt="Artifact Graph 예시: PROBLEM.md, SPEC.md, code/, docs/를 .artf 코드에서 각각 Artifact로 선언했습니다. 명령 실행, AI 에이전트 리뷰, 담당자 승인에 각각 어떤 입력이 필요한지 선으로 표시했습니다.">
       </figure>
     </div>
   </section>

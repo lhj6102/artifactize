@@ -1,9 +1,8 @@
-path = "api/"
+artf api = {
+  path = "api/"
 
-[evals.schema]
-title = "The OpenAPI document parses"
-profile = { kind = "runtime", command = "python3", args = ["-m", "json.tool", "openapi.json"], timeout_ms = 10000 }
-
-[evals.schema.payload]
-instruction = """
-Check that {api}/openapi.json is valid JSON."""
+  eval schema : runtime(command = "python3", args = ["-m", "json.tool", "openapi.json"], timeout_ms = 10000) = {
+    title = "The OpenAPI document parses"
+    instruction = "Check that api/openapi.json is valid JSON."
+  }
+}
