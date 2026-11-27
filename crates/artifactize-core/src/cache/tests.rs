@@ -332,10 +332,7 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
         assert_eq!(eval_definition_hash(&eval(profile, json!({}))), base);
     }
     assert_eq!(
-        eval_definition_hash(&eval(
-            agent("a", json!({})),
-            json!({"id":"other","title":"Other","profile_variants":{"fast":agent("b", json!({}))}})
-        )),
+        eval_definition_hash(&eval(agent("a", json!({})), json!({"id":"other","title":"Other"}))),
         base
     );
     for changed in [
@@ -354,21 +351,6 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
     assert_ne!(red_at("P1"), base);
     assert_ne!(red_at("P1"), red_at("P2"));
     assert_eq!(red_at("P1"), red_at("P1"));
-    for changed in [
-        eval(
-            json!({"kind":"human"}),
-            json!({"pass_schema":{"type":"object"}}),
-        ),
-        eval(
-            json!({"kind":"human"}),
-            json!({"fail_schema":{"type":"object"}}),
-        ),
-    ] {
-        assert_ne!(
-            eval_definition_hash(&changed),
-            eval_definition_hash(&eval(json!({"kind":"human"}), json!({})))
-        );
-    }
     let runtime = |args: Value, timeout: Value| {
         let mut profile = json!({"kind":"runtime","command":"check","args":args});
         if !timeout.is_null() {
@@ -383,6 +365,12 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
     assert_ne!(
         runtime(json!(["a"]), json!(null)),
         runtime(json!(["b"]), json!(null))
+    );
+    // A runtime eval's verdict is its command's: its prose instruction is not hashed.
+    let check = json!({"kind":"runtime","command":"check","args":["a"]});
+    assert_eq!(
+        eval_definition_hash(&eval(check.clone(), json!({"payload":{"instruction":"Other."}}))),
+        runtime(json!(["a"]), json!(null))
     );
 
     let fingerprints = |pairs: &[(&str, &str)]| -> BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint> {
@@ -563,12 +551,12 @@ fn keys_from_before_the_artifactsum_upgrade_are_invalidated() {
     for (eval, hash, pinned) in [
         (
             &agent,
-            "a3d91e804a2fbea857476c0f37b68f8a900a947102fe8b6a04aa897185026f16",
+            "0190ecb36f5e0b715c5a9908f1eed355cb85ce0b272e93ea5613e30d95c0dc41",
             "f79bfb7fa26e3393235264152e0310e95ce48fb5de0842d8b58ebd3dd431fc13",
         ),
         (
             &runtime,
-            "bbc05cdeb642f96bdce73eaea01a2a7273e12d6e0c2642ef4bc2f3b61959cd1d",
+            "d84da29bd26204323cd46e34fb28bc0ebfef138df636adef1f561eb5d41133d0",
             "69fb9f32d95c97bc0c5c471e98644da7093337a89d553e383159402c1eb57f5e",
         ),
     ] {
@@ -598,15 +586,15 @@ fn typed_names_keep_reuse_key_bytes_and_kind_serialization_unchanged() {
     .collect();
     assert_eq!(
         key(&hash, &fingerprints),
-        "6cda6b0b4333ee92a9dd41fb906cd75ad68fad058b6b1bc2b56526c9ecb6545c"
+        "6596a4f6123b14ad91a21c875cb602500e8099b0b48c7095423dce98b5e83288"
     );
     assert_eq!(
         key_with_kinds(&hash, &fingerprints, &BTreeMap::new()),
-        "6cda6b0b4333ee92a9dd41fb906cd75ad68fad058b6b1bc2b56526c9ecb6545c"
+        "6596a4f6123b14ad91a21c875cb602500e8099b0b48c7095423dce98b5e83288"
     );
     assert_eq!(
         key_with_kinds(&hash, &fingerprints, &kinds),
-        "bb8353add1160b941621051385838570e0082c1ed2e2bbda155f0144e370f8f0"
+        "11c06475aa11c70ee4c44de051049bd375a44e0ed0c86984f367704ca346810e"
     );
 }
 

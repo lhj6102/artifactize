@@ -110,6 +110,7 @@ impl Issues {
         Ok(ValidatedResult {
             verdict: verdict(&answer.issues, self.red_at),
             issues: answer.issues,
+            earlier: serde_json::Map::new(),
         })
     }
 

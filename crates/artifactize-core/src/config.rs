@@ -9,6 +9,8 @@ use thiserror::Error;
 
 mod authored_target;
 mod backend;
+#[doc(hidden)]
+pub mod convert;
 mod declaration;
 mod discovery;
 mod eval;
@@ -85,3 +87,35 @@ impl ConfigError {
 
 #[cfg(test)]
 mod tests;
+
+/// One definition text's Artifact and evals, read as a project with only that file: for tests
+/// of declaration rules that need no files.
+#[cfg(test)]
+pub(crate) struct ParsedDeclaration {
+    pub evals: Vec<EvalDeclaration>,
+    pub views: Views,
+    pub tags: Vec<String>,
+    pub basis: Option<bool>,
+    pub fingerprint: Option<Fingerprint>,
+}
+
+#[cfg(test)]
+pub(crate) fn parse_declaration(text: &str) -> Result<ParsedDeclaration, String> {
+    let root = tempfile::tempdir().map_err(|error| error.to_string())?;
+    let definitions = root.path().join(discovery::DEFINITION_DIR);
+    std::fs::create_dir_all(&definitions).map_err(|error| error.to_string())?;
+    std::fs::write(definitions.join("test.artf"), text).map_err(|error| error.to_string())?;
+    let config = read_workspace_declarations(root.path()).map_err(|error| error.to_string())?;
+    let artifact = config
+        .artifacts
+        .into_values()
+        .next()
+        .ok_or("The text declares no Artifact.")?;
+    Ok(ParsedDeclaration {
+        evals: config.evals.into_iter().map(|eval| eval.declaration).collect(),
+        views: artifact.views,
+        tags: artifact.tags,
+        basis: artifact.basis,
+        fingerprint: artifact.fingerprint,
+    })
+}

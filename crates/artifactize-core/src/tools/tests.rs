@@ -44,7 +44,7 @@ impl Fixture {
         let config = read_workspace_config(&self.repo).unwrap();
         let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
         let result = registry
-            .call("inspect_a", args, &self.output, CancellationToken::new())
+            .call("a_inspect_a", args, &self.output, CancellationToken::new())
             .await;
         assert_eq!(self.output_entries(), [self.output.join("retained")]);
         result
@@ -114,7 +114,7 @@ fn owned_call_with_cleanup(
     let work = async move {
         let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
         registry
-            .call_with_cleanup("inspect_a", json!({}), &output, token, cleanup)
+            .call_with_cleanup("a_inspect_a", json!({}), &output, token, cleanup)
             .await
     };
     (cancellation, work)
@@ -131,7 +131,7 @@ fn text(result: &ToolResult) -> &str {
 fn flat_declarations_validate_strictly_and_inertly() {
     let parse = |tool| {
         parse_declaration(
-            &crate::test_declaration::to_toml(
+            &crate::test_declaration::to_artf(
                 json!({"name":"a","views":{"agent_tools":{"inspect":tool}}}),
             )
             .expect("Test builder must be TOML-compatible; use raw TOML for invalid syntax."),
@@ -145,14 +145,12 @@ fn flat_declarations_validate_strictly_and_inertly() {
         json!({"builtin":"unknown"}),
         json!({"builtin":"read","command":crate::test_os::cat_program()}),
         json!({"builtin":"read","description":"   "}),
-        json!({"builtin":"read","description":"Read {other}"}),
         json!({"metadata":{"description":"Old"},"script":{"command":crate::test_os::cat_program(),"args":[]}}),
     ] {
         assert!(parse(invalid.clone()).is_err(), "{invalid}");
     }
     for (key, value) in [
         ("description", json!("")),
-        ("description", json!("{other}")),
         ("description", json!("x".repeat(4001))),
         ("input_schema", json!({"type":"string"})),
         (
@@ -210,7 +208,7 @@ async fn argument_validation_precedes_spawn_and_output_creation() {
     ] {
         let result = registry
             .call(
-                "inspect_a",
+                "a_inspect_a",
                 args,
                 &fixture.repo.join("must-not-create"),
                 CancellationToken::new(),
@@ -553,7 +551,7 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
             assert!(
                 registry
                     .call(
-                        "inspect_a",
+                        "a_inspect_a",
                         json!({}),
                         &fixture.output,
                         CancellationToken::new()
@@ -575,7 +573,7 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
     let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     let result = registry
         .call(
-            "inspect_a",
+            "a_inspect_a",
             json!({}),
             &fixture.repo.join("output"),
             CancellationToken::new(),
@@ -636,13 +634,13 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>(),
         // b's nested folder Artifact is not b's, so a's eval does not see its tools.
-        ["inspect_a", "read_b"]
+        ["a_inspect_a", "b_read_b"]
     );
     assert_eq!(registry.list().next().unwrap().description, "Inspect a");
     assert!(
         !registry
             .call(
-                "read_b",
+                "b_read_b",
                 json!({"path":"notes.md"}),
                 &fixture.output,
                 CancellationToken::new()
@@ -654,7 +652,7 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
         text(
             &registry
                 .call(
-                    "grep_c",
+                    "c_grep_c",
                     json!({}),
                     &fixture.output,
                     CancellationToken::new()
@@ -667,34 +665,46 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
 }
 
 #[test]
-fn concatenated_tool_name_collisions_are_rejected() {
+fn published_tool_name_collisions_are_rejected_when_definitions_are_read() {
     let fixture = Fixture::new(command());
-    write_artifact(
-        &(fixture.repo),
-        &fixture.repo,
-        "root",
-        json!({}),
-        "Review {a} and {b_a}.",
+    let file = fixture.repo.join(".artifactize/collide.artf");
+    let read = |text: &str| {
+        fs::write(&file, text).unwrap();
+        read_workspace_config(&fixture.repo).map(|_| ()).map_err(|error| error.to_string())
+    };
+    // `x.y_z` of `p` and `x.y` of `z_p` are both offered as `x_y_z_p`.
+    let error = read(
+        r#"tool x = {
+  agent y_z = builtin(op = "read")
+  agent y = builtin(op = "read")
+}
+artf p : x = { path = "./" }
+artf z_p : x = { path = "./" }
+"#,
+    )
+    .unwrap_err();
+    assert!(error.contains("both offered as x_y_z_p"), "{error}");
+    // On one Artifact: `x.y_z` and `x_y.z`.
+    let error = read(
+        r#"tool x = { agent y_z = builtin(op = "read") }
+tool x_y = { agent z = builtin(op = "read") }
+artf p : x & x_y = { path = "./" }
+"#,
+    )
+    .unwrap_err();
+    assert!(error.contains("both offered as x_y_z_p"), "{error}");
+    // Human tools are named apart from Agent tools.
+    assert!(
+        read(
+            r#"tool x = {
+  agent y = builtin(op = "read")
+  human y = builtin(op = "open", args = ["@{path self}"])
+}
+artf p : x = { path = "./" }
+"#,
+        )
+        .is_ok()
     );
-    write_artifact(
-        &(fixture.repo),
-        &fixture.repo.join("a"),
-        "a",
-        json!({"inspect_b":{"builtin":"read"}}),
-        "Review.",
-    );
-    write_artifact(
-        &(fixture.repo),
-        &fixture.repo.join("b"),
-        "b_a",
-        json!({"inspect":{"builtin":"read"}}),
-        "Review.",
-    );
-    let config = read_workspace_config(&fixture.repo).unwrap();
-    let error = Registry::new(&config, &"root/review".parse().unwrap())
-        .err()
-        .unwrap();
-    assert!(error.contains("collide: inspect_b_a"));
 }
 
 #[tokio::test(start_paused = true)]
@@ -748,7 +758,7 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
     assert!(
         text(
             &registry
-                .call("inspect_a", json!({}), &fixture.output, cancel)
+                .call("a_inspect_a", json!({}), &fixture.output, cancel)
                 .await
         )
         .contains("cancelled")
@@ -808,11 +818,12 @@ async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
             .list()
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>(),
-        ["fixture_read_leaf", "fixture_read_part", "inspect_a"]
+        // Identical tools are one toolset, named after the first Artifact with them.
+        ["a_inspect_a", "leaf_fixture_read_leaf", "leaf_fixture_read_part"]
     );
     let result = registry
         .call(
-            "inspect_a",
+            "a_inspect_a",
             json!({}),
             &fixture.output,
             CancellationToken::new(),

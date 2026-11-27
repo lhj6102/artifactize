@@ -152,7 +152,7 @@ impl OwnedFixture {
                     let result = registry
                         .with_session_scope(&sessions)
                         .unwrap()
-                        .call("probe_a", serde_json::json!({}), &output, cancellation)
+                        .call("a_probe_a", serde_json::json!({}), &output, cancellation)
                         .await;
                     if let crate::tools::ToolResult::Error(error) = result {
                         let message = error.as_str().to_owned();

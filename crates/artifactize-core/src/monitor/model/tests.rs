@@ -9,7 +9,7 @@ fn eval_detail_keeps_request_instruction_and_result_outside_technical() {
         "GREEN",
         json!({
             "payload":{"instruction":"Check the release notes."},
-            "result":{"verdict":"GREEN","note":"Release notes match."},
+            "result":{"verdict":"GREEN","kind":"agent","issues":[{"priority":"P3","reason":"Release notes match."}]},
             "fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "key":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         }),

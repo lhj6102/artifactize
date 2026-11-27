@@ -362,7 +362,6 @@ mod tests {
             excerpt(
                 state.path(),
                 Some(&view),
-                &view,
                 true,
                 Stream::Stdout,
                 &LogQuery::default(),

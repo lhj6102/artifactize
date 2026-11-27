@@ -105,6 +105,12 @@ impl<'a> Expander<'a> {
                                     let (text, target_span) = word(0);
                                     let (target, path) =
                                         text.split_once('/').unwrap_or((text.as_str(), ""));
+                                    if text.ends_with('/') {
+                                        return Err(self.error(
+                                            target_span,
+                                            format!("`@{{path {text}}}`: write the Artifact as `@{{path {target}}}`, or a path after the `/`."),
+                                        ));
+                                    }
                                     artifactize_tools::scope::logical_path(path).map_err(|error| {
                                         self.error(target_span, format!("`@{{path {text}}}`: {error}"))
                                     })?;

@@ -128,7 +128,7 @@ pub(crate) fn quote(text: &str) -> String {
     out
 }
 
-fn escape(text: &str, one_line: bool) -> String {
+pub(crate) fn escape(text: &str, one_line: bool) -> String {
     let mut out = String::new();
     for character in text.chars() {
         match character {
@@ -149,7 +149,7 @@ fn escape(text: &str, one_line: bool) -> String {
 
 /// An instruction: its text and its slots as written, multi-line in `"""` when it reads back
 /// the same after dedenting.
-fn template(pieces: &[Piece], depth: usize) -> String {
+pub(crate) fn template(pieces: &[Piece], depth: usize) -> String {
     let text_of = |one_line: bool| -> String {
         pieces
             .iter()

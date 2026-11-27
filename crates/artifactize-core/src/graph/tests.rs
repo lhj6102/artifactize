@@ -24,10 +24,13 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                 },
             })
             .collect(),
+        profiles: BTreeMap::new(),
+        program: None,
+        plugins: BTreeMap::new(),
     };
     for &(name, basis, evals) in definitions {
         let declaration = parse_declaration(
-            &crate::test_declaration::to_toml(
+            &crate::test_declaration::to_artf(
                 json!({"name": name, "basis": basis, "evals": evals.iter().map(|id| {
                 json!({"id": id, "title": "Check", "profile": {"kind": "human"},
                     "payload": {"instruction": "Inspect."}})
@@ -47,7 +50,6 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                     .map(|(source, _)| source.parse().unwrap())
                     .collect(),
                 declaration: eval,
-                instruction_references: Vec::new(),
                 variant: None,
             });
         }
@@ -65,8 +67,9 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                 nested: BTreeMap::new(),
                 parts: Default::default(),
                 views: declaration.views,
-                type_name: None,
-                plugin: None,
+                tools: None,
+                toolsets: Vec::new(),
+                binding: None,
                 fingerprint: declaration.fingerprint,
             },
         );

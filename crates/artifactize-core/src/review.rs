@@ -576,17 +576,25 @@ mod submission_tests {
     use serde_json::json;
 
     #[test]
-    fn submission_parses_one_verdict_and_keeps_its_owner_fields() {
+    fn green_approves_without_issues_and_red_lists_them() {
         for (value, verdict) in [
-            (json!({"verdict":"GREEN","approved":true}), Verdict::Green),
-            (json!({"verdict":"RED","reason":"needs work"}), Verdict::Red),
+            (json!({"verdict":"GREEN","issues":[]}), Verdict::Green),
+            (json!({"verdict":"RED","issues":["needs work"]}), Verdict::Red),
         ] {
             let submitted = Submission::try_from(value.clone()).unwrap();
             assert_eq!(submitted.verdict(), verdict);
             assert_eq!(submitted.to_json(), value);
         }
-        assert!(Submission::try_from(json!({"approved":true})).is_err());
-        assert!(Submission::try_from(json!({"verdict":"ERROR"})).is_err());
+        for invalid in [
+            json!({"issues":[]}),
+            json!({"verdict":"ERROR"}),
+            json!({"verdict":"GREEN","approved":true}),
+            json!({"verdict":"GREEN","issues":["still a problem"]}),
+            json!({"verdict":"RED"}),
+            json!({"verdict":"RED","issues":["  "]}),
+        ] {
+            assert!(Submission::try_from(invalid.clone()).is_err(), "{invalid}");
+        }
     }
 }
 
@@ -603,9 +611,11 @@ mod artifact_tool_tests {
         std::fs::write(
             root.join(".artifactize/app.artf"),
             r#"
-path = "notes.md"
-[views.human_tools]
-notes = { builtin = "read", args = ["{artifactPath}"] }
+tool app = {
+  human notes = builtin(op = "read", args = ["@{path self}"])
+}
+
+artf app : app = { path = "notes.md" }
 "#,
         )
         .unwrap();
@@ -615,7 +625,7 @@ notes = { builtin = "read", args = ["{artifactPath}"] }
         let artifact = "app".parse().unwrap();
         let sites = crate::config::read_sites(&root).unwrap();
         let app = ArtifactDeclarations::read(&root, &artifact, &sites[&artifact]).unwrap();
-        let tool = "notes_app".parse().unwrap();
+        let tool = "app_notes_app".parse().unwrap();
         let run = || {
             app.run_tool(
                 &checkout,

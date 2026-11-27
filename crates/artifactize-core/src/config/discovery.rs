@@ -105,6 +105,7 @@ fn build(
         let artifact = artifact(&config, &program, lowered, &mut schemas)?;
         config.artifacts.insert(artifact.name.clone(), artifact);
     }
+    published_names(&config, &program)?;
     for lowered in &program.artifacts {
         let name: ArtifactName = lowered.name.parse().expect("a validated Artifact name");
         for eval in &lowered.evals {
@@ -123,6 +124,47 @@ fn build(
     }
     populate_nested(&mut config);
     Ok(config)
+}
+
+/// A provider sees `{fqn with . as _}_{artifact}`: two tools of one audience that meet there,
+/// on one Artifact or two, could not both be offered to one review.
+fn published_names(config: &RepoConfig, program: &lang::Program) -> Result<(), ConfigError> {
+    let lowered: BTreeMap<&str, &LoweredArtifact> = program
+        .artifacts
+        .iter()
+        .map(|artifact| (artifact.name.as_str(), artifact))
+        .collect();
+    for (audience, keyword) in [("agent", "agent"), ("human", "human")] {
+        let mut seen: BTreeMap<super::ToolName, (&ArtifactName, &super::ToolFqn)> = BTreeMap::new();
+        for (name, artifact) in &config.artifacts {
+            let tools: Vec<&super::ToolFqn> = if audience == "agent" {
+                artifact.views.agent_tools.keys().collect()
+            } else {
+                artifact.views.human_tools.keys().collect()
+            };
+            for fqn in tools {
+                let published = fqn.published(name.as_str());
+                if let Some((other, other_fqn)) = seen.insert(published.clone(), (name, fqn)) {
+                    let this = lowered[name.as_str()];
+                    let span = this
+                        .tool_spans
+                        .get(&format!("{keyword}.{fqn}"))
+                        .copied()
+                        .unwrap_or(this.name_span);
+                    return Err(located(
+                        &config.root,
+                        program,
+                        this,
+                        span,
+                        format!(
+                            "The {audience} tool {fqn} of {name} and {other_fqn} of {other} are both offered as {published}; rename one of them."
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// An error at `span` in the program, with the `artf` statement that made it when a macro did.

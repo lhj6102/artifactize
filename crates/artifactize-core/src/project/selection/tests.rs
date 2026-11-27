@@ -4,7 +4,7 @@ use serde_json::json;
 
 use super::*;
 use crate::{
-    config::{parse_declaration, read_workspace_config},
+    config::read_workspace_config,
     graph::Graph,
 };
 
@@ -281,35 +281,29 @@ fn file_reads_reject_nonregular_and_oversized_inputs() {
 
 fn profile_fixture() -> tempfile::TempDir {
     let directory = crate::test_os::tempdir();
+    let agent = |model: &str| json!({"kind":"agent","backend":"openai","model":model});
     crate::test_declaration::write(
         directory.path(),
         directory.path().join("index.artf"),
         json!({
             "name":"target",
             "evals":[
+                {"id":"z", "title":"Z", "profile":agent("fixture"), "payload":{"instruction":"Check {input}."}},
+                {"id":"a", "title":"A", "profile":agent("fixture"), "payload":{"instruction":"Check."}},
                 {
-                    "id":"z",
-                    "title":"Z",
+                    "id":"r",
+                    "title":"R",
                     "profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},
-                    "profile_variants":{
-                        "careful":{
-                            "kind":"runtime",
-                            "command":crate::test_os::echo_program(),
-                            "args":["{input}"],
-                            "timeout_ms":9,
-                        },
-                    },
-                    "payload":{"instruction":"Check."},
-                },
-                {
-                    "id":"a",
-                    "title":"A",
-                    "profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},
-                    "payload":{"instruction":"Check."},
                 },
             ],
         })
         .to_string(),
+    )
+    .unwrap();
+    crate::test_declaration::write(
+        directory.path(),
+        directory.path().join("careful.artf"),
+        r#"profile careful = agent(backend = "openai", model = "careful", timeout_ms = 9000)"#,
     )
     .unwrap();
     fs::create_dir(directory.path().join("external")).unwrap();
@@ -323,70 +317,50 @@ fn profile_fixture() -> tempfile::TempDir {
 }
 
 #[test]
-fn named_profiles_only_apply_to_included_evals_and_rebuild_runtime_dependencies() {
+fn a_named_profile_runs_the_included_agent_evals_without_rewriting_definitions() {
     let directory = profile_fixture();
     let source = directory.path().join("index.artf");
     let before = crate::test_declaration::read_file(&source).unwrap();
     let load = || read_workspace_config(directory.path()).unwrap();
+    let model = |config: &RepoConfig, id: &str| {
+        let eval = config.evals.iter().find(|eval| eval.id.as_str() == id).unwrap();
+        serde_json::to_value(eval.declaration.profile()).unwrap()["model"].clone()
+    };
     let selection = Selection::Eval {
         eval_id: "target/z".parse().unwrap(),
     };
-    let selected = select_profiles(
+    let careful = ProfileSelection::Named("careful".parse().unwrap());
+    let selected = select_profiles(load(), &selection, Some(&careful), false).unwrap();
+    assert_eq!(model(&selected, "target/z"), "careful");
+    assert_eq!(model(&selected, "target/a"), "fixture", "not included");
+    let unchanged = load();
+    assert_eq!(
+        crate::cache::eval_definition_hash(&selected.evals[0].declaration),
+        crate::cache::eval_definition_hash(&unchanged.evals[0].declaration),
+        "a profile is how an eval runs, not what it asks"
+    );
+    // Every included Agent eval; a runtime eval keeps its command.
+    let all = select_profiles(load(), &Selection::All, Some(&careful), false).unwrap();
+    assert_eq!(model(&all, "target/a"), "careful");
+    assert!(all.evals.iter().any(|eval| eval.id.as_str() == "target/r"));
+    assert_eq!(crate::test_declaration::read_file(source).unwrap(), before);
+    let missing = select_profiles(
         load(),
         &selection,
-        Some(&ProfileSelection::Named("careful".parse().unwrap())),
+        Some(&ProfileSelection::Named("missing".parse().unwrap())),
         false,
     )
-    .unwrap();
-    assert_eq!(selected.evals[1].deps, ["input"]);
-    assert_eq!(
-        serde_json::to_value(selected.evals[1].declaration.profile()).unwrap()["command"],
-        crate::test_os::echo_program()
-    );
-    assert_eq!(
-        serde_json::to_value(selected.evals[1].declaration.profile()).unwrap()["timeoutMs"],
-        9
-    );
-    assert_eq!(
-        serde_json::to_value(selected.evals[0].declaration.profile()).unwrap()["command"],
-        crate::test_os::true_program()
-    );
-    assert_eq!(
-        eval_ids(
-            &Selection::Artifact {
-                artifact_id: "target".parse().unwrap()
-            },
-            &selected
-        ),
-        ["target/a", "target/z"]
-    );
-    assert_eq!(crate::test_declaration::read_file(source).unwrap(), before);
-    assert!(load().evals[0].deps.is_empty());
-    assert!(
-        select_profiles(
-            load(),
-            &Selection::All,
-            Some(&ProfileSelection::Named("careful".parse().unwrap())),
-            false,
-        )
-        .unwrap_err()
-        .contains("Unknown profile variant for target/a")
-    );
-    assert!(
-        select_profiles(
-            load(),
-            &selection,
-            Some(&ProfileSelection::Named("missing".parse().unwrap())),
-            false,
-        )
-        .unwrap_err()
-        .contains("Unknown profile variant for target/z")
-    );
-    let mapping = ProfileSelection::Evals(BTreeMap::from([(
-        "target/z".parse().unwrap(),
+    .unwrap_err();
+    assert!(missing.contains("Unknown profile missing") && missing.contains("careful"), "{missing}");
+    let runtime = ProfileSelection::Evals(BTreeMap::from([(
+        "target/r".parse().unwrap(),
         "careful".parse().unwrap(),
     )]));
-    assert!(select_profiles(load(), &Selection::All, Some(&mapping), false).is_ok());
+    assert!(
+        select_profiles(load(), &Selection::All, Some(&runtime), false)
+            .unwrap_err()
+            .contains("not an Agent eval")
+    );
     let outside = ProfileSelection::Evals(BTreeMap::from([(
         "target/a".parse().unwrap(),
         "careful".parse().unwrap(),
@@ -398,41 +372,4 @@ fn named_profiles_only_apply_to_included_evals_and_rebuild_runtime_dependencies(
     );
     assert!(serde_json::from_value::<ProfileSelection>(json!({"target/z":1})).is_err());
     assert!(serde_json::from_value::<ProfileSelection>(json!(["careful"])).is_err());
-}
-
-#[test]
-fn variant_declarations_are_complete_bounded_and_keep_reviewer_kind() {
-    let declaration = |variants| {
-        crate::test_declaration::to_toml(json!({
-            "name":"target",
-            "evals":[
-                {
-                    "id":"check",
-                    "title":"Check",
-                    "profile":{"kind":"runtime", "command":crate::test_os::true_program(),"args":[]},
-                    "payload":{"instruction":"Check."},
-                    "profile_variants": variants,
-                },
-            ],
-        }))
-        .unwrap()
-    };
-    let valid = json!({"kind":"runtime", "command":crate::test_os::false_program(), "args":[], "timeout_ms":1});
-    let variants: BTreeMap<_, _> = (0..64).map(|i| (format!("v{i}"), valid.clone())).collect();
-    assert!(parse_declaration(&declaration(json!(variants))).is_ok());
-    let mut oversized = variants;
-    oversized.insert("extra".parse().unwrap(), valid.clone());
-    assert!(
-        parse_declaration(&declaration(json!(oversized)))
-            .unwrap_err()
-            .contains("at most 64")
-    );
-    for variants in [
-        json!({"bad name":valid}),
-        json!({"v":{"kind":"human"}}),
-        json!({"v":{"timeout_ms":1}}),
-        json!({"v":{"kind":"runtime","command":crate::test_os::true_program(),"args":[],"timeout_ms":0}}),
-    ] {
-        assert!(parse_declaration(&declaration(variants)).is_err());
-    }
 }

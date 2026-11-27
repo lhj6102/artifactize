@@ -8,13 +8,13 @@ fn final_text(text: &str) -> MockHttpResponse {
 async fn fenced_json_is_repaired_with_same_settings_and_no_tools() {
     let (review, http) = Fixture::new("openai")
         .run(vec![
-            final_text("```json\n{\"findings\":[]}\n```"),
-            final_text(r#"{"findings":[]}"#),
+            final_text("```json\n{\"issues\":[]}\n```"),
+            final_text(r#"{"issues":[]}"#),
         ])
         .await;
     assert_eq!(
         review.result.unwrap().into_json(),
-        json!({"verdict":"GREEN","findings":[]})
+        json!({"verdict":"GREEN","issues":[]})
     );
     let requests = http.requests();
     assert_eq!(requests.len(), 2);
@@ -41,14 +41,14 @@ async fn fenced_json_is_repaired_with_same_settings_and_no_tools() {
 
 #[tokio::test]
 async fn an_invalid_finding_is_repaired_and_the_reason_is_kept_unchanged() {
-    let result = json!({"verdict":"RED","findings":[
+    let result = json!({"verdict":"RED","issues":[
         {"priority":"P1","reason":"  Owner text stays unchanged.  "},
         {"priority":"P3","reason":"minor"},
     ]});
     let (review, http) = Fixture::new("openai")
         .run(vec![
-            final_text(r#"{"findings":[{"priority":"P5","reason":"x"}]}"#),
-            final_text(&json!({"findings":result["findings"]}).to_string()),
+            final_text(r#"{"issues":[{"priority":"P5","reason":"x"}]}"#),
+            final_text(&json!({"issues":result["issues"]}).to_string()),
         ])
         .await;
     assert_eq!(review.result.unwrap().into_json(), result);
@@ -59,7 +59,7 @@ async fn an_invalid_finding_is_repaired_and_the_reason_is_kept_unchanged() {
         .unwrap()
         .to_owned();
     assert!(
-        prompt.starts_with("Your final response did not match the required schema: schema_mismatch: result must be an object with a findings list, each finding a priority P0 to P3 and a reason\n- "),
+        prompt.starts_with("Your final response did not match the required schema: schema_mismatch: result must be an object with an issues list, each issue a priority P0 to P3 and a reason\n- "),
         "{prompt}"
     );
     assert!(prompt.contains("P5"), "{prompt}");
@@ -71,7 +71,7 @@ async fn second_failure_is_error_without_response_text_or_third_turn() {
     let (review, http) = Fixture::new("openai")
         .run(vec![
             final_text("PRIVATE_SECRET"),
-            final_text(r#"{"findings":[],"PRIVATE_SECRET":"PRIVATE_SECRET"}"#),
+            final_text(r#"{"issues":[],"PRIVATE_SECRET":"PRIVATE_SECRET"}"#),
             final_openai(),
         ])
         .await;
@@ -96,7 +96,7 @@ async fn unsolicited_repair_tool_calls_never_execute_or_continue() {
             openai_response(
                 "exact-model",
                 "completed",
-                vec![call("c1", "inspect_a")],
+                vec![call("c1", "a_inspect_a")],
                 Value::Null,
             ),
             final_openai(),
@@ -119,13 +119,13 @@ async fn repair_retains_model_and_completion_checks() {
         openai_response(
             "wrong-model",
             "completed",
-            vec![message(r#"{"findings":[]}"#)],
+            vec![message(r#"{"issues":[]}"#)],
             Value::Null,
         ),
         openai_response(
             "exact-model",
             "incomplete",
-            vec![message(r#"{"findings":[]}"#)],
+            vec![message(r#"{"issues":[]}"#)],
             Value::Null,
         ),
     ] {
@@ -140,7 +140,7 @@ async fn repair_retains_model_and_completion_checks() {
 #[tokio::test]
 async fn anthropic_repair_after_tools_exposes_no_tools() {
     let fixture = Fixture::new("anthropic");
-    let invalid = r#"{"findings":[{"priority":"P1"}]}"#;
+    let invalid = r#"{"issues":[{"priority":"P1"}]}"#;
     let (review, http) = fixture
         .run(vec![
             anthropic_response(true, "tool_use"),

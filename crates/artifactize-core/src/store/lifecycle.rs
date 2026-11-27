@@ -391,9 +391,12 @@ mod tests {
 
     #[test]
     fn provisional_constructor_rejects_red_and_preserves_green_evidence_when_promoted() {
-        let red = ExecutionResult::try_from(json!({"verdict":"RED","reason":"failed"})).unwrap();
+        let red = ExecutionResult::try_from(
+            json!({"verdict":"RED","kind":"human","issues":[{"reason":"failed"}]}),
+        )
+        .unwrap();
         assert!(GreenResult::try_from(red).is_err());
-        let expected = json!({"verdict":"GREEN","summary":"criteria met"});
+        let expected = json!({"verdict":"GREEN","kind":"agent","issues":[{"priority":"P3","reason":"a nit"}]});
         let green = ExecutionResult::try_from(expected.clone()).unwrap();
         let provisional = RequestState::Provisional {
             result: green.try_into().unwrap(),

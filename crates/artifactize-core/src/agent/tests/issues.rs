@@ -1,4 +1,4 @@
-//! The findings result crosses the HTTP boundary: every backend is sent the one result schema,
+//! The issues result crosses the HTTP boundary: every backend is sent the one result schema,
 //! and artifactize derives the verdict from the answer's priorities and the eval's `red_at`.
 use super::*;
 
@@ -11,17 +11,17 @@ fn response(backend: &str, text: &str) -> MockHttpResponse {
 }
 
 #[tokio::test]
-async fn every_backend_is_sent_the_findings_schema_and_the_verdict_follows_red_at() {
+async fn every_backend_is_sent_the_issues_schema_and_the_verdict_follows_red_at() {
     for backend in ["openai", "anthropic"] {
         // The fixture's eval declares red_at = "P1".
         for (answer, verdict) in [
-            (json!({"findings":[]}), "GREEN"),
+            (json!({"issues":[]}), "GREEN"),
             (
-                json!({"findings":[{"priority":"P2","reason":"a minor point"}]}),
+                json!({"issues":[{"priority":"P2","reason":"a minor point"}]}),
                 "GREEN",
             ),
             (
-                json!({"findings":[{"priority":"P3","reason":"a nit"},{"priority":"P1","reason":"breaks it"}]}),
+                json!({"issues":[{"priority":"P3","reason":"a nit"},{"priority":"P1","reason":"breaks it"}]}),
                 "RED",
             ),
         ] {
@@ -44,9 +44,9 @@ async fn every_backend_is_sent_the_findings_schema_and_the_verdict_follows_red_a
             };
             assert_eq!(format["type"], "json_schema");
             let schema = &format["schema"];
-            assert_eq!(schema["required"], json!(["findings"]));
+            assert_eq!(schema["required"], json!(["issues"]));
             assert_eq!(schema["additionalProperties"], false);
-            let finding = &schema["properties"]["findings"]["items"];
+            let finding = &schema["properties"]["issues"]["items"];
             assert_eq!(finding["required"], json!(["priority", "reason"]));
             assert_eq!(
                 finding["properties"]["priority"]["enum"],
@@ -68,10 +68,10 @@ async fn every_backend_is_sent_the_findings_schema_and_the_verdict_follows_red_a
 #[tokio::test]
 async fn a_repair_keeps_the_same_format() {
     for backend in ["openai", "anthropic"] {
-        let good = json!({"findings":[{"priority":"P0","reason":"ok"}]});
+        let good = json!({"issues":[{"priority":"P0","reason":"ok"}]});
         let (review, http) = Fixture::new(backend)
             .run(vec![
-                response(backend, r#"{"findings":[{"priority":"P0","reason":" "}]}"#),
+                response(backend, r#"{"issues":[{"priority":"P0","reason":" "}]}"#),
                 response(backend, &good.to_string()),
             ])
             .await;
@@ -87,6 +87,6 @@ async fn a_repair_keeps_the_same_format() {
         };
         assert_eq!(repair[field], first[field]);
         assert!(repair["tools"].as_array().is_none_or(Vec::is_empty));
-        assert!(repair.to_string().contains("every finding needs a reason"));
+        assert!(repair.to_string().contains("every issue needs a reason"));
     }
 }

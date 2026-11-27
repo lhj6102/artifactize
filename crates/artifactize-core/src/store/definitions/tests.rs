@@ -172,7 +172,7 @@ fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
                     "id":"check",
                     "title":"Check",
                     "profile":{"kind":"agent","backend":"openai","model":"fixture"},
-                    "payload":{"instruction":"Check.","owner":{"nested":[1,2]}},
+                    "payload":{"instruction":"Check."},
                     "red_at":"P1",
                 },
             ],
@@ -184,7 +184,7 @@ fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
     let selection = Selection::All;
     let view = crate::query::graph(&config, &selection).unwrap();
     let expected = json!({
-        "version":2,
+        "version":3,
         "repoPath":crate::platform::path_text(&crate::platform::canonicalize(root.path()).unwrap()),
         "selection":{"kind":"all"},
         "artifacts":{
@@ -196,7 +196,11 @@ fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
                 "tags":[],
                 "nested":{},
                 "basis":null,
-                "views":{"agentSessions":{},"agentTools":{"read":{"builtin":"read"}},"humanTools":{}},
+                // Where it is bound and what it composes, as the desktop's Definition shows.
+                "binding":{"line":6},
+                "tools":"app",
+                "toolsets":["app"],
+                "views":{"agentSessions":{},"agentTools":{"app.read":{"builtin":"read"}},"humanTools":{}},
                 "fingerprint":{"script":{
                     "command":crate::test_os::echo_program(),
                     "args":["v1"],
@@ -217,10 +221,9 @@ fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
                     "kind":"agent","backend":"openai","model":"fixture",
                     "reasoning":null,"timeoutMs":null,"maxToolCalls":null,"maxTokens":null,
                 },
-                "payload":{"instruction":"Check.","owner":{"nested":[1,2]}},
+                "profileName":"fixture",
+                "payload":{"instruction":"Check."},
                 "redAt":"P1",
-                "passSchema":null,
-                "failSchema":null,
             },
         }],
         "relations":[],
@@ -318,7 +321,6 @@ fn saved_component_ids_and_known_declaration_keys_keep_their_wire_shapes() {
     }
     for invalid in [
         json!({"artifacts":{"app":{"nested":{"../outside":"child"}}}}),
-        json!({"evals":[{"id":"app/check","target":"app","declaration":{"profileVariants":{"bad.name":{"kind":"human"}}}}]}),
         json!({"relations":[{"source":"input","target":"app","kind":"instruction","evalId":"app/check","name":"bad.name"}]}),
     ] {
         assert!(

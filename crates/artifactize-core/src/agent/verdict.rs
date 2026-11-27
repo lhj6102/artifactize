@@ -44,17 +44,32 @@ fn bounded(text: String) -> String {
 pub struct ValidatedResult {
     pub verdict: crate::runtime::Verdict,
     /// Session files from before 0.27 call them findings.
-    #[serde(alias = "findings")]
+    #[serde(default, alias = "findings", skip_serializing_if = "Vec::is_empty")]
     pub issues: Vec<AgentIssue>,
+    /// What session files from before findings answered instead, kept readable as history.
+    #[serde(flatten)]
+    pub earlier: serde_json::Map<String, Value>,
 }
 
 impl ValidatedResult {
     /// The answer's fields as the model wrote them, for transcripts.
     pub fn fields(&self) -> serde_json::Map<String, Value> {
-        serde_json::Map::from_iter([(
-            "issues".to_owned(),
-            serde_json::to_value(&self.issues).expect("issues are JSON"),
-        )])
+        let mut fields = self.earlier.clone();
+        if !self.issues.is_empty() || fields.is_empty() {
+            fields.insert(
+                "issues".to_owned(),
+                serde_json::to_value(&self.issues).expect("issues are JSON"),
+            );
+        }
+        fields
+    }
+}
+
+#[cfg(test)]
+impl ValidatedResult {
+    /// The answer as saved before it becomes a typed result: its verdict and issues.
+    pub(crate) fn into_json(self) -> Value {
+        serde_json::json!({"verdict": self.verdict, "issues": self.issues})
     }
 }
 

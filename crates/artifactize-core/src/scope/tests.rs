@@ -44,27 +44,6 @@ fn eval(instruction: &str) -> Value {
 }
 
 #[test]
-fn reference_parser_preserves_brace_groups_and_escape_parity() {
-    let source = r#"{first} {first}/file {a-b_9} \{escaped} \{also\} {after} {{doubled}} ${variable} { "key": "{json}" } {nested {ignored}} {'}'} {`}`} {"\\\"}"} {last} {unfinished {hidden}"#;
-    assert_eq!(
-        instruction_references(source),
-        ["first", "a-b_9", "after", "last"]
-    );
-    assert_eq!(
-        instruction_references(r"\{no} \\{yes} \\\{no} \\\\{again}"),
-        ["yes", "again"]
-    );
-    assert_eq!(
-        instruction_references("é{unicode} {_invalid} {9valid} {bad.name} { spaced }"),
-        ["unicode", "9valid"]
-    );
-    assert_eq!(
-        instruction_references(&format!("{{{}}} {{{}}}", "x".repeat(64), "y".repeat(65))),
-        ["x".repeat(64)]
-    );
-}
-
-#[test]
 fn files_belong_to_the_nearest_marked_folder_and_nesting_is_no_relation() {
     let fixture = Fixture::new();
     fixture.artifact(
@@ -205,7 +184,8 @@ fn parts_join_what_a_folder_holds_and_may_be_shared_but_never_circular() {
     );
     fixture.artifact("module", json!({"name":"module"}));
     fixture.artifact("app2", json!({"name":"app2","parts":["missing"]}));
-    assert!(fixture.error().contains("parts: Unknown Artifact missing"));
+    let error = fixture.error();
+    assert!(error.contains("Unknown Artifact `missing`"), "{error}");
 }
 
 #[test]
@@ -248,10 +228,6 @@ fn references_keep_canonical_ids() {
             InstructionPart::Artifact("review".parse().unwrap()),
             InstructionPart::Text("; \\{literal} {{literal}}.".into()),
         ]
-    );
-    assert_eq!(
-        eval.declaration.payload().as_ref().unwrap().extra["ownerField"]["unchanged"],
-        "{unknown}"
     );
     assert!(!source.contains("not instruction text"));
 }
@@ -518,6 +494,7 @@ fn argument_only_reference_is_an_edge() {
     let mut declared = eval("Inspect.");
     declared["profile"] =
         json!({"kind":"runtime","command":crate::test_os::cat_program(),"args":["{input}/file"]});
+    // The builder's `{input}/file` is written `@{path input/file}`.
     fixture.artifact("review", json!({"name":"review","evals":[declared]}));
     fixture.artifact("data", json!({"name":"input"}));
     let config = fixture.config();
@@ -531,7 +508,7 @@ fn argument_only_reference_is_an_edge() {
             &config,
             &scope,
             &"review".parse().unwrap(),
-            &["{input}/file".into()]
+            &["@{path input/file}".parse().unwrap()]
         )
         .is_err()
     );
@@ -540,38 +517,49 @@ fn argument_only_reference_is_an_edge() {
 #[test]
 fn invalid_runtime_references_fail_statically_but_literals_stay_literal() {
     let fixture = Fixture::new();
+    let review = |args: &str, instruction: &str| {
+        format!(
+            r#"artf review = {{
+  path = "review/"
+  eval check : runtime(command = {}, args = [{args}]) = {{
+    title = "Check"
+    instruction = {instruction:?}
+  }}
+}}
+"#,
+            serde_json::to_string(&crate::test_os::echo_program()).unwrap()
+        )
+    };
+    fs::create_dir_all(fixture.0.join("review")).unwrap();
     for argument in [
-        "{missing}",
-        "{review}/../escape",
-        "{review}/a//b",
-        "{review}/",
-        "{review}suffix",
-        "prefix{review}",
-        "{review}/{review}",
-        "--input={review}/a\\b",
+        r#""@{path missing}""#,
+        r#""@{path review/../escape}""#,
+        r#""@{path review/a//b}""#,
+        r#""@{path review/}""#,
+        r#""@{path review}suffix""#,
+        r#""prefix@{path review}""#,
+        r#""@{path review}@{path review}""#,
+        r#""--input=@{path review/a\\b}""#,
+        r#""@{artf review}""#,
     ] {
-        let mut declared = eval("Inspect.");
-        declared["profile"] =
-            json!({"kind":"runtime","command":crate::test_os::echo_program(),"args":[argument]});
-        fixture.artifact("review", json!({"name":"review","evals":[declared]}));
+        fixture.write("review/index.artf", &review(argument, "Inspect."));
         assert!(read_workspace_config(&fixture.0).is_err(), "{argument}");
     }
-    fixture.artifact(
-        "review",
-        json!({"name":"review","evals":[eval("Unknown {missing}.")]}),
+    // A runtime instruction is not hashed: it names no Artifact.
+    fixture.write("review/index.artf", &review(r#""x""#, "Unknown @{artf missing}."));
+    let error = fixture.error();
+    assert!(error.contains("names no Artifact"), "{error}");
+    fixture.write(
+        "review/index.artf",
+        &review(
+            r#""--input=@{path review/a}", "@@{path review}", "{review}", "${review}""#,
+            r"Literal {missing} ${missing} @@{artf missing} { unmatched",
+        ),
     );
-    assert!(
-        read_workspace_config(&fixture.0)
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown Artifact reference")
-    );
-    fixture.artifact(
-        "review",
-        json!({
-            "name":"review",
-            "evals":[eval(r"Literal \{missing} {{missing}} ${missing} { unmatched")],
-        }),
-    );
-    fixture.config();
+    let config = fixture.config();
+    let crate::config::Profile::Runtime { args, .. } = config.evals[0].declaration.profile() else {
+        panic!("a runtime eval");
+    };
+    let literals: Vec<_> = args.iter().skip(1).filter_map(|arg| arg.literal()).collect();
+    assert_eq!(literals, ["@{path review}", "{review}", "${review}"]);
 }
