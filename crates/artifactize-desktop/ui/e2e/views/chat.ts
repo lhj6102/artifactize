@@ -143,7 +143,7 @@ export class Chat {
   /** Click the option `name` on the permission card titled `title`. */
   async choosePermission(title: string, name: string): Promise<void> {
     const card = this.browser.$(`main[aria-label="Chat"] .permission[aria-label="Permission request: ${title}"]`);
-    const option = card.$(`.perm-actions button*=${name}`);
+    const option = card.$(".perm-actions").$(`button*=${name}`);
     await option.waitForEnabled({ timeoutMsg: `${name} on ${title} is enabled` });
     await option.click();
   }

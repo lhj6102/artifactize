@@ -914,3 +914,11 @@ export function installBrowserOpener(root: NativePath, env: Environment, client:
   writeNodeCommand(bin, MACOS ? "open" : "xdg-open", "DESKTOP_TEST_BROWSER_CLIENT");
   return { ...withPathFirst(env, [bin]), ...browser };
 }
+
+/** This machine's key in an ACP Registry feed's binary distribution, as the app reads it. */
+export function registryPlatform(): string {
+  const os = ({ darwin: "darwin", linux: "linux", win32: "windows" } as Record<string, string>)[process.platform];
+  const arch = ({ x64: "x86_64", arm64: "aarch64" } as Record<string, string>)[process.arch];
+  if (!os || !arch) throw new Error(`no Registry platform for ${process.platform} ${process.arch}`);
+  return `${os}-${arch}`;
+}
