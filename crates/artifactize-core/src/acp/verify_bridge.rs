@@ -301,7 +301,8 @@ impl VerifyBridge {
     }
 
     /// Close and retire the turn's bridge listener, accepted sockets, and token immediately.
-    pub async fn stop(mut self) {
+    /// Idempotent so both normal turn teardown and error paths can await complete shutdown.
+    pub async fn stop(&mut self) {
         self.disarm_turn();
         self.shutdown.cancel();
         if let Some(task) = self.task.take() {
@@ -491,10 +492,12 @@ async fn serve_stdio(
                         )
                     } else {
                         _in_flight_guard = Some(guard);
-                        // Parse at the edge first: rejected/unparsed JSON payloads never leave
-                        // `src/acp/` into `Block::Tool.arguments` (`C-ACP-EDGE-ISOLATION`).
+                        // Redact and parse at the edge first: neither unredacted known secrets nor
+                        // rejected/unparsed JSON payloads ever leave `src/acp/` into tool execution,
+                        // Run receipts, or `Block::Tool.arguments` (`C-ACP-EDGE-ISOLATION`).
                         let redacted_value = redact_json_value(&arguments, redactor);
-                        let parsed = parse_bridge_call(session_id, send, &name, arguments);
+                        let parsed =
+                            parse_bridge_call(session_id, send, &name, redacted_value.clone());
                         let (summary, redacted_args) = if parsed.is_ok() {
                             let redacted_args = redactor.redact_all(&redacted_value.to_string());
                             let summary_full = format!("{name} {redacted_args}");
@@ -665,7 +668,7 @@ mod tests {
     #[tokio::test]
     async fn stop_retires_accepted_socket_connections() {
         let session: SessionId = "chat-bridge-test".parse().unwrap();
-        let bridge = VerifyBridge::start(
+        let mut bridge = VerifyBridge::start(
             session,
             1,
             "one-time-cap-token".to_owned(),

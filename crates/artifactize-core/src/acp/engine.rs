@@ -418,7 +418,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
     let redactor = StreamRedactor::new(known_secrets);
 
     // Open a fresh one-turn Verify MCP bridge (disarmed until `session/prompt`).
-    let bridge = match VerifyBridge::start(
+    let mut bridge = match VerifyBridge::start(
         input.session_id.clone(),
         input.send,
         bridge_capability,
@@ -628,9 +628,46 @@ async fn execute_on_child(
     redactor: StreamRedactor,
     recorder: &mut Recorder,
 ) -> Result<CompletedTurn, (Failure, bool)> {
+    // Always await complete VerifyBridge shutdown on every return path (including setup `?` errors)
+    // so the previous turn's listener and sockets are retired before any next turn can arm
+    // (`C-ONE-TURN-OWNERSHIP`).
+    let result = execute_on_child_inner(
+        input,
+        child,
+        is_fresh_child,
+        load_remote_id,
+        mcp_servers,
+        &mut bridge,
+        generation,
+        current_warm_owner,
+        (expected_prev_gen, settled_send),
+        redactor,
+        recorder,
+    )
+    .await;
+    bridge.stop().await;
+    result
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Turn execution binds the prepared ACP child, bridge, CAS receipts and recorder in one linear lifecycle"
+)]
+async fn execute_on_child_inner(
+    input: &AcpTurnInput<'_>,
+    child: &mut WarmChild,
+    is_fresh_child: bool,
+    load_remote_id: Option<&str>,
+    mcp_servers: &[super::wire::McpServer],
+    bridge: &mut VerifyBridge,
+    generation: u64,
+    current_warm_owner: WarmOwner,
+    (expected_prev_gen, settled_send): (Option<u64>, usize),
+    redactor: StreamRedactor,
+    recorder: &mut Recorder,
+) -> Result<CompletedTurn, (Failure, bool)> {
     let cancel = input.turn_cancel;
     if cancel.is_cancelled() {
-        bridge.stop().await;
         return Err((Failure::cancelled(), false));
     }
 
@@ -639,7 +676,6 @@ async fn execute_on_child(
         let init = tokio::select! {
             biased;
             () = cancel.cancelled() => {
-                bridge.stop().await;
                 return Err((Failure::cancelled(), false));
             }
             res = child.connection.initialize() => res.map_err(|p| (Failure::from(p), true))?,
@@ -658,7 +694,6 @@ async fn execute_on_child(
         let attempt = tokio::select! {
             biased;
             () = cancel.cancelled() => {
-                bridge.stop().await;
                 return Err((Failure::cancelled(), false));
             }
             res = child.connection.session_load(remote_id, input.worktree, mcp_servers) => res,
@@ -673,7 +708,6 @@ async fn execute_on_child(
                 | Problem::Quota { .. }
                 | Problem::RateLimit { .. }),
             ) => {
-                bridge.stop().await;
                 return Err((Failure::from(problem), true));
             }
             Err(problem) => {
@@ -685,7 +719,6 @@ async fn execute_on_child(
                 tokio::select! {
                     biased;
                     () = cancel.cancelled() => {
-                        bridge.stop().await;
                         return Err((Failure::cancelled(), false));
                     }
                     res = child.connection.session_new(input.worktree, mcp_servers, sys) => {
@@ -701,7 +734,6 @@ async fn execute_on_child(
         tokio::select! {
             biased;
             () = cancel.cancelled() => {
-                bridge.stop().await;
                 return Err((Failure::cancelled(), false));
             }
             res = child.connection.session_new(input.worktree, mcp_servers, sys) => {
@@ -734,7 +766,6 @@ async fn execute_on_child(
     {
         Ok(true) => {}
         Ok(false) => {
-            bridge.stop().await;
             return Err((
                 Failure::new(
                     Code::AgentError,
@@ -745,7 +776,6 @@ async fn execute_on_child(
             ));
         }
         Err(error) => {
-            bridge.stop().await;
             return Err((Failure::new(Code::AgentError, error), false));
         }
     }
@@ -755,7 +785,6 @@ async fn execute_on_child(
     let applied = tokio::select! {
         biased;
         () = cancel.cancelled() => {
-            bridge.stop().await;
             return Err((Failure::cancelled(), false));
         }
         res = child.connection.apply_config_options(&opened, input.requested_config) => {
@@ -764,12 +793,7 @@ async fn execute_on_child(
     };
     let mut state = TurnAccumulator::new(input.launch.spec.name.clone());
     for notice in &applied.notices {
-        state.record_display(
-            recorder,
-            Kind::Notice {
-                text: redactor.redact_all(notice),
-            },
-        );
+        state.record_config_fallback(recorder, &redactor, notice);
     }
     if let Some(reason) = load_fallback_reason {
         let notice = if input.prior_turns.is_empty() {
@@ -784,7 +808,7 @@ async fn execute_on_child(
                 input.prior_turns.len()
             )
         };
-        state.record_display(recorder, Kind::Notice { text: notice });
+        state.record_config_fallback(recorder, &redactor, &notice);
     }
     let mut live_raw = applied.live_options;
     let mut chosen = applied.effective_selections;
@@ -843,19 +867,18 @@ async fn execute_on_child(
             != Ok(true)
     {
         cancel.cancel();
-        bridge.stop().await;
         return Err((Failure::cancelled(), false));
     }
     loop {
-        if let Err(problem) = child
-            .connection
-            .drain_pending_config_updates(&opened.session_id, &mut live_raw)
-        {
-            bridge.stop().await;
+        let drained = tokio::select! {
+            biased;
+            () = cancel.cancelled() => return Err((Failure::cancelled(), false)),
+            res = child.connection.drain_pending_config_updates(&opened.session_id, &mut live_raw) => res,
+        };
+        if let Err(problem) = drained {
             return Err((Failure::from(problem), true));
         }
         if let Err(problem) = chosen_modes_stand(&chosen, &live_raw) {
-            bridge.stop().await;
             return Err((Failure::from(problem), false));
         }
         let pre_prompt_notices =
@@ -898,24 +921,20 @@ async fn execute_on_child(
             tokio::select! {
                 biased;
                 () = cancel.cancelled() => {
-                    bridge.stop().await;
                     return Err((Failure::cancelled(), false));
                 }
                 () = &mut prompt_deadline => {
-                    bridge.stop().await;
                     return Err((Failure::timeout(), true));
                 }
                 _ = cas_poll.tick() => {
                     if input.receipts.chat_stop_requested(input.session_id, input.owner).await == Ok(true) {
                         cancel.cancel();
-                        bridge.stop().await;
                         return Err((Failure::cancelled(), false));
                     }
                 }
                 res = &mut start => match res {
                     Ok(id) => break id,
                     Err(problem) => {
-                        bridge.stop().await;
                         return Err((Failure::from(problem), true));
                     }
                 },

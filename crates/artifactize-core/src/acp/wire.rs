@@ -287,18 +287,25 @@ impl Connection {
             && !self.frames.is_closed()
     }
 
-    /// Non-blockingly drain any config/mode updates already queued on stdout for `session_id`
-    /// before approving configuration or sending `session/prompt` (`C-NO-SILENT-REGRESSION`).
-    /// Non-config frames are preserved in FIFO order in `buffered_frames`, strictly bounded by
-    /// `UPDATE_CHANNEL_CAPACITY` (`C-ACP-EDGE-ISOLATION`).
-    pub(crate) fn drain_pending_config_updates(
+    /// Drain any config/mode updates already queued on stdout for `session_id` before approving
+    /// configuration or sending `session/prompt` (`C-NO-SILENT-REGRESSION`).
+    /// Any pre-prompt `session/request_permission` is immediately cancelled on the wire and never
+    /// buffered into `buffered_frames`, so a stale permission from an earlier turn can never be
+    /// accepted under the new turn's `Owner.token` (`C-ONE-TURN-OWNERSHIP`). Unknown server
+    /// requests are answered with `-32601`. Remaining non-config frames are preserved in FIFO
+    /// order in `buffered_frames`, strictly bounded by `UPDATE_CHANNEL_CAPACITY`
+    /// (`C-ACP-EDGE-ISOLATION`).
+    pub(crate) async fn drain_pending_config_updates(
         &mut self,
         session_id: &str,
         live: &mut Vec<ConfigOption>,
     ) -> Result<(), Problem> {
         let mut kept = std::collections::VecDeque::new();
         while let Some(frame) = self.buffered_frames.pop_front() {
-            if let Some(other) = self.apply_or_keep_config_frame(session_id, live, frame)? {
+            if let Some(other) = self
+                .apply_or_keep_config_frame(session_id, live, frame)
+                .await?
+            {
                 kept.push_back(other);
             }
         }
@@ -306,7 +313,10 @@ impl Connection {
         for _ in 0..UPDATE_CHANNEL_CAPACITY {
             match self.frames.try_recv() {
                 Ok(frame) => {
-                    if let Some(other) = self.apply_or_keep_config_frame(session_id, live, frame)? {
+                    if let Some(other) = self
+                        .apply_or_keep_config_frame(session_id, live, frame)
+                        .await?
+                    {
                         if kept.len() >= UPDATE_CHANNEL_CAPACITY {
                             self.buffered_frames = kept;
                             return Err(Problem::Failed(format!(
@@ -351,8 +361,8 @@ impl Connection {
         Ok(())
     }
 
-    fn apply_or_keep_config_frame(
-        &self,
+    async fn apply_or_keep_config_frame(
+        &mut self,
         session_id: &str,
         live: &mut Vec<ConfigOption>,
         frame: WireFrame,
@@ -375,6 +385,15 @@ impl Connection {
                 {
                     mode.current_value = mode_id;
                 }
+                Ok(None)
+            }
+            WireFrame::PermissionRequest(req) => {
+                // Never carry a pre-prompt permission request into the new turn's prompt loop.
+                self.send_permission_cancelled(req.rpc_id).await?;
+                Ok(None)
+            }
+            WireFrame::UnknownServerRequest { id, .. } => {
+                self.send_method_not_found(id).await?;
                 Ok(None)
             }
             WireFrame::SignedOut => Err(Problem::SignedOut {
@@ -563,15 +582,15 @@ impl Connection {
         &mut self,
         session_id: &str,
         model_id: &str,
-    ) -> Result<(), Problem> {
-        let _: Value = self
+    ) -> Result<Option<String>, Problem> {
+        let result: Value = self
             .request_with_timeout(
                 "session/set_model",
                 json!({ "sessionId": session_id, "modelId": model_id }),
                 CONFIG_TIMEOUT,
             )
             .await?;
-        Ok(())
+        Ok(extract_confirmed_legacy_model(&result))
     }
 
     pub async fn set_legacy_mode(
@@ -667,7 +686,8 @@ impl Connection {
     ) -> Result<AppliedConfig, Problem> {
         let mut live = session.config_options.clone();
         self.config_updates.clear();
-        self.drain_pending_config_updates(&session.session_id, &mut live)?;
+        self.drain_pending_config_updates(&session.session_id, &mut live)
+            .await?;
         let mut notices = Vec::new();
         // Each selection's category as first read: a mode stays a mode even if a later refresh
         // drops the option that named it.
@@ -789,10 +809,12 @@ impl Connection {
 
             if current_opt.current_value != selection.value {
                 if session.uses_legacy_models && current_opt.category == ConfigCategory::Model {
-                    self.set_legacy_model(&session.session_id, &selection.value)
+                    let confirmed = self
+                        .set_legacy_model(&session.session_id, &selection.value)
                         .await?;
+                    let actual_model = confirmed.unwrap_or_else(|| selection.value.clone());
                     if let Some(opt) = live.iter_mut().find(|opt| opt.id == current_opt.id) {
-                        opt.current_value = selection.value.clone();
+                        opt.current_value = actual_model;
                     }
                     self.absorb_config_updates(&session.session_id, &mut live);
                 } else if session.uses_legacy_modes && is_mode {
@@ -845,7 +867,8 @@ impl Connection {
         // Drain any mode or config updates already queued on stdout before approving the final
         // configuration so a late mode change after `session/new` / `session/load` or setter
         // aborts before `session/prompt` is sent (`C-NO-SILENT-REGRESSION`).
-        self.drain_pending_config_updates(&session.session_id, &mut live)?;
+        self.drain_pending_config_updates(&session.session_id, &mut live)
+            .await?;
         for (id, requested) in modes {
             let actual = live
                 .iter()
@@ -1272,6 +1295,40 @@ fn classify_rpc_error(
             ))
         }
     })
+}
+
+/// Extract a confirmed model ID from a legacy `session/set_model` JSON-RPC result when present.
+fn extract_confirmed_legacy_model(result: &Value) -> Option<String> {
+    if let Some(model) = result
+        .get("currentModelId")
+        .or_else(|| result.get("modelId"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+        return Some(model.to_owned());
+    }
+    if let Some(model) = result
+        .get("models")
+        .and_then(|m| m.get("currentModelId"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+        return Some(model.to_owned());
+    }
+    if let Some(raw_opts) = result.get("configOptions").and_then(Value::as_array) {
+        let parsed: Vec<RawConfigOption> = raw_opts
+            .iter()
+            .filter_map(|v| serde_json::from_value(v.clone()).ok())
+            .collect();
+        let options = normalize_config_options(parsed);
+        if let Some(opt) = options
+            .into_iter()
+            .find(|opt| opt.category == ConfigCategory::Model && !opt.current_value.is_empty())
+        {
+            return Some(opt.current_value);
+        }
+    }
+    None
 }
 
 /// Extract a confirmed mode ID from a legacy `session/set_mode` JSON-RPC result when present.

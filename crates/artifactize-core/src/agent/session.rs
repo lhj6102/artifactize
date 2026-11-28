@@ -257,7 +257,7 @@ impl Recorder {
         id: &crate::types::SessionId,
         send: usize,
     ) -> Result<Self, String> {
-        use std::io::{Read as _, Seek as _, SeekFrom};
+        use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
         match platform::open_no_follow(std::fs::File::options().read(true).append(true), path) {
             Ok(mut file) => {
                 let end = file
@@ -279,8 +279,16 @@ impl Recorder {
                             .iter()
                             .rposition(|&byte| byte == b'\n')
                             .map_or(0, |at| at + 1);
-                        file.set_len(len as u64)
-                            .map_err(|error| error.to_string())?;
+                        if Event::parse(&bytes[len..]).is_ok() {
+                            // Complete final JSONL event missing only its trailing newline:
+                            // preserve it cleanly rather than truncating a valid event away.
+                            file.write_all(b"\n")
+                                .and_then(|()| file.flush())
+                                .map_err(|error| error.to_string())?;
+                        } else {
+                            file.set_len(len as u64)
+                                .map_err(|error| error.to_string())?;
+                        }
                     }
                 }
                 Ok(Self {
