@@ -823,7 +823,8 @@
   .project-row {
     position: relative;
   }
-  .new-here {
+  /* Two classes, so the Pane row's own width and padding below never widen it over the row. */
+  .row-button.new-here {
     position: absolute;
     top: 0;
     right: 0;
