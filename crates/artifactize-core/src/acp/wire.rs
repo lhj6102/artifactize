@@ -236,6 +236,7 @@ pub struct Connection {
     redactor: StreamRedactor,
     write: ChildStdin,
     frames: mpsc::Receiver<WireFrame>,
+    buffered_frames: std::collections::VecDeque<WireFrame>,
     reader_task: JoinHandle<()>,
     next_request_id: u64,
     replaying: Option<LoadPhase>,
@@ -270,11 +271,94 @@ impl Connection {
             redactor,
             write: stdin,
             frames: rx,
+            buffered_frames: std::collections::VecDeque::new(),
             reader_task,
             next_request_id: 0,
             replaying: None,
             capabilities: None,
             config_updates: Vec::new(),
+        }
+    }
+
+    /// Whether the parked child has stayed completely silent since the previous turn ended:
+    /// reader task alive, no queued or buffered unsolicited frames/requests, and channel open.
+    pub fn is_quiescent(&self) -> bool {
+        !self.reader_task.is_finished()
+            && self.buffered_frames.is_empty()
+            && self.frames.is_empty()
+            && !self.frames.is_closed()
+    }
+
+    /// Non-blockingly drain any config/mode updates already queued on stdout for `session_id`
+    /// before approving configuration or sending `session/prompt` (`C-NO-SILENT-REGRESSION`).
+    /// Non-config frames are preserved in FIFO order in `buffered_frames`.
+    pub(crate) fn drain_pending_config_updates(
+        &mut self,
+        session_id: &str,
+        live: &mut Vec<ConfigOption>,
+    ) -> Result<(), Problem> {
+        let mut kept = std::collections::VecDeque::new();
+        while let Some(frame) = self.buffered_frames.pop_front() {
+            if let Some(other) = self.apply_or_keep_config_frame(session_id, live, frame)? {
+                kept.push_back(other);
+            }
+        }
+        loop {
+            match self.frames.try_recv() {
+                Ok(frame) => {
+                    if let Some(other) = self.apply_or_keep_config_frame(session_id, live, frame)? {
+                        kept.push_back(other);
+                    }
+                }
+                Err(mpsc::error::TryRecvError::Empty) => break,
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    return Err(Problem::Failed(format!(
+                        "{} exited before starting the ACP turn.",
+                        self.agent_name
+                    )));
+                }
+            }
+        }
+        self.buffered_frames = kept;
+        Ok(())
+    }
+
+    fn apply_or_keep_config_frame(
+        &self,
+        session_id: &str,
+        live: &mut Vec<ConfigOption>,
+        frame: WireFrame,
+    ) -> Result<Option<WireFrame>, Problem> {
+        match frame {
+            WireFrame::Update {
+                session_id: update_sid,
+                event: SessionEvent::ConfigOptionsUpdated { options },
+            } if update_sid == session_id => {
+                *live = options;
+                Ok(None)
+            }
+            WireFrame::Update {
+                session_id: update_sid,
+                event: SessionEvent::ModeChanged { mode_id },
+            } if update_sid == session_id => {
+                if let Some(mode) = live
+                    .iter_mut()
+                    .find(|opt| opt.category == ConfigCategory::Mode)
+                {
+                    mode.current_value = mode_id;
+                }
+                Ok(None)
+            }
+            WireFrame::SignedOut => Err(Problem::SignedOut {
+                agent: self.agent_name.clone(),
+                hint: self.auth_hint.clone(),
+            }),
+            WireFrame::Eof => Err(Problem::Failed(format!(
+                "{} exited before starting the ACP turn.",
+                self.agent_name
+            ))),
+            WireFrame::ProtocolError(msg) => Err(Problem::Failed(self.redactor.redact_all(&msg))),
+            other => Ok(Some(other)),
         }
     }
 
@@ -564,6 +648,7 @@ impl Connection {
     ) -> Result<AppliedConfig, Problem> {
         let mut live = session.config_options.clone();
         self.config_updates.clear();
+        self.drain_pending_config_updates(&session.session_id, &mut live)?;
         let mut notices = Vec::new();
         // Each selection's category as first read: a mode stays a mode even if a later refresh
         // drops the option that named it.
@@ -738,6 +823,10 @@ impl Connection {
                 category: Some(current_opt.category),
             });
         }
+        // Drain any mode or config updates already queued on stdout before approving the final
+        // configuration so a late mode change after `session/new` / `session/load` or setter
+        // aborts before `session/prompt` is sent (`C-NO-SILENT-REGRESSION`).
+        self.drain_pending_config_updates(&session.session_id, &mut live)?;
         for (id, requested) in modes {
             let actual = live
                 .iter()
@@ -748,36 +837,17 @@ impl Connection {
             }
         }
         // Recheck already-confirmed non-mode options (model, thought level, etc.): a later setter
-        // may replace the full live option list and reset an earlier choice, which must surface
-        // explicitly rather than proceed silently.
-        let mut reconciled = Vec::with_capacity(effective.len());
-        for mut selection in effective {
-            if selection.category == Some(ConfigCategory::Mode) {
-                reconciled.push(selection);
-                continue;
-            }
-            match live.iter().find(|opt| opt.id == selection.id) {
-                Some(opt) if opt.current_value != selection.value => {
-                    notices.push(format!(
-                        "{} reset {} from {:?} to {:?} after another setting changed.",
-                        self.agent_name, opt.name, selection.value, opt.current_value
-                    ));
-                    selection.value = opt.current_value.clone();
-                    reconciled.push(selection);
-                }
-                Some(_) => reconciled.push(selection),
-                None => {
-                    notices.push(format!(
-                        "{} dropped {} {:?} after another setting changed.",
-                        self.agent_name, selection.id, selection.value
-                    ));
-                }
-            }
-        }
+        // or update may replace the full live option list and reset an earlier choice, which must
+        // surface explicitly rather than proceed silently.
+        notices.extend(reconcile_non_mode_options(
+            &self.agent_name,
+            &live,
+            &mut effective,
+        ));
 
         Ok(AppliedConfig {
             live_options: live,
-            effective_selections: reconciled,
+            effective_selections: effective,
             notices,
         })
     }
@@ -1114,6 +1184,9 @@ impl Connection {
     }
 
     async fn next_raw_frame(&mut self, method: &str) -> Result<WireFrame, Problem> {
+        if let Some(frame) = self.buffered_frames.pop_front() {
+            return Ok(frame);
+        }
         self.frames.recv().await.ok_or_else(|| {
             Problem::Failed(format!(
                 "{} exited while handling ACP {method}.",
@@ -1220,6 +1293,43 @@ impl Drop for Connection {
     fn drop(&mut self) {
         self.reader_task.abort();
     }
+}
+
+/// Reconcile active non-mode selections (model, thought level, etc.) against a newly received
+/// `live` option list, returning explicit fallback notices for any option that changed or was
+/// dropped (`C-NO-SILENT-REGRESSION`).
+pub(crate) fn reconcile_non_mode_options(
+    agent_name: &str,
+    live: &[ConfigOption],
+    selections: &mut Vec<ConfigSelection>,
+) -> Vec<String> {
+    let mut notices = Vec::new();
+    let mut reconciled = Vec::with_capacity(selections.len());
+    for mut selection in std::mem::take(selections) {
+        if selection.category == Some(ConfigCategory::Mode) {
+            reconciled.push(selection);
+            continue;
+        }
+        match live.iter().find(|opt| opt.id == selection.id) {
+            Some(opt) if opt.current_value != selection.value => {
+                notices.push(format!(
+                    "{agent_name} changed {} from {:?} to {:?}.",
+                    opt.name, selection.value, opt.current_value
+                ));
+                selection.value = opt.current_value.clone();
+                reconciled.push(selection);
+            }
+            Some(_) => reconciled.push(selection),
+            None => {
+                notices.push(format!(
+                    "{agent_name} dropped {} {:?}.",
+                    selection.id, selection.value
+                ));
+            }
+        }
+    }
+    *selections = reconciled;
+    notices
 }
 
 /// Frames surfaced to the turn runner during an active `session/prompt`.

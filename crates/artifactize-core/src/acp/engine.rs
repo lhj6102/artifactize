@@ -47,6 +47,7 @@ use super::{
     wire::{
         FINAL_ANSWER_BYTES, IncomingPermission, OpenedSession, PromptFrame, SessionEvent,
         StopReason, TURN_DISPLAY_EVENTS, TURN_PERSISTED_BYTES, bound_text,
+        reconcile_non_mode_options,
     },
 };
 
@@ -396,7 +397,8 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
         Vec::new()
     };
 
-    // Re-verify executable hash & Workspace Trust right before warm reuse or fresh spawn.
+    // Re-verify executable hash, Workspace Trust, and live quiescence right before warm reuse
+    // or fresh spawn (`C-TRUST-BEFORE-WORKTREE`, `C-ONE-TURN-OWNERSHIP`).
     let (mut child, is_fresh_child) = match child {
         Some(warm) => {
             if let Err(problem) = input.launch.reverify_before_exec(input.worktree) {
@@ -409,7 +411,41 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
                     warm_owner: None,
                 };
             }
-            (warm, false)
+            if warm.connection.is_quiescent() {
+                (warm, false)
+            } else {
+                // Unsolicited frames arrived while the child was parked: retire it and start fresh.
+                let stale_gen = warm.generation;
+                let _ = warm.terminate().await;
+                let _ = input
+                    .receipts
+                    .clear_acp_warm_owner(input.session_id, stale_gen, current_warm_owner)
+                    .await;
+                load_remote_id = None;
+                if let Ok(bumped) = input.receipts.bump_acp_generation(input.session_id).await {
+                    generation = bumped;
+                    expected_generation = expected_generation.map(|_| bumped);
+                }
+                match WarmChild::spawn(
+                    input.session_id.clone(),
+                    &input.launch,
+                    generation,
+                    input.worktree,
+                )
+                .await
+                {
+                    Ok(spawned) => (spawned, true),
+                    Err(problem) => {
+                        bridge.stop().await;
+                        return AcpTurnOutcome {
+                            result: Err(problem.into()),
+                            resumable: false,
+                            generation,
+                            warm_owner: None,
+                        };
+                    }
+                }
+            }
         }
         None => {
             match WarmChild::spawn(
@@ -670,10 +706,14 @@ async fn execute_on_child(
             res.map_err(|p| (Failure::from(p), false))?
         }
     };
+    let mut state = TurnAccumulator::new(input.launch.spec.name.clone());
     for notice in &applied.notices {
-        recorder.event(Kind::Notice {
-            text: redactor.redact_all(notice),
-        });
+        state.record_display(
+            recorder,
+            Kind::Notice {
+                text: redactor.redact_all(notice),
+            },
+        );
     }
     if let Some(reason) = load_fallback_reason {
         let notice = if input.prior_turns.is_empty() {
@@ -688,14 +728,18 @@ async fn execute_on_child(
                 input.prior_turns.len()
             )
         };
-        recorder.event(Kind::Notice { text: notice });
+        state.record_display(recorder, Kind::Notice { text: notice });
     }
+    let mut live_raw = applied.live_options;
+    let mut chosen = applied.effective_selections;
+    // What the Chat view shows of the agent's options: redacted, as everything it sent is.
+    let mut live_options = redact_options(&live_raw, &redactor);
     let _ = input
         .receipts
         .update_chat_turn_meta(
             input.session_id,
             &input.owner.token,
-            redact_options(&applied.live_options, &redactor),
+            live_options.clone(),
             bridge.state(),
         )
         .await;
@@ -713,7 +757,6 @@ async fn execute_on_child(
                 },
             );
         if let Some(prev_label) = input.previous_engine_label
-            && prev_label != input.launch.spec.name
             && !input.prior_turns.is_empty()
         {
             recorder.event(Kind::Handoff(HandoffEvent {
@@ -733,9 +776,43 @@ async fn execute_on_child(
         )
     };
 
-    // 5. Arm the one-turn Verify bridge and issue `session/prompt`, observing local and remote
-    //    Stop as well as turn timeout while writing the prompt so a stalled child cannot strand an
-    //    armed bridge (`C-ONE-TURN-OWNERSHIP`).
+    // 5. Re-check any mode or config updates already queued on stdout before arming the bridge
+    //    or sending `session/prompt`, then issue `session/prompt` while observing local/remote
+    //    Stop and turn timeout (`C-NO-SILENT-REGRESSION`, `C-ONE-TURN-OWNERSHIP`).
+    if let Err(problem) = child
+        .connection
+        .drain_pending_config_updates(&opened.session_id, &mut live_raw)
+    {
+        bridge.stop().await;
+        return Err((Failure::from(problem), true));
+    }
+    if let Err(problem) = chosen_modes_stand(&chosen, &live_raw) {
+        bridge.stop().await;
+        return Err((Failure::from(problem), false));
+    }
+    let pre_prompt_notices =
+        reconcile_non_mode_options(&input.launch.spec.name, &live_raw, &mut chosen);
+    if !pre_prompt_notices.is_empty() {
+        for notice in pre_prompt_notices {
+            state.record_display(
+                recorder,
+                Kind::Notice {
+                    text: redactor.redact_all(&notice),
+                },
+            );
+        }
+        live_options = redact_options(&live_raw, &redactor);
+        let _ = input
+            .receipts
+            .update_chat_turn_meta(
+                input.session_id,
+                &input.owner.token,
+                live_options.clone(),
+                bridge.state(),
+            )
+            .await;
+    }
+
     if cancel.is_cancelled()
         || input
             .receipts
@@ -793,13 +870,9 @@ async fn execute_on_child(
     //    Permission CAS with pauseable TURN_TIMEOUT, and enforces persistence bounds.
     let mut text_redactor = redactor.clone();
     let mut thought_redactor = redactor.clone();
-    let mut state = TurnAccumulator::new(input.launch.spec.name.clone());
     let mut pending_perms: BTreeMap<String, PendingPermissionSlot> = BTreeMap::new();
     let mut budget_started: Option<StdInstant> = Some(StdInstant::now());
     let mut last_bridge_state = bridge.state();
-    // What the Chat view shows of the agent's options: redacted, as everything it sent is.
-    let mut live_options = redact_options(&applied.live_options, &redactor);
-    let chosen = applied.effective_selections;
 
     let loop_result: Result<StopReason, Failure> = loop {
         // Pause TURN_TIMEOUT while any PENDING permission row is open.
@@ -882,6 +955,18 @@ async fn execute_on_child(
                             break Err(Failure::from(problem));
                         }
                         if let SessionEvent::ConfigOptionsUpdated { options } = &event {
+                            for notice in reconcile_non_mode_options(
+                                &input.launch.spec.name,
+                                options,
+                                &mut chosen,
+                            ) {
+                                state.record_display(
+                                    recorder,
+                                    Kind::Notice {
+                                        text: redactor.redact_all(&notice),
+                                    },
+                                );
+                            }
                             live_options = redact_options(options, &redactor);
                             let _ = input.receipts.update_chat_turn_meta(
                                 input.session_id,

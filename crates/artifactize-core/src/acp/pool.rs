@@ -183,6 +183,7 @@ impl Pool {
         };
         let digest_mismatch = child.executable_sha256 != verified_sha256;
         let matches = child.quiescent
+            && child.connection.is_quiescent()
             && !digest_mismatch
             && child.agent_id == *agent_id
             && child.runtime_fingerprint == runtime_fingerprint

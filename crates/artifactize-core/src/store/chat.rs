@@ -154,7 +154,7 @@ pub(crate) async fn for_branch(state: &Path, branch: &Place) -> Result<Vec<Sessi
         let mut sessions = Vec::new();
         for row in statement.query_map([], session_row)? {
             let (data, owner, pending_perm) = row?;
-            let saved: Session = serde_json::from_str(&data)?;
+            let saved = Session::from_storage_json(&data)?;
             if saved.branch() == branch {
                 sessions.push(with_activity(saved, owner, pending_perm, &state_path)?);
             }
@@ -183,7 +183,7 @@ pub(crate) async fn active_turns(
             let (data, owner) = row?;
             let owner: Owner = serde_json::from_str(&owner)?;
             if owner.live().map_err(Error::Invalid)? == live {
-                let mut session: Session = serde_json::from_str(&data)?;
+                let mut session = Session::from_storage_json(&data)?;
                 if !live {
                     refresh_activity(&mut session, &state_path);
                 }
@@ -288,7 +288,12 @@ fn session(
     (data, owner, pending_perm): (String, Option<String>, bool),
     state: &Path,
 ) -> Result<Session, Error> {
-    with_activity(serde_json::from_str(&data)?, owner, pending_perm, state)
+    with_activity(
+        Session::from_storage_json(&data)?,
+        owner,
+        pending_perm,
+        state,
+    )
 }
 
 fn with_activity(
@@ -420,7 +425,7 @@ impl Receipts {
                         session.id,
                         crate::platform::path_text(&session.worktree),
                         session.updated_at,
-                        serde_json::to_string(&session)?
+                        session.to_storage_json()?
                     ],
                 )?;
                 Ok::<_, Error>(())
@@ -1155,7 +1160,7 @@ fn saved_chat(db: &Connection, id: &SessionId) -> Result<Session, Error> {
     let data: String = db.query_row("SELECT data FROM chat_sessions WHERE id=?", [id], |row| {
         row.get(0)
     })?;
-    Ok(serde_json::from_str(&data)?)
+    Ok(Session::from_storage_json(&data)?)
 }
 
 fn save(db: &Connection, session: &Session) -> Result<(), Error> {
@@ -1164,7 +1169,7 @@ fn save(db: &Connection, session: &Session) -> Result<(), Error> {
         params![
             crate::platform::path_text(&session.worktree),
             session.updated_at,
-            serde_json::to_string(session)?,
+            session.to_storage_json()?,
             session.id
         ],
     )?;

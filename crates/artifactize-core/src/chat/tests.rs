@@ -369,7 +369,7 @@ fn legacy_session_wire_migrates_codex_antigravity_and_retired_claude_agent() {
         "selection": {"backend": "codex", "model": "saved-model", "effort": "high"},
         "createdAt": "2026-11-21T00:00:00Z", "updatedAt": "2026-11-21T00:00:00Z",
     });
-    let session: Session = serde_json::from_value(codex_record).unwrap();
+    let session = Session::from_storage_json(&codex_record.to_string()).unwrap();
     assert!(!session.legacy_migration_notice);
     assert_eq!(
         session.target,
@@ -387,11 +387,10 @@ fn legacy_session_wire_migrates_codex_antigravity_and_retired_claude_agent() {
         "model": {"backend": "antigravity", "model": "gemini-3-pro", "effort": "medium"},
         "createdAt": "2026-11-21T00:00:00Z", "updatedAt": "2026-11-21T00:00:00Z",
     });
-    let session: Session = serde_json::from_value(agy_record).unwrap();
+    let session = Session::from_storage_json(&agy_record.to_string()).unwrap();
     assert!(session.legacy_migration_notice);
     // Persisting metadata (e.g. set_chat_view) before the first ACP send must preserve the notice.
-    let roundtripped: Session =
-        serde_json::from_str(&serde_json::to_string(&session).unwrap()).unwrap();
+    let roundtripped = Session::from_storage_json(&session.to_storage_json().unwrap()).unwrap();
     assert!(roundtripped.legacy_migration_notice);
     assert!(matches!(
         session.target,
@@ -409,7 +408,7 @@ fn legacy_session_wire_migrates_codex_antigravity_and_retired_claude_agent() {
         "model": {"backend": "claude-agent", "model": "sonnet", "effort": "high"},
         "createdAt": "2026-11-21T00:00:00Z", "updatedAt": "2026-11-21T00:00:00Z",
     });
-    let session: Session = serde_json::from_value(claude_record).unwrap();
+    let session = Session::from_storage_json(&claude_record.to_string()).unwrap();
     assert!(session.legacy_migration_notice);
     assert_eq!(
         session.target,

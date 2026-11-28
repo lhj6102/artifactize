@@ -174,15 +174,16 @@ pub(crate) fn open_verified_executable(path: &Path) -> io::Result<File> {
 }
 
 /// Spawn a previously hashed executable directly without re-resolving `PATH` or `cwd` and
-/// without any pathname-replacement TOCTOU (`C-TRUST-BEFORE-WORKTREE`).
+/// without pathname-replacement or in-place-modification TOCTOU (`C-TRUST-BEFORE-WORKTREE`).
 ///
-/// On Linux, both native binaries and shebang scripts execute directly through `/proc/self/fd/<fd>`
-/// with `arg0` set to `path` (for `#!` scripts, `FD_CLOEXEC` is cleared on that descriptor in
-/// `pre_exec` so the kernel and interpreter read the exact verified open inode).
-/// On non-Linux Unix platforms (such as macOS, which has no `fexecve`), the verified file is
-/// streamed directly from `verified_file` into a private `0700` file while recomputing and
-/// verifying `expected_sha256`, executed from that private directory with `arg0` set to `path`,
-/// and kept alive on the returned `Child` until drop.
+/// On Linux, the bytes are streamed from `verified_file` into a sealed, immutable `memfd`
+/// (`MFD_CLOEXEC | MFD_ALLOW_SEALING` + `F_SEAL_WRITE | F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_SEAL`)
+/// while recomputing and checking `expected_sha256`, then executed directly via
+/// `/proc/self/fd/<memfd>` with `arg0` set to `path` (clearing `FD_CLOEXEC` in `pre_exec` only
+/// for `#!` scripts so the interpreter reads the exact sealed inode).
+/// On non-Linux Unix platforms (such as macOS), the verified bytes are streamed into a private
+/// `0700` directory as a read/execute-only (`0500`) file while checking `expected_sha256`,
+/// executed with `arg0` set to `path`, and kept alive on the returned `Child` until drop.
 pub(crate) async fn spawn_verified(
     path: &Path,
     mut verified_file: File,
@@ -191,20 +192,80 @@ pub(crate) async fn spawn_verified(
     cwd: &Path,
     environment: &std::collections::BTreeMap<OsString, OsString>,
 ) -> io::Result<Child> {
+    use sha2::{Digest, Sha256};
+
     #[cfg(target_os = "linux")]
-    let (mut std_cmd, staged_dir): (std::process::Command, Option<super::PrivateTempDir>) = {
-        let _ = expected_sha256;
+    let (mut std_cmd, _held_fd, staged_dir): (
+        std::process::Command,
+        Option<File>,
+        Option<super::PrivateTempDir>,
+    ) = {
+        use std::os::fd::FromRawFd;
+
+        // SAFETY: `memfd_create` with a NUL-terminated static name and valid flags returns a new
+        // owned descriptor on success or -1 on error.
+        let memfd_raw = unsafe {
+            libc::memfd_create(
+                c"artifactize-verified".as_ptr(),
+                libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING,
+            )
+        };
+        if memfd_raw < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: `memfd_raw` is a newly created, valid owned file descriptor.
+        let mut memfd = unsafe { File::from_raw_fd(memfd_raw) };
+
         verified_file.seek(SeekFrom::Start(0))?;
-        let mut magic = [0u8; 2];
-        let count = verified_file.read(&mut magic)?;
-        let is_script = count == 2 && magic == *b"#!";
-        let raw_fd = verified_file.as_raw_fd();
+        let mut hasher = Sha256::new();
+        let mut buffer = [0u8; 64 * 1024];
+        let mut first_two = [0u8; 2];
+        let mut first_len = 0usize;
+        loop {
+            let count = verified_file.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            if first_len < 2 {
+                let take = (2 - first_len).min(count);
+                first_two[first_len..first_len + take].copy_from_slice(&buffer[..take]);
+                first_len += take;
+            }
+            hasher.update(&buffer[..count]);
+            memfd.write_all(&buffer[..count])?;
+        }
+        memfd.flush()?;
+        memfd.seek(SeekFrom::Start(0))?;
+
+        let digest = hasher
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        if digest != expected_sha256 {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "verified executable changed before exec",
+            ));
+        }
+
+        // Permanently seal the memfd against any write, shrink, grow, or further seal changes so
+        // the exact hashed bytes cannot be mutated in-place before or during `execve`.
+        let seals =
+            libc::F_SEAL_WRITE | libc::F_SEAL_SHRINK | libc::F_SEAL_GROW | libc::F_SEAL_SEAL;
+        // SAFETY: `memfd` is a valid owned memfd created with `MFD_ALLOW_SEALING`.
+        if unsafe { libc::fcntl(memfd.as_raw_fd(), libc::F_ADD_SEALS, seals) } == -1 {
+            return Err(io::Error::last_os_error());
+        }
+
+        let is_script = first_len == 2 && first_two == *b"#!";
+        let raw_fd = memfd.as_raw_fd();
         let mut cmd = std::process::Command::new(format!("/proc/self/fd/{raw_fd}"));
         cmd.arg0(path);
         if is_script {
             // SAFETY: `fcntl(raw_fd, F_SETFD, 0)` is POSIX async-signal-safe and clears
             // `FD_CLOEXEC` only in the forked child right before `execve("/proc/self/fd/<fd>")`
-            // so the shebang interpreter reads the exact open verified inode.
+            // so the shebang interpreter reads the exact sealed immutable memfd.
             unsafe {
                 cmd.pre_exec(move || {
                     if libc::fcntl(raw_fd, libc::F_SETFD, 0) == -1 {
@@ -214,12 +275,15 @@ pub(crate) async fn spawn_verified(
                 });
             }
         }
-        (cmd, None)
+        (cmd, Some(memfd), None)
     };
     #[cfg(not(target_os = "linux"))]
-    let (mut std_cmd, staged_dir): (std::process::Command, Option<super::PrivateTempDir>) = {
-        use sha2::{Digest, Sha256};
-        use std::os::unix::fs::OpenOptionsExt;
+    let (mut std_cmd, _held_fd, staged_dir): (
+        std::process::Command,
+        Option<File>,
+        Option<super::PrivateTempDir>,
+    ) = {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
         let staged_dir = super::private_tempdir_in(
             "artifactize-verified-",
@@ -243,6 +307,7 @@ pub(crate) async fn spawn_verified(
             staged.write_all(&buffer[..count])?;
         }
         staged.flush()?;
+        staged.set_permissions(std::fs::Permissions::from_mode(0o500))?;
         drop(staged);
         let digest = hasher
             .finalize()
@@ -257,7 +322,7 @@ pub(crate) async fn spawn_verified(
         }
         let mut cmd = std::process::Command::new(&staged_path);
         cmd.arg0(path);
-        (cmd, Some(staged_dir))
+        (cmd, None, Some(staged_dir))
     };
 
     std_cmd
@@ -271,6 +336,7 @@ pub(crate) async fn spawn_verified(
     let mut command = Command::from(std_cmd);
     command.kill_on_drop(true);
     let mut spawned = spawn_now(command).await?;
+    drop(_held_fd);
     drop(verified_file);
     spawned._staged_dir = staged_dir;
     Ok(spawned)

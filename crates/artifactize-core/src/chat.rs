@@ -301,8 +301,7 @@ impl LegacyModelWire {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(from = "SessionWire", into = "SessionWire")]
+#[derive(Debug, Clone)]
 pub struct Session {
     pub id: SessionId,
     pub title: String,
@@ -395,6 +394,18 @@ impl From<Session> for SessionWire {
 }
 
 impl Session {
+    /// Persist into SQLite `chat_sessions.data` via crate-private `SessionWire` so internal
+    /// ACP binding state (`remote_session_id`) never crosses the public Chat API
+    /// (`C-ACP-EDGE-ISOLATION`).
+    pub(crate) fn to_storage_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(&SessionWire::from(self.clone()))
+    }
+
+    /// Decode from SQLite `chat_sessions.data` via edge-migrating `SessionWire`.
+    pub(crate) fn from_storage_json(data: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str::<SessionWire>(data).map(Self::from)
+    }
+
     /// Stable across branch switches or removal of the saved checkout.
     pub fn branch(&self) -> Place {
         Place::for_checkout(

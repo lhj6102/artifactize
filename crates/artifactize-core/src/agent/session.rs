@@ -598,9 +598,15 @@ impl Conversation {
 
     /// Every message in order, the review's and its follow-ups', ready to send again. Tool
     /// calls anywhere in the history whose turn stopped before answering get an error result
-    /// right after that assistant message, so switching from a stopped legacy turn to ACP and
-    /// later back to Direct API never sends unanswered `ToolCall`s to Anthropic/OpenAI.
+    /// right after that assistant message, preserving any already-recorded `ToolOutcome` results
+    /// so switching from a stopped or interrupted turn to ACP and later back to Direct API never
+    /// drops saved tool outcomes or sends unanswered `ToolCall`s to Anthropic/OpenAI.
     pub fn history(&self) -> Result<Vec<Message>, String> {
+        enum HistoryEntry {
+            Message(Message),
+            ToolOutcome(Message),
+        }
+
         let mut raw = Vec::new();
         let mut saw_assistant_in_turn = false;
         for event in &self.events {
@@ -613,7 +619,10 @@ impl Conversation {
                     if matches!(msg, Message::Assistant { .. }) {
                         saw_assistant_in_turn = true;
                     }
-                    raw.push(msg);
+                    raw.push(HistoryEntry::Message(msg));
+                }
+                Kind::ToolOutcome(event) => {
+                    raw.push(HistoryEntry::ToolOutcome(event.message().clone()));
                 }
                 Kind::Answer(Answer::Completed(text))
                     if !saw_assistant_in_turn && !text.is_empty() =>
@@ -621,7 +630,7 @@ impl Conversation {
                     // Preserve a completed turn's answer in Direct history even if intermediate
                     // ACP display events hit the per-turn display cap before flushing prose.
                     saw_assistant_in_turn = true;
-                    raw.push(Message::assistant(text.clone()));
+                    raw.push(HistoryEntry::Message(Message::assistant(text.clone())));
                 }
                 _ => {}
             }
@@ -629,7 +638,14 @@ impl Conversation {
         let mut normalized = Vec::with_capacity(raw.len());
         let mut index = 0;
         while index < raw.len() {
-            let message = raw[index].clone();
+            let entry = &raw[index];
+            let message = match entry {
+                HistoryEntry::Message(msg) => msg.clone(),
+                HistoryEntry::ToolOutcome(_) => {
+                    index += 1;
+                    continue;
+                }
+            };
             match &message {
                 Message::Assistant { content, .. } => {
                     let calls: Vec<_> = content
@@ -644,29 +660,48 @@ impl Conversation {
                     if calls.is_empty() {
                         continue;
                     }
-                    // Collect any immediately following user tool-result messages answering this assistant turn.
+                    // Collect any immediately following user tool-result messages and individual
+                    // `ToolOutcome` events answering this assistant turn. Combined `Message`
+                    // results take precedence; individual `ToolOutcome` results recover real tool
+                    // outputs if the turn was interrupted before writing the combined message.
                     let mut answered = std::collections::BTreeSet::new();
+                    let mut outcome_results: Vec<UserContent> = Vec::new();
                     let mut last_tool_result_pos = None;
                     while index < raw.len() {
-                        let is_tool_result_msg = match &raw[index] {
-                            Message::User { content } => content
-                                .iter()
-                                .any(|part| matches!(part, UserContent::ToolResult(_))),
-                            _ => false,
-                        };
-                        if !is_tool_result_msg {
-                            break;
-                        }
-                        if let Message::User { content } = &raw[index] {
-                            for part in content {
-                                if let UserContent::ToolResult(result) = part {
-                                    answered.insert(result.call.wire().into_owned());
+                        match &raw[index] {
+                            HistoryEntry::ToolOutcome(Message::User { content }) => {
+                                for part in content {
+                                    if matches!(part, UserContent::ToolResult(_)) {
+                                        outcome_results.push(part.clone());
+                                    }
                                 }
+                                index += 1;
+                            }
+                            HistoryEntry::Message(msg @ Message::User { content })
+                                if content
+                                    .iter()
+                                    .any(|part| matches!(part, UserContent::ToolResult(_))) =>
+                            {
+                                for part in content {
+                                    if let UserContent::ToolResult(result) = part {
+                                        answered.insert(result.call.wire().into_owned());
+                                    }
+                                }
+                                last_tool_result_pos = Some(normalized.len());
+                                normalized.push(msg.clone());
+                                index += 1;
+                            }
+                            _ => break,
+                        }
+                    }
+                    let mut recovered: Vec<UserContent> = Vec::new();
+                    for part in outcome_results {
+                        if let UserContent::ToolResult(ref result) = part {
+                            let wire_id = result.call.wire().into_owned();
+                            if answered.insert(wire_id) {
+                                recovered.push(part);
                             }
                         }
-                        last_tool_result_pos = Some(normalized.len());
-                        normalized.push(raw[index].clone());
-                        index += 1;
                     }
                     let missing: Vec<_> = calls
                         .iter()
@@ -677,13 +712,14 @@ impl Conversation {
                             )]))
                         })
                         .collect();
-                    if !missing.is_empty() {
+                    recovered.extend(missing);
+                    if !recovered.is_empty() {
                         if let Some(pos) = last_tool_result_pos
                             && let Some(Message::User { content }) = normalized.get_mut(pos)
                         {
-                            content.extend(missing);
+                            content.extend(recovered);
                         } else {
-                            normalized.push(Message::User { content: missing });
+                            normalized.push(Message::User { content: recovered });
                         }
                     }
                 }
