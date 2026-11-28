@@ -321,6 +321,14 @@ public static class E2eBuildJob {
   }
 
   public static int Main() {
+    // Ctrl+C or Ctrl+Break reaches every process on the console, this wrapper included. Its
+    // child handles it, saving evidence and tearing down its fixtures; the wrapper stays until
+    // the child has exited, since closing the job first would kill the child mid-teardown.
+    try {
+      Console.CancelKeyPress += (sender, interrupt) => { interrupt.Cancel = true; };
+    } catch (IOException) {
+      // Without a console there is no Ctrl+C to outlast.
+    }
     try {
       IntPtr job = CreateJobObject(IntPtr.Zero, IntPtr.Zero);
       if (job == IntPtr.Zero) {
