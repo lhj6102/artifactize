@@ -190,8 +190,9 @@ pub fn resolve_executable(
     Ok(canonical)
 }
 
-/// Refuse a built-in preset's resolved executable `canonical` inside `worktree`: the
-/// repository's own files never run as an agent before Workspace Trust, a probe included.
+/// Refuse a built-in preset's resolved executable `canonical` inside `worktree` or its enclosing
+/// Git worktree root: the repository's own files never run as an agent before Workspace Trust, a
+/// probe included.
 pub fn outside_worktree(canonical: &Path, worktree: &Path) -> Result<(), String> {
     let canonical_worktree =
         crate::workspace::canonical_target(worktree).map_err(|error| error.to_string())?;
@@ -201,6 +202,16 @@ pub fn outside_worktree(canonical: &Path, worktree: &Path) -> Result<(), String>
             platform::path_text(canonical),
             platform::path_text(&canonical_worktree),
         ));
+    }
+    if let Some(root) = repository::identify(&canonical_worktree).worktree_path {
+        let canonical_root = crate::workspace::canonical_target(&root).unwrap_or(root);
+        if platform::is_within(canonical, &canonical_root) {
+            return Err(format!(
+                "Refusing to launch built-in ACP preset executable {} located inside the workspace {}.",
+                platform::path_text(canonical),
+                platform::path_text(&canonical_root),
+            ));
+        }
     }
     Ok(())
 }
@@ -460,6 +471,21 @@ mod tests {
         let super::super::catalog::AgentAvailability::Failed { error, .. } = probed else {
             panic!("the probe ran the workspace's executable: {probed:?}");
         };
+        assert!(error.contains("inside the workspace"), "{error}");
+    }
+
+    #[test]
+    fn builtin_preset_rejects_executable_in_enclosing_git_worktree_from_subdirectory() {
+        let root = crate::test_os::tempdir();
+        let repo = root.path().join("repo");
+        let subdir = repo.join("packages").join("app");
+        std::fs::create_dir_all(&subdir).unwrap();
+        crate::test_os::git(&repo, &["init", "--quiet"]);
+        let malicious = crate::test_os::executable_named(&repo, "agy");
+        std::fs::write(&malicious, b"fake-acp-binary\n").unwrap();
+        crate::test_os::make_executable(&malicious);
+        let error =
+            resolve_executable(&platform::path_text(&malicious), Some(&subdir), true).unwrap_err();
         assert!(error.contains("inside the workspace"), "{error}");
     }
 }

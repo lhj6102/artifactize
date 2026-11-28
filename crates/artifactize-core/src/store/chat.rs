@@ -960,6 +960,25 @@ impl Receipts {
             .map_err(|error| error.to_string())
     }
 
+    /// Whether `expected` still owns the active turn for `id` and no Stop has been requested.
+    pub(crate) async fn chat_turn_active(
+        &self,
+        id: &SessionId,
+        expected: &Owner,
+    ) -> Result<bool, String> {
+        let id = id.clone();
+        let token = expected.token.clone();
+        self.connection
+            .call(move |db| {
+                Ok::<_, Error>(
+                    owner(db, &id)?
+                        .is_some_and(|current| current.token == token && !current.stop_requested),
+                )
+            })
+            .await
+            .map_err(|error| error.to_string())
+    }
+
     /// Atomically update `acp_binding` with `generation` CAS (initializing if `expected_generation`
     /// is `None`, or checking `current.generation == expected_generation`).
     pub(crate) async fn save_acp_binding_cas(

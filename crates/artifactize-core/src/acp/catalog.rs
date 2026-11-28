@@ -857,7 +857,8 @@ pub async fn probe_spec(
         return entry.availability.clone();
     }
 
-    let availability = run_live_probe(spec, &resolved, probe_dir.path()).await;
+    let availability = run_live_probe(spec, &resolved).await;
+    drop(probe_dir);
     if let Ok(mut cache) = probe_cache().lock() {
         cache.insert(
             cache_key,
@@ -870,15 +871,26 @@ pub async fn probe_spec(
     availability
 }
 
-async fn run_live_probe(
-    spec: &AgentSpec,
-    executable: &Path,
-    probe_dir: &Path,
-) -> AgentAvailability {
+async fn run_live_probe(spec: &AgentSpec, executable: &Path) -> AgentAvailability {
     let cancel = CancellationToken::new();
     let deadline = tokio::time::Instant::now() + PROBE_TIMEOUT;
 
-    let detected_version = probe_version(spec, executable, probe_dir, deadline, &cancel).await;
+    let version_dir = match platform::private_tempdir_in(
+        "artifactize-acp-version-",
+        &platform::temporary_directory(),
+    ) {
+        Ok(dir) => dir,
+        Err(error) => {
+            return AgentAvailability::Failed {
+                executable: Some(executable.to_path_buf()),
+                version: None,
+                error: format!("Cannot create ACP version probe directory: {error}."),
+            };
+        }
+    };
+    let detected_version =
+        probe_version(spec, executable, version_dir.path(), deadline, &cancel).await;
+    drop(version_dir);
     if let Some(minimum) = &spec.minimum_version {
         match &detected_version {
             None => {
@@ -906,6 +918,20 @@ async fn run_live_probe(
         }
     }
 
+    let probe_dir = match platform::private_tempdir_in(
+        "artifactize-acp-models-",
+        &platform::temporary_directory(),
+    ) {
+        Ok(dir) => dir,
+        Err(error) => {
+            return AgentAvailability::Failed {
+                executable: Some(executable.to_path_buf()),
+                version: detected_version.map(|v| v.to_string()),
+                error: format!("Cannot create ACP model probe directory: {error}."),
+            };
+        }
+    };
+
     let mut args: Vec<OsString> = spec.args.iter().map(OsString::from).collect();
     // For Antigravity empty-tempdir probes, disable default customizations cleanly.
     if spec.id.as_str() == "antigravity" {
@@ -915,7 +941,7 @@ async fn run_live_probe(
     let command = process::Command {
         program: executable.as_os_str().to_owned(),
         args,
-        cwd: probe_dir.to_path_buf(),
+        cwd: probe_dir.path().to_path_buf(),
         env: spec.build_env(false),
         timeout: PROBE_TIMEOUT,
     };
@@ -942,7 +968,7 @@ async fn run_live_probe(
         spec.hide_always_options,
         spec.known_secrets(),
     );
-    let result = tokio::time::timeout(PROBE_TIMEOUT, conn.inspect_models(probe_dir))
+    let result = tokio::time::timeout(PROBE_TIMEOUT, conn.inspect_models(probe_dir.path()))
         .await
         .unwrap_or_else(|_| {
             Err(Problem::Failed(format!(

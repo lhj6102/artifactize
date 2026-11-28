@@ -69,9 +69,18 @@ impl VerifiedAcpLaunch {
         let current =
             LauncherFingerprint::compute(&self.fingerprint.resolved_executable, &self.spec.args)
                 .map_err(Problem::Failed)?;
+        if self.spec.reject_worktree_executable {
+            trust::outside_worktree(&current.resolved_executable, worktree)
+                .map_err(Problem::Failed)?;
+        }
         // The scope is read again from the checkout the worktree holds now: another repository
         // put in its place is not covered by the consent given for the one prepared.
         let identity = repository::identify(worktree);
+        if self.spec.reject_worktree_executable
+            && let Some(root) = &identity.worktree_path
+        {
+            trust::outside_worktree(&current.resolved_executable, root).map_err(Problem::Failed)?;
+        }
         let scope = TrustScope::for_worktree(worktree, &identity).map_err(Problem::Failed)?;
         if scope != self.scope {
             return Err(Problem::TrustRequired(Box::new(TrustRequirement {
@@ -127,6 +136,11 @@ pub(crate) fn verify_launch(
         Some(worktree),
         spec.reject_worktree_executable,
     )?;
+    if spec.reject_worktree_executable
+        && let Some(root) = &identity.worktree_path
+    {
+        trust::outside_worktree(&resolved, root)?;
+    }
     let fingerprint = LauncherFingerprint::compute(&resolved, &spec.args)?;
     let scope = TrustScope::for_worktree(worktree, identity)?;
     match trust::check_trust(
@@ -656,13 +670,18 @@ async fn execute_on_child(
         )
         .await;
 
-    // 4. Build prompt: cold starts inject deterministic 128 KiB Handoff (redacted) & record Handoff event.
+    // 4. Build prompt: cold starts inject deterministic 128 KiB Handoff (redacted, then re-bounded
+    //    to 128 KiB so `[REDACTED]` expansions cannot exceed the limit) & record Handoff event.
     let prompt_text = if used_load {
         input.user_text.to_owned()
     } else {
         let handoff_text =
-            handoff::build_handoff(input.prior_turns, input.moved_from, input.worktree)
-                .map(|text| redactor.redact_all(&text));
+            handoff::build_handoff(input.prior_turns, input.moved_from, input.worktree).map(
+                |text| {
+                    let redacted = redactor.redact_all(&text);
+                    bound_text(&redacted, handoff::HANDOFF_MAX_BYTES).0
+                },
+            );
         if let Some(prev_label) = input.previous_engine_label
             && prev_label != input.launch.spec.name
             && !input.prior_turns.is_empty()
@@ -684,7 +703,18 @@ async fn execute_on_child(
         )
     };
 
-    // 5. Arm the one-turn Verify bridge and issue `session/prompt`.
+    // 5. Arm the one-turn Verify bridge and issue `session/prompt`, checking SQLite Stop first.
+    if cancel.is_cancelled()
+        || input
+            .receipts
+            .chat_turn_active(input.session_id, input.owner)
+            .await
+            != Ok(true)
+    {
+        cancel.cancel();
+        bridge.stop().await;
+        return Err((Failure::cancelled(), false));
+    }
     bridge.arm_turn();
     let prompt_req_id = match child
         .connection
@@ -748,6 +778,7 @@ async fn execute_on_child(
                     input,
                     &mut child.connection,
                     &mut pending_perms,
+                    &mut state,
                     recorder,
                 ).await {
                     break Err(error);
@@ -763,6 +794,7 @@ async fn execute_on_child(
                         input,
                         &mut child.connection,
                         &mut pending_perms,
+                        &mut state,
                         recorder,
                     ).await
                 {
@@ -844,6 +876,7 @@ async fn execute_on_child(
                             req,
                             &redactor,
                             &mut pending_perms,
+                            &mut state,
                             recorder,
                         ).await {
                             break Err(error);
@@ -882,16 +915,19 @@ async fn execute_on_child(
             .connection
             .send_permission_cancelled(slot.rpc_id)
             .await;
-        recorder.event(Kind::AcpPermission(AcpPermissionEvent {
-            permission_id: slot.permission_id,
-            title: slot.title,
-            tool_kind: slot.tool_kind,
-            summary: slot.summary,
-            detail: slot.detail,
-            options: slot.options,
-            status: PermissionStatus::Cancelled,
-            selected_option_id: None,
-        }));
+        state.record_display(
+            recorder,
+            Kind::AcpPermission(AcpPermissionEvent {
+                permission_id: slot.permission_id,
+                title: slot.title,
+                tool_kind: slot.tool_kind,
+                summary: slot.summary,
+                detail: slot.detail,
+                options: slot.options,
+                status: PermissionStatus::Cancelled,
+                selected_option_id: None,
+            }),
+        );
     }
 
     // Immediately retire the one-turn bridge listener and token before any next turn can arm.
@@ -977,6 +1013,7 @@ async fn admit_permission(
     req: IncomingPermission,
     redactor: &StreamRedactor,
     pending: &mut BTreeMap<String, PendingPermissionSlot>,
+    state: &mut TurnAccumulator,
     recorder: &mut Recorder,
 ) -> Result<(), Failure> {
     let permission_id = agent::uuid()?;
@@ -1006,9 +1043,11 @@ async fn admit_permission(
             }
         })
         .collect();
+    // Redact agent-supplied text RPC IDs before persisting; raw `req.rpc_id` stays in memory
+    // on `PendingPermissionSlot` strictly for sending the ACP JSON-RPC reply.
     let rpc_request_id = match &req.rpc_id {
         RpcId::Number(n) => n.to_string(),
-        RpcId::Text(s) => s.clone(),
+        RpcId::Text(s) => redactor.redact_all(s),
     };
     // A request with no option left is cancelled at once, with no row to clean up later.
     let admitted = !options.is_empty()
@@ -1031,30 +1070,36 @@ async fn admit_permission(
 
     if !admitted {
         let _ = conn.send_permission_cancelled(req.rpc_id).await;
-        recorder.event(Kind::AcpPermission(AcpPermissionEvent {
-            permission_id,
-            title,
-            tool_kind: req.tool_kind,
-            summary,
-            detail,
-            options,
-            status: PermissionStatus::Cancelled,
-            selected_option_id: None,
-        }));
+        state.record_display(
+            recorder,
+            Kind::AcpPermission(AcpPermissionEvent {
+                permission_id,
+                title,
+                tool_kind: req.tool_kind,
+                summary,
+                detail,
+                options,
+                status: PermissionStatus::Cancelled,
+                selected_option_id: None,
+            }),
+        );
         recorder.notify();
         return Ok(());
     }
 
-    recorder.event(Kind::AcpPermission(AcpPermissionEvent {
-        permission_id: permission_id.clone(),
-        title: title.clone(),
-        tool_kind: req.tool_kind,
-        summary: summary.clone(),
-        detail: detail.clone(),
-        options: options.clone(),
-        status: PermissionStatus::Pending,
-        selected_option_id: None,
-    }));
+    state.record_display(
+        recorder,
+        Kind::AcpPermission(AcpPermissionEvent {
+            permission_id: permission_id.clone(),
+            title: title.clone(),
+            tool_kind: req.tool_kind,
+            summary: summary.clone(),
+            detail: detail.clone(),
+            options: options.clone(),
+            status: PermissionStatus::Pending,
+            selected_option_id: None,
+        }),
+    );
     recorder.notify();
 
     pending.insert(
@@ -1077,6 +1122,7 @@ async fn process_pending_permissions(
     input: &AcpTurnInput<'_>,
     conn: &mut super::wire::Connection,
     pending: &mut BTreeMap<String, PendingPermissionSlot>,
+    state: &mut TurnAccumulator,
     recorder: &mut Recorder,
 ) -> Result<(), Failure> {
     let ids: Vec<String> = pending.keys().cloned().collect();
@@ -1127,16 +1173,19 @@ async fn process_pending_permissions(
         if status == PermissionStatus::Cancelled {
             let _ = conn.send_permission_cancelled(slot.rpc_id).await;
         }
-        recorder.event(Kind::AcpPermission(AcpPermissionEvent {
-            permission_id: slot.permission_id,
-            title: slot.title,
-            tool_kind: slot.tool_kind,
-            summary: slot.summary,
-            detail: slot.detail,
-            options: slot.options,
-            status,
-            selected_option_id,
-        }));
+        state.record_display(
+            recorder,
+            Kind::AcpPermission(AcpPermissionEvent {
+                permission_id: slot.permission_id,
+                title: slot.title,
+                tool_kind: slot.tool_kind,
+                summary: slot.summary,
+                detail: slot.detail,
+                options: slot.options,
+                status,
+                selected_option_id,
+            }),
+        );
         recorder.notify();
         if status == PermissionStatus::Expired {
             return Err(problem.map_or_else(
@@ -1161,6 +1210,22 @@ async fn handle_bridge_call(
     recorder: &mut Recorder,
     cancel: &CancellationToken,
 ) -> Result<(), Failure> {
+    // Verify active turn ownership and stop state in SQLite at admission so a remote Stop that
+    // committed between polling ticks never admits a new Verify Run (`C-ONE-TURN-OWNERSHIP`).
+    if cancel.is_cancelled()
+        || input
+            .receipts
+            .chat_turn_active(input.session_id, input.owner)
+            .await
+            != Ok(true)
+    {
+        cancel.cancel();
+        let _ = call
+            .reply
+            .send(super::verify_bridge::no_active_turn_error(&call.id));
+        return Err(Failure::cancelled());
+    }
+
     let call_id = agent::uuid()?;
     let summary = format!("{} {}", call.name, call.arguments);
     let summary_short = summary.chars().take(120).collect::<String>();
@@ -1551,7 +1616,7 @@ fn chosen_mode_is(chosen: &[ConfigSelection], mode_id: &str) -> Result<(), Probl
     match chosen_modes(chosen).next() {
         Some(selection) if selection.value != mode_id => Err(Problem::ModeMismatch {
             requested: selection.value.clone(),
-            actual: Some(mode_id.to_owned()),
+            actual: (!mode_id.is_empty()).then(|| mode_id.to_owned()),
         }),
         _ => Ok(()),
     }

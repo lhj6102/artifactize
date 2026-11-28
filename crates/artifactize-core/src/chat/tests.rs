@@ -388,6 +388,10 @@ fn legacy_session_wire_migrates_codex_antigravity_and_retired_claude_agent() {
     });
     let session: Session = serde_json::from_value(agy_record).unwrap();
     assert!(session.legacy_migration_notice);
+    // Persisting metadata (e.g. set_chat_view) before the first ACP send must preserve the notice.
+    let roundtripped: Session =
+        serde_json::from_str(&serde_json::to_string(&session).unwrap()).unwrap();
+    assert!(roundtripped.legacy_migration_notice);
     assert!(matches!(
         session.target,
         Some(ChatTarget::Acp { ref agent, ref config })
@@ -499,7 +503,19 @@ async fn permission_cas_enforces_stop_precedence_and_validates_options() {
     );
     assert!(
         receipts
+            .chat_turn_active(&session.id, &owner)
+            .await
+            .unwrap()
+    );
+    assert!(
+        receipts
             .stop_chat_by_token(&session.id, &owner.token)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !receipts
+            .chat_turn_active(&session.id, &owner)
             .await
             .unwrap()
     );

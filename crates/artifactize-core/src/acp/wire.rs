@@ -487,7 +487,7 @@ impl Connection {
                         event,
                     } if update_sid == session_id => match event {
                         SessionEvent::ModeChanged { ref mode_id } => {
-                            observed_mode = Some(mode_id.clone());
+                            observed_mode = (!mode_id.is_empty()).then(|| mode_id.clone());
                             self.config_updates.push((update_sid, event));
                         }
                         // The newest list says which mode is current, or that none is.
@@ -717,10 +717,37 @@ impl Connection {
                 return Err(Problem::ModeMismatch { requested, actual });
             }
         }
+        // Recheck already-confirmed non-mode options (model, thought level, etc.): a later setter
+        // may replace the full live option list and reset an earlier choice, which must surface
+        // explicitly rather than proceed silently.
+        let mut reconciled = Vec::with_capacity(effective.len());
+        for mut selection in effective {
+            if selection.category == Some(ConfigCategory::Mode) {
+                reconciled.push(selection);
+                continue;
+            }
+            match live.iter().find(|opt| opt.id == selection.id) {
+                Some(opt) if opt.current_value != selection.value => {
+                    notices.push(format!(
+                        "{} reset {} from {:?} to {:?} after another setting changed.",
+                        self.agent_name, opt.name, selection.value, opt.current_value
+                    ));
+                    selection.value = opt.current_value.clone();
+                    reconciled.push(selection);
+                }
+                Some(_) => reconciled.push(selection),
+                None => {
+                    notices.push(format!(
+                        "{} dropped {} {:?} after another setting changed.",
+                        self.agent_name, selection.id, selection.value
+                    ));
+                }
+            }
+        }
 
         Ok(AppliedConfig {
             live_options: live,
-            effective_selections: effective,
+            effective_selections: reconciled,
             notices,
         })
     }
@@ -1847,7 +1874,43 @@ struct RawPermissionToolCall {
     #[serde(default)]
     locations: Vec<RawToolLocation>,
     #[serde(default)]
-    raw_input: Option<Value>,
+    raw_input: Option<RawPermissionInput>,
+}
+
+/// Typed display subset extracted from ACP `toolCall.rawInput` at the edge; unknown JSON shapes
+/// and unparsed fields are discarded rather than forwarded into public `Block::Permission.detail`.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawPermissionInput {
+    Text(String),
+    Fields(RawPermissionFields),
+    Other(serde::de::IgnoredAny),
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawCommandField {
+    Text(String),
+    Argv(Vec<String>),
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawPermissionFields {
+    #[serde(default, alias = "cmd")]
+    command: Option<RawCommandField>,
+    #[serde(default)]
+    program: Option<String>,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(default, alias = "filePath", alias = "file_path")]
+    path: Option<String>,
+    #[serde(default)]
+    cwd: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -2040,13 +2103,71 @@ fn normalize_update(raw: RawUpdate) -> Option<SessionEvent> {
                 options: normalize_config_options(config_options),
             })
         }
-        RawUpdate::CurrentModeUpdate { current_mode_id } if !current_mode_id.is_empty() => {
-            Some(SessionEvent::ModeChanged {
-                mode_id: current_mode_id,
-            })
-        }
+        RawUpdate::CurrentModeUpdate { current_mode_id } => Some(SessionEvent::ModeChanged {
+            mode_id: current_mode_id,
+        }),
         _ => None,
     }
+}
+
+fn format_permission_detail(input: RawPermissionInput) -> Option<String> {
+    let raw = match input {
+        RawPermissionInput::Text(text) => text,
+        RawPermissionInput::Fields(fields) => {
+            let mut lines = Vec::new();
+            if let Some(command) = fields.command {
+                let text = match command {
+                    RawCommandField::Text(s) => s,
+                    RawCommandField::Argv(argv) => argv.join(" "),
+                };
+                if !text.trim().is_empty() {
+                    lines.push(("Command", text));
+                }
+            } else if let Some(program) = fields.program
+                && !program.trim().is_empty()
+            {
+                let text = if fields.args.is_empty() {
+                    program
+                } else {
+                    format!("{program} {}", fields.args.join(" "))
+                };
+                lines.push(("Command", text));
+            }
+            if let Some(path) = fields.path
+                && !path.trim().is_empty()
+            {
+                lines.push(("Path", platform::normalize_external_path(&path)));
+            }
+            if let Some(cwd) = fields.cwd
+                && !cwd.trim().is_empty()
+            {
+                lines.push(("Directory", platform::normalize_external_path(&cwd)));
+            }
+            if let Some(url) = fields.url
+                && !url.trim().is_empty()
+            {
+                lines.push(("URL", url));
+            }
+            if let Some(description) = fields.description
+                && !description.trim().is_empty()
+            {
+                lines.push(("Description", description));
+            }
+            match lines.as_slice() {
+                [] => return None,
+                [(_, only)] => only.clone(),
+                many => many
+                    .iter()
+                    .map(|(label, value)| format!("{label}: {value}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            }
+        }
+        RawPermissionInput::Other(_) => return None,
+    };
+    let cleaned = platform::clean_program_text(raw.as_bytes());
+    let (bounded, _) = bound_text(&cleaned, PERMISSION_DETAIL_BYTES);
+    (!bounded.trim().is_empty()).then_some(bounded)
 }
 
 fn normalize_permission(
@@ -2081,18 +2202,7 @@ fn normalize_permission(
     } else {
         title.clone()
     };
-    let detail = tool.raw_input.and_then(|value| {
-        if value.is_null() {
-            return None;
-        }
-        let formatted = match value {
-            Value::String(text) => text,
-            other => serde_json::to_string_pretty(&other).unwrap_or_else(|_| other.to_string()),
-        };
-        let cleaned = platform::clean_program_text(formatted.as_bytes());
-        let (bounded, _) = bound_text(&cleaned, PERMISSION_DETAIL_BYTES);
-        (!bounded.trim().is_empty()).then_some(bounded)
-    });
+    let detail = tool.raw_input.and_then(format_permission_detail);
     let options = raw
         .options
         .into_iter()
@@ -2333,5 +2443,80 @@ mod tests {
         };
         assert!(!msg.contains("sk-acp-super-secret-value-999"), "{msg}");
         assert!(msg.contains("[REDACTED]"), "{msg}");
+    }
+
+    #[test]
+    fn empty_current_mode_update_is_forwarded_and_raw_input_is_typed() {
+        let mode_update = json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": "s1",
+                "update": {
+                    "sessionUpdate": "current_mode_update",
+                    "currentModeId": ""
+                }
+            }
+        });
+        let frame = parse_wire_frame(mode_update.to_string().as_bytes(), false)
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            frame,
+            WireFrame::Update {
+                event: SessionEvent::ModeChanged { ref mode_id },
+                ..
+            } if mode_id.is_empty()
+        ));
+
+        let perm_typed = json!({
+            "jsonrpc": "2.0",
+            "id": "rpc-1",
+            "method": "session/request_permission",
+            "params": {
+                "sessionId": "s1",
+                "toolCall": {
+                    "title": "Run tests",
+                    "kind": "execute",
+                    "rawInput": { "cmd": "cargo test", "arbitraryBlob": { "nested": true } }
+                },
+                "options": [
+                    { "optionId": "once", "name": "Allow once", "kind": "allow_once" }
+                ]
+            }
+        });
+        let WireFrame::PermissionRequest(req) =
+            parse_wire_frame(perm_typed.to_string().as_bytes(), false)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected permission request");
+        };
+        assert_eq!(req.detail.as_deref(), Some("cargo test"));
+
+        let perm_unknown = json!({
+            "jsonrpc": "2.0",
+            "id": "rpc-2",
+            "method": "session/request_permission",
+            "params": {
+                "sessionId": "s1",
+                "toolCall": {
+                    "title": "Opaque tool",
+                    "kind": "other",
+                    "rawInput": { "opaque": [1, 2, 3] }
+                },
+                "options": [
+                    { "optionId": "once", "name": "Allow once", "kind": "allow_once" }
+                ]
+            }
+        });
+        let WireFrame::PermissionRequest(req_unknown) =
+            parse_wire_frame(perm_unknown.to_string().as_bytes(), false)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected permission request");
+        };
+        assert_eq!(req_unknown.detail, None);
     }
 }

@@ -231,6 +231,8 @@ struct SessionWire {
     moved_from: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     acp_binding: Option<AcpBinding>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    legacy_migration_notice: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -335,9 +337,10 @@ impl From<SessionWire> for Session {
         let target = wire
             .target
             .or_else(|| wire.model.and_then(LegacyModelWire::migrate));
-        let legacy_migration_notice = target
-            .as_ref()
-            .is_some_and(ChatTarget::is_legacy_claude_agent)
+        let legacy_migration_notice = wire.legacy_migration_notice
+            || target
+                .as_ref()
+                .is_some_and(ChatTarget::is_legacy_claude_agent)
             || migrated_from_legacy_antigravity;
         Self {
             id: wire.id,
@@ -376,6 +379,7 @@ impl From<Session> for SessionWire {
             activity: session.activity,
             moved_from: session.moved_from,
             acp_binding: session.acp_binding,
+            legacy_migration_notice: session.legacy_migration_notice,
         }
     }
 }

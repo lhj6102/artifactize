@@ -24,8 +24,9 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::TcpListener,
     sync::{Semaphore, mpsc, oneshot},
-    task::JoinHandle,
+    task::{JoinHandle, JoinSet},
 };
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     agent::error::Failure,
@@ -169,6 +170,7 @@ pub struct VerifyBridge {
     active_turn: Arc<AtomicBool>,
     connected: Arc<AtomicBool>,
     in_flight: Arc<AtomicUsize>,
+    shutdown: CancellationToken,
     task: Option<JoinHandle<()>>,
 }
 
@@ -189,6 +191,7 @@ impl VerifyBridge {
         let active_turn = Arc::new(AtomicBool::new(false));
         let connected = Arc::new(AtomicBool::new(false));
         let in_flight = Arc::new(AtomicUsize::new(0));
+        let shutdown = CancellationToken::new();
         let task = tokio::spawn(serve(
             listener,
             capability.clone(),
@@ -197,6 +200,7 @@ impl VerifyBridge {
             active_turn.clone(),
             connected.clone(),
             in_flight.clone(),
+            shutdown.clone(),
         ));
         Ok(Self {
             port,
@@ -205,6 +209,7 @@ impl VerifyBridge {
             active_turn,
             connected,
             in_flight,
+            shutdown,
             task: Some(task),
         })
     }
@@ -256,11 +261,11 @@ impl VerifyBridge {
         self.calls.recv().await
     }
 
-    /// Close and retire the turn's bridge listener and token immediately.
+    /// Close and retire the turn's bridge listener, accepted sockets, and token immediately.
     pub async fn stop(mut self) {
         self.disarm_turn();
+        self.shutdown.cancel();
         if let Some(task) = self.task.take() {
-            task.abort();
             let _ = crate::task::joined(task.await);
         }
     }
@@ -269,6 +274,7 @@ impl VerifyBridge {
 impl Drop for VerifyBridge {
     fn drop(&mut self) {
         self.disarm_turn();
+        self.shutdown.cancel();
         if let Some(task) = self.task.take() {
             task.abort();
         }
@@ -279,6 +285,10 @@ fn bridge_error(error: io::Error) -> Failure {
     Failure::from(format!("Cannot open the ACP Verify MCP bridge: {error}."))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The bridge task binds listener, capability, tools, channel, turn flags and shutdown token"
+)]
 async fn serve(
     listener: TcpListener,
     capability: String,
@@ -287,29 +297,56 @@ async fn serve(
     active_turn: Arc<AtomicBool>,
     connected: Arc<AtomicBool>,
     in_flight: Arc<AtomicUsize>,
+    shutdown: CancellationToken,
 ) {
     let slots = Arc::new(Semaphore::new(MAX_BRIDGE_CONNECTIONS));
-    while let Ok((mut stream, _)) = listener.accept().await {
-        let Ok(permit) = slots.clone().try_acquire_owned() else {
-            continue;
-        };
-        let capability = capability.clone();
-        let tools = tools.clone();
-        let calls = calls.clone();
-        let active_turn = active_turn.clone();
-        let connected = connected.clone();
-        let in_flight = in_flight.clone();
-        tokio::spawn(async move {
-            let _permit = permit;
-            let mut presented = vec![0u8; capability.len()];
-            let read =
-                tokio::time::timeout(CONNECT_TIMEOUT, stream.read_exact(&mut presented)).await;
-            if matches!(read, Ok(Ok(_))) && presented == capability.as_bytes() {
-                let _ =
-                    serve_stdio(stream, &tools, &calls, &active_turn, &connected, &in_flight).await;
+    let mut connections = JoinSet::new();
+    loop {
+        tokio::select! {
+            biased;
+            () = shutdown.cancelled() => break,
+            Some(_) = connections.join_next(), if !connections.is_empty() => {}
+            accepted = listener.accept() => {
+                let Ok((mut stream, _)) = accepted else {
+                    break;
+                };
+                let Ok(permit) = slots.clone().try_acquire_owned() else {
+                    continue;
+                };
+                let capability = capability.clone();
+                let tools = tools.clone();
+                let calls = calls.clone();
+                let active_turn = active_turn.clone();
+                let connected = connected.clone();
+                let in_flight = in_flight.clone();
+                let shutdown = shutdown.clone();
+                connections.spawn(async move {
+                    let _permit = permit;
+                    let mut presented = vec![0u8; capability.len()];
+                    let read = tokio::select! {
+                        biased;
+                        () = shutdown.cancelled() => return,
+                        res = tokio::time::timeout(CONNECT_TIMEOUT, stream.read_exact(&mut presented)) => res,
+                    };
+                    if matches!(read, Ok(Ok(_))) && presented == capability.as_bytes() {
+                        let _ = serve_stdio(
+                            stream,
+                            &tools,
+                            &calls,
+                            &active_turn,
+                            &connected,
+                            &in_flight,
+                            &shutdown,
+                        )
+                        .await;
+                    }
+                });
             }
-        });
+        }
     }
+    drop(listener);
+    connections.abort_all();
+    while connections.join_next().await.is_some() {}
 }
 
 async fn serve_stdio(
@@ -319,17 +356,21 @@ async fn serve_stdio(
     active_turn: &AtomicBool,
     connected: &AtomicBool,
     in_flight: &AtomicUsize,
+    shutdown: &CancellationToken,
 ) -> io::Result<()> {
     let (input, mut output) = stream.into_split();
     let mut input = BufReader::new(input);
     loop {
         let mut line = Vec::new();
-        if (&mut input)
-            .take(LINE_BYTES + 1)
-            .read_until(b'\n', &mut line)
-            .await?
-            == 0
-        {
+        let read = {
+            let mut limited = (&mut input).take(LINE_BYTES + 1);
+            tokio::select! {
+                biased;
+                () = shutdown.cancelled() => return Ok(()),
+                res = limited.read_until(b'\n', &mut line) => res?,
+            }
+        };
+        if read == 0 {
             return Ok(());
         }
         if line.len() as u64 > LINE_BYTES {
@@ -337,10 +378,16 @@ async fn serve_stdio(
         }
         let request = serde_json::from_slice(&line);
         line.clear();
+        // Hold the in-flight guard across the full reply write so quiescence never observes
+        // zero while a tool reply is still being written to the socket.
+        let mut _in_flight_guard = None;
         let reply = match request {
             Ok(stdio_mcp::Rpc::Unknown { id: None, .. }) => continue,
             Ok(rpc) => match tools.answer(rpc) {
                 stdio_mcp::Answer::Reply(reply) => {
+                    if shutdown.is_cancelled() {
+                        return Ok(());
+                    }
                     connected.store(true, Ordering::Relaxed);
                     reply
                 }
@@ -352,7 +399,7 @@ async fn serve_stdio(
                     // Counted before the turn check, as the engine disarms before it counts:
                     // a call is either refused here or seen in flight there, never neither.
                     let guard = InFlightGuard::enter(in_flight);
-                    if !active_turn.load(Ordering::SeqCst) {
+                    if !active_turn.load(Ordering::SeqCst) || shutdown.is_cancelled() {
                         drop(guard);
                         no_active_turn_error(&id)
                     } else if !is_allowlisted(&name) {
@@ -362,7 +409,7 @@ async fn serve_stdio(
                             &format!("Tool {name:?} is not allowlisted on the ACP Verify bridge."),
                         )
                     } else {
-                        let _guard = guard;
+                        _in_flight_guard = Some(guard);
                         let (reply_tx, receive) = oneshot::channel();
                         if calls
                             .send(BridgeCall {
@@ -376,9 +423,13 @@ async fn serve_stdio(
                         {
                             no_active_turn_error(&id)
                         } else {
-                            match receive.await {
-                                Ok(reply) => reply,
-                                Err(_) => no_active_turn_error(&id),
+                            tokio::select! {
+                                biased;
+                                () = shutdown.cancelled() => return Ok(()),
+                                res = receive => match res {
+                                    Ok(reply) => reply,
+                                    Err(_) => no_active_turn_error(&id),
+                                },
                             }
                         }
                     }
@@ -388,7 +439,11 @@ async fn serve_stdio(
         };
         serde_json::to_writer(&mut line, &reply)?;
         line.push(b'\n');
-        output.write_all(&line).await?;
+        tokio::select! {
+            biased;
+            () = shutdown.cancelled() => return Ok(()),
+            res = output.write_all(&line) => res?,
+        }
     }
 }
 
@@ -407,7 +462,7 @@ impl Drop for InFlightGuard<'_> {
     }
 }
 
-fn no_active_turn_error(id: &stdio_mcp::RpcId) -> Value {
+pub(super) fn no_active_turn_error(id: &stdio_mcp::RpcId) -> Value {
     json!({
         "jsonrpc": "2.0",
         "id": id,
@@ -510,5 +565,37 @@ mod tests {
         ] {
             assert!(!is_allowlisted(excluded), "{excluded} must be excluded");
         }
+    }
+
+    #[tokio::test]
+    async fn stop_retires_accepted_socket_connections() {
+        let bridge = VerifyBridge::start(stdio_mcp::Server::new(std::iter::empty())).unwrap();
+        let port: u16 = bridge.port.parse().unwrap();
+        let capability = bridge.capability.clone();
+        let mut client = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+            .await
+            .unwrap();
+        client.write_all(capability.as_bytes()).await.unwrap();
+        // Send initialize and read reply while bridge is live.
+        let init = b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n";
+        client.write_all(init).await.unwrap();
+        let mut reader = BufReader::new(client);
+        let mut reply = String::new();
+        assert!(reader.read_line(&mut reply).await.unwrap() > 0);
+        assert!(reply.contains("\"id\":1"), "{reply}");
+
+        // Retiring the bridge aborts accepted socket tasks so further non-tool requests get EOF.
+        bridge.stop().await;
+        let mut client = reader.into_inner();
+        let _ = client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n")
+            .await;
+        let mut reader = BufReader::new(client);
+        let mut after = String::new();
+        let read = reader.read_line(&mut after).await;
+        assert!(
+            matches!(read, Ok(0) | Err(_)),
+            "expected EOF or reset after stop, got {read:?} ({after:?})"
+        );
     }
 }
