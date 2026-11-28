@@ -276,10 +276,15 @@ if (import.meta.main) {
     else if (mode === "batch") {
       // Until it has passed, a batch that ends, by an interrupt too, has failed.
       process.exitCode = 1;
+      // A batch on a prepared candidate holds the suite's own integrity rules too (E2E-INPUT,
+      // E2E-PROVIDER-UPSTREAM): an edited provider is refused here, not only by `suite`.
+      checkSuite();
       await batch();
       process.exitCode = 0;
     }
     else if (mode === "prepare") {
+      // Never build a candidate from a tree the suite would refuse.
+      checkSuite();
       const disposeTrees = prepareProcessTrees();
       try {
         const candidate = await prepare();
