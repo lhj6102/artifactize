@@ -8,10 +8,9 @@ name: Release
 #   git tag v0.5.4 && git push origin v0.5.4
 #
 # 1. The Linux release builds run after reading the tag. The tag must name a commit whose
-#    Binaries run on its release/* push passed: that run smoke-tested the installers, which
-#    the tag release builds again without repeating the smoke. Its best-effort platforms may
-#    fail without failing it, so a platform's packages are attached only when that platform's
-#    job passed in it.
+#    Binaries run on its release/* push passed. The tag's own builds smoke-test the installers
+#    they built, as every Binaries run does, and keep only what passed: a package is attached
+#    only when its own smoke passed in this release.
 # 2. Once they pass, publish creates the GitHub release with the Linux archives and
 #    their .sha256 checksums, so install.sh serves the new version; crates then publishes
 #    the crates to crates.io. A failed Linux build publishes nothing, and a failed
@@ -44,8 +43,6 @@ jobs:
     outputs:
       version: ${{ steps.tag.outputs.version }}
       prerelease: ${{ steps.tag.outputs.prerelease }}
-      # The packages smoke-tested by the release/* Binaries run, separated by spaces.
-      smoked: ${{ steps.tag.outputs.smoked }}
     steps:
       - id: tag
         env:
@@ -56,31 +53,13 @@ jobs:
             echo "Tag $GITHUB_REF_NAME is not v<major>.<minor>.<patch>[-<prerelease>]." >&2
             exit 1
           fi
-          # The installers of this commit were smoke-tested by its release/* Binaries run; a
-          # commit without a passing one is refused before anything is built or published.
-          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/binaries.yml/runs?head_sha=$GITHUB_SHA&event=push&status=success&per_page=1" --jq '.workflow_runs[0].id // empty')
-          if [ -z "$run" ]; then
+          # A tag names a commit its release/* branch already passed Binaries with; a commit
+          # without such a run is refused before anything is built or published.
+          passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/binaries.yml/runs?head_sha=$GITHUB_SHA&event=push&status=success&per_page=1" --jq '.total_count')
+          if [ "${passed:-0}" -eq 0 ]; then
             echo "Commit $GITHUB_SHA has no passing Binaries run from a release/* push; push it to its release branch, let Binaries pass, then tag it." >&2
             exit 1
           fi
-          # Its best-effort jobs may fail while the run passes: a platform counts as smoked
-          # only when every job that builds and smoke-tests its packages passed.
-          passed=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs?per_page=100" --jq '.jobs[] | select(.conclusion == "success") | .name')
-          smoked=""
-          package() {
-            name=$1
-            shift
-            for job in "$@"; do
-              printf '%s\n' "$passed" | grep -Fxq "$job" || return 0
-            done
-            smoked="${smoked:+$smoked }$name"
-          }
-          package x86_64-pc-windows-msvc "Build x86_64-pc-windows-msvc"
-          package aarch64-apple-darwin "Build aarch64-apple-darwin"
-          package x86_64-apple-darwin "Build x86_64-apple-darwin"
-          package desktop-universal-apple-darwin "Build desktop universal-apple-darwin" "Open desktop universal-apple-darwin on Intel"
-          echo "Smoke-tested by Binaries run $run: ${smoked:-nothing beyond Linux}"
-          echo "smoked=$smoked" >>"$GITHUB_OUTPUT"
           case $version in
             *-*) prerelease=true ;;
             *) prerelease=false ;;
@@ -185,8 +164,7 @@ jobs:
 
   attach-windows:
     name: Attach the Windows zip (best effort)
-    needs: [plan, publish, windows]
-    if: contains(format(' {0} ', needs.plan.outputs.smoked), ' x86_64-pc-windows-msvc ')
+    needs: [publish, windows]
     runs-on: ubuntu-latest
     continue-on-error: true
     permissions:
@@ -207,7 +185,7 @@ jobs:
 
   attach-macos:
     name: Attach the macOS tarballs (best effort)
-    needs: [plan, publish, macos]
+    needs: [publish, macos]
     runs-on: ubuntu-latest
     continue-on-error: true
     strategy:
@@ -222,7 +200,6 @@ jobs:
           name: binaries-${{ matrix.target }}
           path: dist
       - name: Attach this macOS archive and its checksum
-        if: contains(format(' {0} ', needs.plan.outputs.smoked), format(' {0} ', matrix.target))
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -233,13 +210,14 @@ jobs:
 
   attach-desktop:
     name: Attach the desktop bundles (best effort)
-    needs: [plan, publish, macos, linux-desktop]
+    needs: [publish, macos, linux-desktop]
     # Each bundle that built is attached, whichever other platform failed.
     if: always() && needs.publish.result == 'success'
     runs-on: ubuntu-latest
     continue-on-error: true
     permissions:
       contents: write # the GitHub release
+      actions: read # whether the macOS app opened on Intel
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -250,11 +228,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          MACOS_SMOKED: ${{ contains(format(' {0} ', needs.plan.outputs.smoked), ' desktop-universal-apple-darwin ') }}
         working-directory: dist
         run: |
-          # The macOS bundle is attached only when its release/* smoke passed.
-          if [ "$MACOS_SMOKED" != true ]; then
+          # Each bundle here passed its own smoke before it was kept. The universal macOS app
+          # must also have opened on an Intel Mac in this release, or it is not attached.
+          intel=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" --jq '.jobs[] | select(.name | endswith("Open desktop universal-apple-darwin on Intel")) | .conclusion')
+          if [ "$intel" != success ]; then
             rm -f ./*-apple-darwin*
           fi
           sha256sum -c ./*.sha256
@@ -274,8 +253,7 @@ jobs:
 
   attach-channels:
     name: Attach the unsigned Store upload (best effort)
-    needs: [plan, publish, windows]
-    if: contains(format(' {0} ', needs.plan.outputs.smoked), ' x86_64-pc-windows-msvc ')
+    needs: [publish, windows]
     runs-on: ubuntu-latest
     continue-on-error: true
     permissions:
@@ -294,11 +272,6 @@ jobs:
   homebrew:
     name: Update Homebrew tap (optional)
     needs: [plan, publish, attach-macos, attach-desktop]
-    # Its formula and cask name every macOS package, so all of them must have been smoked.
-    if: >-
-      contains(format(' {0} ', needs.plan.outputs.smoked), ' aarch64-apple-darwin ')
-      && contains(format(' {0} ', needs.plan.outputs.smoked), ' x86_64-apple-darwin ')
-      && contains(format(' {0} ', needs.plan.outputs.smoked), ' desktop-universal-apple-darwin ')
     runs-on: ubuntu-latest
     environment: release
     continue-on-error: true
@@ -324,7 +297,20 @@ jobs:
           merge-multiple: true
       - name: Generate and update the stable formula and the desktop app's cask
         if: steps.gate.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
+          # The formula and the cask link this release's own assets: every macOS package they
+          # name must have been attached, or the tap is left as it is.
+          attached=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')
+          for file in dist/*; do
+            name=$(basename "$file")
+            if ! printf '%s\n' "$attached" | grep -Fxq "$name"; then
+              echo "$name is not attached to $GITHUB_REF_NAME; the Homebrew tap is left as it is." >&2
+              exit 0
+            fi
+          done
           python3 -I .github/scripts/channels.py generate homebrew --version "$VERSION" --dist dist --output formula
           python3 -I .github/scripts/channels.py generate cask --version "$VERSION" --dist dist --output cask
           python3 -I .github/scripts/channels.py publish homebrew --version "$VERSION" --formula formula/artifactize.rb --cask cask/artifactize.rb

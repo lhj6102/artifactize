@@ -153,16 +153,13 @@ Microsoft references used for the package and API:
 ## Packaging seams
 
 `binaries.yml` runs on `release/*` pushes and pull requests, manual rehearsals, and tag
-releases (via `release.yml`). The install and smoke steps below run on the `release/*`
-pushes and pull requests and the rehearsals; a tag release names a `release/*` commit those
-runs already checked, so its Binaries run builds and retains the same packages from that
-commit without repeating them (release verification belongs to CI and Binaries, not a
-duplicate tag-time test job). `release.yml` enforces it: its first job refuses a tag whose
-commit has no successful Binaries run from a `release/*` push, before anything is built or
-published. That run passes even when a best-effort platform's job fails, so the first job also
-reads its jobs: the Windows zip and Store package, each macOS tarball and the macOS desktop
-bundle are attached only when the jobs that built and smoke-tested them passed, and Homebrew
-is updated only when every macOS package was. On every run, its Linux policy job
+releases (via `release.yml`). Every one of those runs the install and smoke steps below on the
+packages it built and uploads a package only once its smoke passed, so what a release
+attaches was installed and run as released (release verification belongs to CI and Binaries,
+not a duplicate tag-time test job). `release.yml`'s first job also refuses a tag whose commit
+has no successful Binaries run from a `release/*` push, before anything is built or
+published. The macOS desktop bundle is attached only when it also opened on an Intel Mac in
+the release, and Homebrew is updated only when every macOS package it names was attached. On every run, its Linux policy job
 runs `python3 -I .github/scripts/test-channels.py`: generated metadata, prerelease
 skips, missing credentials, simulated certification/drafts, and the Store
 clone/update/upload/commit sequence are checked without network submission.
