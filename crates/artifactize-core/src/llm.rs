@@ -82,6 +82,25 @@ pub(crate) struct HttpRoute {
 
 /// Resolve `backend` on this machine: a built-in eval/direct provider, or the custom HTTP
 /// provider `state` saved under that name. `purpose` completes a missing-key error; a missing
+/// Reject Chat-only ACP backends before an Agent eval execution is claimed or counted
+/// (`C-EVAL-ARTIFACTIZE-DRIVEN`).
+pub(crate) fn validate_eval_backend(
+    backend: &Backend,
+    state: Option<&Path>,
+    repo: Option<&Path>,
+) -> Result<(), String> {
+    backend.validate_eval()?;
+    if backend.builtin().is_none()
+        && providers::custom(backend, state, repo)?.is_none()
+        && crate::acp::catalog::is_chat_agent(backend.as_str(), state, repo)
+    {
+        return Err(format!(
+            r#""{backend}" is a Chat-only ACP agent, not an eval backend."#
+        ));
+    }
+    Ok(())
+}
+
 /// provider or key is an authentication failure. If an unknown name matches a Chat-only ACP
 /// agent, returns a targeted Chat-only diagnostic.
 pub(crate) fn route(

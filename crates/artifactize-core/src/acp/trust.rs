@@ -6,7 +6,7 @@
 //! executable's bytes directly at the Trust gate before every spawn or warm reuse.
 
 use std::{
-    io::Read,
+    io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
@@ -104,6 +104,22 @@ impl LauncherFingerprint {
         let args_hash = hash_args(args);
         Ok(Self {
             resolved_executable: canonical,
+            executable_sha256,
+            args_hash,
+        })
+    }
+
+    /// Compute the launcher fingerprint directly from an already-opened executable handle so the
+    /// caller can bind spawn to that exact verified handle.
+    pub(crate) fn compute_from_file(
+        resolved_executable: PathBuf,
+        file: &mut std::fs::File,
+        args: &[String],
+    ) -> Result<Self, String> {
+        let executable_sha256 = hash_file(file, &resolved_executable)?;
+        let args_hash = hash_args(args);
+        Ok(Self {
+            resolved_executable,
             executable_sha256,
             args_hash,
         })
@@ -231,6 +247,17 @@ pub fn hash_executable(path: &Path) -> Result<String, String> {
                 platform::path_text(path)
             )
         })?;
+    hash_file(&mut file, path)
+}
+
+/// Hash an already-opened regular executable file directly via SHA-256 and rewind it to offset 0.
+pub(crate) fn hash_file(file: &mut std::fs::File, path: &Path) -> Result<String, String> {
+    file.seek(SeekFrom::Start(0)).map_err(|error| {
+        format!(
+            "Cannot seek ACP executable {}: {error}.",
+            platform::path_text(path)
+        )
+    })?;
     let mut hasher = Sha256::new();
     let mut buffer = [0u8; HASH_CHUNK_BYTES];
     loop {
@@ -245,6 +272,12 @@ pub fn hash_executable(path: &Path) -> Result<String, String> {
         }
         hasher.update(&buffer[..count]);
     }
+    file.seek(SeekFrom::Start(0)).map_err(|error| {
+        format!(
+            "Cannot rewind ACP executable {}: {error}.",
+            platform::path_text(path)
+        )
+    })?;
     Ok(hex_digest(hasher.finalize().as_slice()))
 }
 

@@ -47,10 +47,11 @@ pub(crate) use os::{
     CRLF_LINE_ENDINGS, Child, ENV_NAMES_IGNORE_CASE, PrivateTempDir, TEMP_VARIABLES,
     USER_VARIABLES, create_private_dir, create_private_dir_all, file_identity, hide_console_window,
     home_directory, host_name, ipc, is_owner_only, is_private_dir, is_private_file,
-    kill_saved_group, kill_saved_session, path_from_bytes, private_named_dir, private_options,
-    private_tempdir_in, process_start_time, release_free_memory, remove_tree,
-    resolve_system_aliases, restrict_executable_file, restrict_file, running_process_start_time,
-    spawn_gated, spawn_now, spawn_windowless, sync_dir, transient_file_access, venv_bin_dir,
+    kill_saved_group, kill_saved_session, open_verified_executable, path_from_bytes,
+    private_named_dir, private_options, private_tempdir_in, process_start_time,
+    release_free_memory, remove_tree, resolve_system_aliases, restrict_executable_file,
+    restrict_file, running_process_start_time, spawn_gated, spawn_now, spawn_verified,
+    spawn_windowless, sync_dir, transient_file_access, venv_bin_dir,
 };
 pub(crate) use os::{PRIVATE_DIRECTORY, PRIVATE_FILE};
 

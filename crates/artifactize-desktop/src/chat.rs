@@ -1125,19 +1125,25 @@ pub async fn chat_permission_respond(
         .map_err(Failure::Action)
 }
 
-/// Record explicit machine-local Workspace Trust for an ACP agent on a worktree/repo scope, for
-/// the launcher `fingerprint` the trust prompt showed.
+/// Record explicit machine-local Workspace Trust for an ACP agent on the `scope` and launcher
+/// `fingerprint` the trust prompt showed.
 #[tauri::command]
 #[specta::specta]
 pub async fn chat_trust_grant(
     app: tauri::State<'_, App>,
     worktree: PathKey,
     agent: String,
+    scope: ChatTrustScope,
     fingerprint: ChatLauncherFingerprint,
 ) -> Result<ChatTrustRecord, Failure> {
     let agent_id: acp::AgentId = agent.parse().map_err(Failure::Invalid)?;
     app.chat
-        .trust_workspace(&worktree.to_path(), &agent_id, &fingerprint.into())
+        .trust_workspace(
+            &worktree.to_path(),
+            &agent_id,
+            &scope.into(),
+            &fingerprint.into(),
+        )
         .await
         .map(Into::into)
         .map_err(Failure::Action)

@@ -55,33 +55,34 @@ impl WarmChild {
         generation: u64,
         worktree: &Path,
     ) -> Result<Self, Problem> {
-        launch.reverify_before_exec(worktree)?;
+        let verified_file = launch.open_and_reverify_before_exec(worktree)?;
         let spec = &launch.spec;
         let resolved_executable = &launch.fingerprint.resolved_executable;
         let executable_sha256 = launch.fingerprint.executable_sha256.clone();
         let runtime_fingerprint = launch.runtime_fingerprint.clone();
         let process_cancel = CancellationToken::new();
-        let command = process::Command {
-            program: resolved_executable.as_os_str().to_owned(),
-            args: spec.args.iter().map(Into::into).collect(),
-            cwd: worktree.to_path_buf(),
-            env: spec.build_env(true),
-            // Process supervision is decoupled from turn deadlines; spawn_supervised does not
-            // attach a fixed execution deadline to the child lifetime.
-            timeout: Duration::MAX,
-        };
-        let mut child = process::spawn_supervised(&command, &process_cancel)
-            .await
-            .map_err(|error| {
-                if matches!(&error, process::Error::Spawn(e) if e.kind() == std::io::ErrorKind::NotFound) {
-                    Problem::Missing {
-                        agent: spec.name.clone(),
-                        hint: spec.install_hint.clone(),
-                    }
-                } else {
-                    Problem::Failed(format!("Cannot start {}: {error}.", spec.name))
+        let args: Vec<std::ffi::OsString> = spec.args.iter().map(Into::into).collect();
+        let env = spec.build_env(true);
+        let mut child = process::spawn_verified_supervised(
+            resolved_executable,
+            verified_file,
+            &args,
+            worktree,
+            &env,
+            &process_cancel,
+        )
+        .await
+        .map_err(|error| {
+            if matches!(&error, process::Error::Spawn(e) if e.kind() == std::io::ErrorKind::NotFound)
+            {
+                Problem::Missing {
+                    agent: spec.name.clone(),
+                    hint: spec.install_hint.clone(),
                 }
-            })?;
+            } else {
+                Problem::Failed(format!("Cannot start {}: {error}.", spec.name))
+            }
+        })?;
         let stdout = child.stdout().take().expect("ACP stdout piped");
         let stdin = child.stdin().take().expect("ACP stdin piped");
         let mut stderr = child.stderr().take().expect("ACP stderr piped");

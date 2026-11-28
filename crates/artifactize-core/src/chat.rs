@@ -233,6 +233,8 @@ struct SessionWire {
     acp_binding: Option<AcpBinding>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     legacy_migration_notice: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    previous_engine: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -324,6 +326,9 @@ pub struct Session {
     /// True when this historical session was saved on a legacy engine (`claude-agent` or legacy
     /// `antigravity`) so the UI and handoff surface the transition explicitly (`C-NO-SILENT-REGRESSION`).
     pub legacy_migration_notice: bool,
+    /// Engine label the conversation ran on before a picker switch, for legacy transcripts whose
+    /// `Kind::Send` events predate `Send.engine` (`C-NO-SILENT-REGRESSION`).
+    pub(crate) previous_engine: Option<String>,
     pub unavailable: Option<String>,
 }
 
@@ -342,6 +347,9 @@ impl From<SessionWire> for Session {
                 .as_ref()
                 .is_some_and(ChatTarget::is_legacy_claude_agent)
             || migrated_from_legacy_antigravity;
+        let previous_engine = wire
+            .previous_engine
+            .or_else(|| migrated_from_legacy_antigravity.then(|| "Legacy Antigravity".to_owned()));
         Self {
             id: wire.id,
             title: wire.title,
@@ -359,6 +367,7 @@ impl From<SessionWire> for Session {
             live_config_options: Vec::new(),
             verify_bridge_state: VerifyBridgeState::NotConnected,
             legacy_migration_notice,
+            previous_engine,
             unavailable: None,
         }
     }
@@ -380,6 +389,7 @@ impl From<Session> for SessionWire {
             moved_from: session.moved_from,
             acp_binding: session.acp_binding,
             legacy_migration_notice: session.legacy_migration_notice,
+            previous_engine: session.previous_engine,
         }
     }
 }
@@ -867,6 +877,7 @@ impl Chat {
             live_config_options: Vec::new(),
             verify_bridge_state: VerifyBridgeState::NotConnected,
             legacy_migration_notice,
+            previous_engine: None,
             unavailable: None,
         };
         let session = crate::task::blocking(move || session.with_checkout()).await?;
@@ -1163,7 +1174,14 @@ impl Chat {
         let live_permissions = store::chat::list_permissions(&self.state, id).await?;
         let conversation = Conversation::load(&path(&self.state, id))?;
         let handoff_from = session.target.as_ref().and_then(|target| {
-            handoff_from(conversation.as_ref(), &target.engine_label(), || None)
+            let next = target.engine_label();
+            handoff_from(conversation.as_ref(), &next, || {
+                session
+                    .previous_engine
+                    .as_ref()
+                    .filter(|prev| *prev != &next)
+                    .cloned()
+            })
         });
         let mut turns = transcript::turns(conversation.as_ref(), running, &live_permissions);
         transcript::update_runs(&self.state, &session.worktree, id, &mut turns).await;
@@ -1224,13 +1242,14 @@ impl Chat {
         Ok(updated)
     }
 
-    /// Record explicit machine-local Workspace Trust for an ACP agent on a worktree/repo scope,
-    /// for the launcher `shown` to the person who confirmed it. A launcher that changed since is
-    /// refused, so trust never covers bytes nobody was asked about.
+    /// Record explicit machine-local Workspace Trust for an ACP agent on the `shown_scope` and
+    /// `shown` launcher fingerprint presented to the user. If either the checkout scope or the
+    /// executable changed since the prompt was shown, consent is refused (`C-TRUST-BEFORE-WORKTREE`).
     pub async fn trust_workspace(
         &self,
         worktree: &Path,
         agent_id: &AgentId,
+        shown_scope: &TrustScope,
         shown: &acp::trust::LauncherFingerprint,
     ) -> Result<TrustRecord, String> {
         let worktree =
@@ -1250,6 +1269,12 @@ impl Chat {
             Ok::<_, String>((spec, scope, fingerprint))
         })
         .await??;
+        if scope != *shown_scope {
+            return Err(format!(
+                "The workspace checkout changed after you were asked to trust {}; send the message again to review the new scope.",
+                spec.name
+            ));
+        }
         if fingerprint != *shown {
             return Err(format!(
                 "{}'s launcher changed after you were asked to trust it; send the message again to review the new one.",
@@ -1405,10 +1430,17 @@ impl Chat {
                         let engine_label = effective_target.engine_label();
                         let previous_label =
                             handoff_from(conversation.as_ref(), &engine_label, || {
-                                previous_target
+                                session
+                                    .previous_engine
                                     .as_ref()
-                                    .map(ChatTarget::engine_label)
-                                    .filter(|prev| prev != &engine_label)
+                                    .filter(|prev| *prev != &engine_label)
+                                    .cloned()
+                                    .or_else(|| {
+                                        previous_target
+                                            .as_ref()
+                                            .map(ChatTarget::engine_label)
+                                            .filter(|prev| prev != &engine_label)
+                                    })
                                     .or_else(|| {
                                         session
                                             .acp_binding
@@ -1448,16 +1480,24 @@ impl Chat {
                         };
                         let prior_turns = transcript::turns(conversation.as_ref(), false, &[]);
                         let last_outcome = conversation.as_ref().and_then(transcript::last_outcome);
+                        let next_engine_label = effective_target.engine_label();
                         let previous_engine_label = handoff_from(
                             conversation.as_ref(),
-                            &effective_target.engine_label(),
+                            &next_engine_label,
                             || {
-                                previous_engine_label(
-                                    previous_target.as_ref(),
-                                    session.acp_binding.as_ref(),
-                                    session.legacy_migration_notice,
-                                    agent,
-                                )
+                                session
+                                    .previous_engine
+                                    .as_ref()
+                                    .filter(|prev| *prev != &next_engine_label)
+                                    .cloned()
+                                    .or_else(|| {
+                                        previous_engine_label(
+                                            previous_target.as_ref(),
+                                            session.acp_binding.as_ref(),
+                                            session.legacy_migration_notice,
+                                            agent,
+                                        )
+                                    })
                             },
                         );
                         ChatEngine::Acp {

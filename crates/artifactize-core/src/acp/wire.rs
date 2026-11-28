@@ -64,6 +64,10 @@ pub const MAX_PENDING_PERMISSIONS: usize = 16;
 pub const PERMISSION_DETAIL_BYTES: usize = 16 * 1024;
 /// Bounded FIFO channel capacity between the stdout reader task and the turn/connection owner.
 pub const UPDATE_CHANNEL_CAPACITY: usize = 256;
+/// Maximum buffered config/mode updates accumulated while awaiting an ACP control response.
+const MAX_CONFIG_UPDATES: usize = 64;
+/// Bounded deadline for writing a JSON-RPC frame to the child's stdin pipe.
+const STDIN_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Some Antigravity CLI versions print this line before returning an auth error.
 pub const AUTH_LINK_MARKER: &str = "Open the following link to authenticate the ACP server:";
 
@@ -488,7 +492,7 @@ impl Connection {
                     } if update_sid == session_id => match event {
                         SessionEvent::ModeChanged { ref mode_id } => {
                             observed_mode = (!mode_id.is_empty()).then(|| mode_id.clone());
-                            self.config_updates.push((update_sid, event));
+                            self.record_config_update(update_sid, event);
                         }
                         // The newest list says which mode is current, or that none is.
                         SessionEvent::ConfigOptionsUpdated { ref options } => {
@@ -496,7 +500,7 @@ impl Connection {
                                 .iter()
                                 .find(|opt| opt.category == ConfigCategory::Mode)
                                 .map(|opt| opt.current_value.clone());
-                            self.config_updates.push((update_sid, event));
+                            self.record_config_update(update_sid, event);
                         }
                         _ => {}
                     },
@@ -590,12 +594,18 @@ impl Connection {
                 refreshed
             };
 
+            // Match the exact selected option ID first. Only non-Mode options may fall back to
+            // matching by category (e.g. a migrated legacy `model` / `thought_level` selection);
+            // a Mode selection never silently substitutes another Mode option (`C-NO-SILENT-REGRESSION`).
             let Some(current_opt) = live
                 .iter()
-                .find(|opt| {
-                    opt.id == selection.id
-                        || (selection.category.is_some()
-                            && Some(opt.category) == selection.category)
+                .find(|opt| opt.id == selection.id)
+                .or_else(|| {
+                    (inferred_cat != ConfigCategory::Mode)
+                        .then_some(selection.category)
+                        .flatten()
+                        .filter(|cat| *cat != ConfigCategory::Other)
+                        .and_then(|cat| live.iter().find(|opt| opt.category == cat))
                 })
                 .cloned()
             else {
@@ -1011,7 +1021,7 @@ impl Connection {
                         event:
                             event @ (SessionEvent::ConfigOptionsUpdated { .. }
                             | SessionEvent::ModeChanged { .. }),
-                    } => self.config_updates.push((session_id, event)),
+                    } => self.record_config_update(session_id, event),
                     WireFrame::Update { .. }
                     | WireFrame::Response { .. }
                     | WireFrame::Error { .. } => {}
@@ -1025,6 +1035,26 @@ impl Connection {
                 self.agent_name
             )))
         })
+    }
+
+    fn record_config_update(&mut self, session_id: String, event: SessionEvent) {
+        match &event {
+            SessionEvent::ConfigOptionsUpdated { .. } => {
+                // A full option list supersedes every earlier config/mode update for this session.
+                self.config_updates.retain(|(sid, _)| sid != &session_id);
+            }
+            SessionEvent::ModeChanged { .. } => {
+                // Only the latest mode change for this session matters after any full list.
+                self.config_updates.retain(|(sid, existing)| {
+                    !(sid == &session_id && matches!(existing, SessionEvent::ModeChanged { .. }))
+                });
+            }
+            _ => return,
+        }
+        if self.config_updates.len() >= MAX_CONFIG_UPDATES {
+            self.config_updates.remove(0);
+        }
+        self.config_updates.push((session_id, event));
     }
 
     async fn send_request(&mut self, method: &str, params: Value) -> Result<u64, Problem> {
@@ -1043,13 +1073,24 @@ impl Connection {
     async fn send_json(&mut self, value: &Value) -> Result<(), Problem> {
         let mut bytes = value.to_string().into_bytes();
         bytes.push(b'\n');
-        self.write.write_all(&bytes).await.map_err(|_| {
-            Problem::Failed(format!("{} stopped reading ACP input.", self.agent_name))
-        })?;
-        self.write
-            .flush()
-            .await
-            .map_err(|_| Problem::Failed(format!("{} stopped reading ACP input.", self.agent_name)))
+        let agent_name = self.agent_name.clone();
+        tokio::time::timeout(STDIN_WRITE_TIMEOUT, async {
+            self.write
+                .write_all(&bytes)
+                .await
+                .map_err(|_| Problem::Failed(format!("{agent_name} stopped reading ACP input.")))?;
+            self.write
+                .flush()
+                .await
+                .map_err(|_| Problem::Failed(format!("{agent_name} stopped reading ACP input.")))
+        })
+        .await
+        .unwrap_or_else(|_| {
+            Err(Problem::Failed(format!(
+                "{} timed out reading ACP input.",
+                self.agent_name
+            )))
+        })
     }
 
     async fn next_raw_frame(&mut self, method: &str) -> Result<WireFrame, Problem> {

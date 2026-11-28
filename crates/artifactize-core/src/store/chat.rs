@@ -465,6 +465,7 @@ impl Receipts {
                 session.view = current.view;
                 session.acp_binding = acp_binding.clone();
                 session.moved_from = None;
+                session.previous_engine = None;
                 save(&transaction, &session)?;
                 transaction.commit()?;
                 Ok::<_, Error>((target, acp_binding))
@@ -508,6 +509,13 @@ impl Receipts {
                             binding.remote_session_id = None;
                             binding.warm_owner = None;
                         }
+                    }
+                    // Remember the engine the conversation last ran on before a picker switch so
+                    // legacy transcripts without `Send.engine` still emit a Handoff event.
+                    if session.previous_engine.is_none()
+                        && let Some(prev) = &session.target
+                    {
+                        session.previous_engine = Some(prev.engine_label());
                     }
                     session.target = Some(target);
                     session.updated_at = crate::broker::now();

@@ -17,9 +17,9 @@ pub(crate) use tempfile::TempDir as PrivateTempDir;
 use tokio::signal::unix::{SignalKind, signal};
 
 pub(crate) use process::{
-    Child, hide_console_window, kill_saved_group, kill_saved_session, process_start_time,
-    running_process_start_time, spawn_detached, spawn_gated, spawn_now, spawn_run, spawn_watched,
-    spawn_windowless,
+    Child, hide_console_window, kill_saved_group, kill_saved_session, open_verified_executable,
+    process_start_time, running_process_start_time, spawn_detached, spawn_gated, spawn_now,
+    spawn_run, spawn_verified, spawn_watched, spawn_windowless,
 };
 
 /// Give the heap memory freed so far back to the system. glibc keeps freed memory in its

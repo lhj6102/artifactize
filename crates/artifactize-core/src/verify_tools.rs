@@ -137,12 +137,12 @@ impl Call {
     }
 
     /// Remap an ACP agent-supplied `verify_start` `request_key` into the disjoint internal
-    /// `chat/<sha256[..32]>` namespace and attach canonical `request_args_hash`.
+    /// `chat/<sha256[..32]>` namespace and attach precomputed canonical `request_args_hash`.
     pub(crate) fn remap_acp_chat_key(
         &mut self,
         session_id: &crate::types::SessionId,
         send: usize,
-        raw_arguments: &serde_json::Value,
+        args_hash: String,
     ) -> Result<(), String> {
         if let Command::Verify(Verify::Start(args)) = &mut self.command
             && let Some(agent_key) = args.request_key.take()
@@ -152,9 +152,7 @@ impl Call {
                 send,
                 agent_key.as_str(),
             )?);
-            args.request_args_hash = Some(crate::acp::verify_bridge::canonical_args_hash(
-                raw_arguments,
-            ));
+            args.request_args_hash = Some(args_hash);
         }
         Ok(())
     }

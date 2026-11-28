@@ -40,6 +40,7 @@ fn test_session(
         live_config_options: Vec::new(),
         verify_bridge_state: VerifyBridgeState::NotConnected,
         legacy_migration_notice,
+        previous_engine: None,
         unavailable: None,
     }
 }

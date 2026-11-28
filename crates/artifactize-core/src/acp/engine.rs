@@ -43,7 +43,7 @@ use super::{
     pool::{Pool, TakeOutcome, WarmChild},
     redactor::StreamRedactor,
     trust::{self, LauncherFingerprint, TrustRequirement, TrustScope},
-    verify_bridge::{BridgeCall, VerifyBridge},
+    verify_bridge::{BridgeCall, BridgeReply, VerifyBridge, redact_json_value},
     wire::{
         FINAL_ANSWER_BYTES, IncomingPermission, OpenedSession, PromptFrame, SessionEvent,
         StopReason, TURN_DISPLAY_EVENTS, TURN_PERSISTED_BYTES, bound_text,
@@ -63,12 +63,27 @@ pub(crate) struct VerifiedAcpLaunch {
 }
 
 impl VerifiedAcpLaunch {
-    /// Re-hash the executable bytes on disk and re-verify Workspace Trust immediately before
-    /// spawning or reusing an ACP child in `worktree` (`C-TRUST-BEFORE-WORKTREE`).
-    pub(crate) fn reverify_before_exec(&self, worktree: &Path) -> Result<(), Problem> {
-        let current =
-            LauncherFingerprint::compute(&self.fingerprint.resolved_executable, &self.spec.args)
-                .map_err(Problem::Failed)?;
+    /// Open the resolved executable once without following links, hash its bytes directly from
+    /// that open handle, and re-verify Workspace Trust immediately before spawning or reusing an
+    /// ACP child in `worktree` (`C-TRUST-BEFORE-WORKTREE`). Returns the verified open file handle
+    /// so fresh spawns bind directly to the hashed file.
+    pub(crate) fn open_and_reverify_before_exec(
+        &self,
+        worktree: &Path,
+    ) -> Result<std::fs::File, Problem> {
+        let mut file = platform::open_verified_executable(&self.fingerprint.resolved_executable)
+            .map_err(|error| {
+                Problem::Failed(format!(
+                    "Cannot open ACP executable {}: {error}.",
+                    platform::path_text(&self.fingerprint.resolved_executable)
+                ))
+            })?;
+        let current = LauncherFingerprint::compute_from_file(
+            self.fingerprint.resolved_executable.clone(),
+            &mut file,
+            &self.spec.args,
+        )
+        .map_err(Problem::Failed)?;
         if self.spec.reject_worktree_executable {
             trust::outside_worktree(&current.resolved_executable, worktree)
                 .map_err(Problem::Failed)?;
@@ -105,7 +120,7 @@ impl VerifiedAcpLaunch {
         )
         .map_err(Problem::Failed)?
         {
-            Ok(()) if current == self.fingerprint => Ok(()),
+            Ok(()) if current == self.fingerprint => Ok(file),
             Ok(()) => Err(Problem::TrustRequired(Box::new(TrustRequirement {
                 agent_id: self.spec.id.clone(),
                 agent_name: self.spec.name.clone(),
@@ -119,6 +134,12 @@ impl VerifiedAcpLaunch {
             }))),
             Err(requirement) => Err(Problem::TrustRequired(Box::new(requirement))),
         }
+    }
+
+    /// Re-hash the executable bytes on disk and re-verify Workspace Trust immediately before
+    /// reusing a warm ACP child in `worktree` (`C-TRUST-BEFORE-WORKTREE`).
+    pub(crate) fn reverify_before_exec(&self, worktree: &Path) -> Result<(), Problem> {
+        self.open_and_reverify_before_exec(worktree).map(|_| ())
     }
 }
 
@@ -346,8 +367,15 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
         }
     }
 
+    let redactor = StreamRedactor::new(input.launch.spec.known_secrets());
+
     // Open a fresh one-turn Verify MCP bridge (disarmed until `session/prompt`).
-    let bridge = match VerifyBridge::start(stdio_mcp::Server::new(input.tools.verify_only_list())) {
+    let bridge = match VerifyBridge::start(
+        input.session_id.clone(),
+        input.send,
+        redactor.clone(),
+        stdio_mcp::Server::new(input.tools.verify_only_list()),
+    ) {
         Ok(bridge) => bridge,
         Err(error) => {
             if let Some(warm) = child {
@@ -405,8 +433,6 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
             }
         }
     };
-
-    let redactor = StreamRedactor::new(input.launch.spec.known_secrets());
 
     let turn_res = execute_on_child(
         &input,
@@ -703,7 +729,9 @@ async fn execute_on_child(
         )
     };
 
-    // 5. Arm the one-turn Verify bridge and issue `session/prompt`, checking SQLite Stop first.
+    // 5. Arm the one-turn Verify bridge and issue `session/prompt`, observing local and remote
+    //    Stop as well as turn timeout while writing the prompt so a stalled child cannot strand an
+    //    armed bridge (`C-ONE-TURN-OWNERSHIP`).
     if cancel.is_cancelled()
         || input
             .receipts
@@ -715,18 +743,47 @@ async fn execute_on_child(
         bridge.stop().await;
         return Err((Failure::cancelled(), false));
     }
+    let mut cas_poll = tokio::time::interval(CAS_POLL_INTERVAL);
+    cas_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut remaining_budget = CHAT_TURN_TIMEOUT;
+    let prompt_started = StdInstant::now();
     bridge.arm_turn();
-    let prompt_req_id = match child
-        .connection
-        .start_prompt(&opened.session_id, &prompt_text)
-        .await
-    {
-        Ok(id) => id,
-        Err(problem) => {
-            bridge.stop().await;
-            return Err((Failure::from(problem), true));
+    let prompt_req_id = {
+        let start = child
+            .connection
+            .start_prompt(&opened.session_id, &prompt_text);
+        tokio::pin!(start);
+        let prompt_deadline = tokio::time::sleep(remaining_budget);
+        tokio::pin!(prompt_deadline);
+        loop {
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => {
+                    bridge.stop().await;
+                    return Err((Failure::cancelled(), false));
+                }
+                () = &mut prompt_deadline => {
+                    bridge.stop().await;
+                    return Err((Failure::timeout(), true));
+                }
+                _ = cas_poll.tick() => {
+                    if input.receipts.chat_stop_requested(input.session_id, input.owner).await == Ok(true) {
+                        cancel.cancel();
+                        bridge.stop().await;
+                        return Err((Failure::cancelled(), false));
+                    }
+                }
+                res = &mut start => match res {
+                    Ok(id) => break id,
+                    Err(problem) => {
+                        bridge.stop().await;
+                        return Err((Failure::from(problem), true));
+                    }
+                },
+            }
         }
     };
+    remaining_budget = remaining_budget.saturating_sub(prompt_started.elapsed());
 
     // 6. Main event loop: streams updates, handles VerifyBridge tool calls, handles SQLite
     //    Permission CAS with pauseable TURN_TIMEOUT, and enforces persistence bounds.
@@ -734,10 +791,7 @@ async fn execute_on_child(
     let mut thought_redactor = redactor.clone();
     let mut state = TurnAccumulator::new(input.launch.spec.name.clone());
     let mut pending_perms: BTreeMap<String, PendingPermissionSlot> = BTreeMap::new();
-    let mut remaining_budget = CHAT_TURN_TIMEOUT;
     let mut budget_started: Option<StdInstant> = Some(StdInstant::now());
-    let mut cas_poll = tokio::time::interval(CAS_POLL_INTERVAL);
-    cas_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_bridge_state = bridge.state();
     // What the Chat view shows of the agent's options: redacted, as everything it sent is.
     let mut live_options = redact_options(&applied.live_options, &redactor);
@@ -903,18 +957,25 @@ async fn execute_on_child(
     let in_flight_at_end = bridge.in_flight_calls();
 
     // Cancel any leftover pending permissions before draining or stopping: their rows first,
-    // so no responder can select one the agent is then told was cancelled.
-    if !pending_perms.is_empty() {
+    // so no responder can select one the agent is then told was cancelled. Any leftover open
+    // permission at turn end (or a failed cancellation reply) means the child is not quiescent.
+    let had_leftover_permissions = !pending_perms.is_empty();
+    let mut permissions_quiescent = !had_leftover_permissions;
+    if had_leftover_permissions {
         let _ = input
             .receipts
             .cancel_open_chat_permissions(input.session_id, &input.owner.token)
             .await;
     }
     for (_, slot) in std::mem::take(&mut pending_perms) {
-        let _ = child
+        if child
             .connection
             .send_permission_cancelled(slot.rpc_id)
-            .await;
+            .await
+            .is_err()
+        {
+            permissions_quiescent = false;
+        }
         state.record_display(
             recorder,
             Kind::AcpPermission(AcpPermissionEvent {
@@ -951,7 +1012,7 @@ async fn execute_on_child(
             // again here.
             let answer = redactor.redact_all(&state.answer);
             let (bounded_answer, _) = bound_text(&answer, FINAL_ANSWER_BYTES);
-            let can_park_warm = in_flight_at_end == 0;
+            let can_park_warm = in_flight_at_end == 0 && permissions_quiescent;
             Ok(CompletedTurn {
                 answer: bounded_answer,
                 remote_session_id: opened.session_id,
@@ -1021,19 +1082,22 @@ async fn admit_permission(
     let summary = redactor.redact_all(&req.summary);
     let detail = req.detail.as_deref().map(|d| redactor.redact_all(d));
     // What the transcript and the store keep is redacted, IDs included; an ID that redaction
-    // makes equal to an earlier one gets its position, so each option stays its own.
+    // makes equal to an earlier one gets a unique numeric suffix so displayed IDs never collide
+    // and SQLite CAS always maps back to the exact option the user selected.
     let mut agent_option_ids: Vec<(String, String)> = Vec::new();
     let options: Vec<_> = req
         .options
         .into_iter()
-        .enumerate()
-        .map(|(index, option)| {
-            let mut shown = redactor.redact_all(&option.option_id);
-            if agent_option_ids
+        .map(|option| {
+            let base = redactor.redact_all(&option.option_id);
+            let mut shown = base.clone();
+            let mut suffix = 2usize;
+            while agent_option_ids
                 .iter()
                 .any(|(earlier, _)| *earlier == shown)
             {
-                shown = format!("{shown}#{}", index + 1);
+                shown = format!("{base}#{suffix}");
+                suffix += 1;
             }
             agent_option_ids.push((shown.clone(), option.option_id.clone()));
             super::PermissionOption {
@@ -1220,16 +1284,11 @@ async fn handle_bridge_call(
             != Ok(true)
     {
         cancel.cancel();
-        let _ = call
-            .reply
-            .send(super::verify_bridge::no_active_turn_error(&call.id));
+        let _ = call.reply.send(BridgeReply::NoActiveTurn);
         return Err(Failure::cancelled());
     }
 
     let call_id = agent::uuid()?;
-    let summary = format!("{} {}", call.name, call.arguments);
-    let summary_short = summary.chars().take(120).collect::<String>();
-    let redacted_args = redactor.redact_all(&call.arguments.to_string());
 
     state.record_display(
         recorder,
@@ -1239,8 +1298,8 @@ async fn handle_bridge_call(
             title: call.name.clone(),
             tool_kind: ToolKind::Verify,
             status: ToolStatus::Running,
-            summary: redactor.redact_all(&summary_short),
-            arguments: redacted_args,
+            summary: call.summary,
+            arguments: call.arguments,
             locations: Vec::new(),
             output: None,
             diff: None,
@@ -1248,35 +1307,39 @@ async fn handle_bridge_call(
         }),
     );
 
-    let durable_start = call.name == "verify_start";
-    let invoke = input.tools.call_acp_verify(
-        input.session_id,
-        input.send,
-        &call.name,
-        call.arguments,
-        if durable_start {
-            CancellationToken::new()
-        } else {
-            cancel.clone()
-        },
-    );
-    let called = if durable_start {
-        // Once Verify admits a Run, Stop must not suppress its durable `RunReference`.
-        invoke.await
-    } else {
-        tokio::select! {
-            biased;
-            () = cancel.cancelled() => return Err(Failure::cancelled()),
-            res = invoke => res,
+    let called = match call.call {
+        Ok(parsed_call) => {
+            let durable_start = parsed_call.started_run();
+            let invoke = input.tools.call_acp_verify(
+                parsed_call,
+                if durable_start {
+                    CancellationToken::new()
+                } else {
+                    cancel.clone()
+                },
+            );
+            if durable_start {
+                // Once Verify admits a Run, Stop must not suppress its durable `RunReference`.
+                invoke.await
+            } else {
+                tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => return Err(Failure::cancelled()),
+                    res = invoke => res,
+                }
+            }
         }
+        Err(error) => crate::tools::ToolResult::error(error).into(),
     };
 
     if let Some(run_id) = called.run {
         recorder.event(Kind::RunReference { run: run_id });
     }
     let failed = called.result.is_error();
-    let result_text = serde_json::to_string(&called.result).unwrap_or_default();
-    let redacted_output = redactor.redact_all(&result_text);
+    let redacted_output = serde_json::to_value(&called.result)
+        .map(|val| redact_json_value(&val, redactor).to_string())
+        .map(|text| redactor.redact_all(&text))
+        .unwrap_or_default();
     let (bounded_output, truncated) = bound_text(&redacted_output, super::wire::TOOL_OUTPUT_BYTES);
 
     state.record_display(
@@ -1300,8 +1363,7 @@ async fn handle_bridge_call(
         }),
     );
 
-    let reply = stdio_mcp::call_reply(&call.id, called.result);
-    let _ = call.reply.send(reply);
+    let _ = call.reply.send(BridgeReply::Result(called.result));
     Ok(())
 }
 

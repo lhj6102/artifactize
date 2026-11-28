@@ -564,6 +564,31 @@ pub(crate) async fn spawn_handoff(command: &Command) -> Result<Child, Error> {
         .map_err(Error::Spawn)
 }
 
+/// Spawn an owned long-lived process (such as a warm ACP agent) from an already-opened,
+/// SHA-256-verified executable handle without re-resolving `PATH` or `cwd`
+/// (`C-TRUST-BEFORE-WORKTREE`).
+pub(crate) async fn spawn_verified_supervised(
+    path: &std::path::Path,
+    verified_file: std::fs::File,
+    args: &[OsString],
+    cwd: &std::path::Path,
+    env: &BTreeMap<OsString, OsString>,
+    process_cancel: &CancellationToken,
+) -> Result<Child, Error> {
+    if process_cancel.is_cancelled() {
+        return Err(Error::Cancelled);
+    }
+    let environment = platform::environment::for_child(env);
+    let mut spawned = platform::spawn_verified(path, verified_file, args, cwd, &environment)
+        .await
+        .map_err(Error::Spawn)?;
+    if process_cancel.is_cancelled() {
+        let _ = terminate(&mut spawned).await;
+        return Err(Error::Cancelled);
+    }
+    Ok(spawned)
+}
+
 /// Spawn an owned long-lived process (such as a warm ACP agent) whose supervision lifetime is
 /// decoupled from individual turn deadlines: only `process_cancel`, EOF, eviction or explicit
 /// termination ends the process tree.

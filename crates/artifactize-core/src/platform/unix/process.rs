@@ -1,9 +1,16 @@
 //! Process groups, the pre-exec admission gate, and OS process start times.
 
 use std::{
-    io::{self, Read, Write},
+    ffi::{CString, OsString},
+    fs::File,
+    io::{self, Read, Seek, SeekFrom, Write},
     net::Shutdown,
-    os::{fd::AsRawFd, unix::net::UnixStream},
+    os::{
+        fd::AsRawFd,
+        unix::{ffi::OsStrExt, fs::MetadataExt, net::UnixStream, process::CommandExt},
+    },
+    path::Path,
+    process::Stdio,
     sync::{Arc, OnceLock, mpsc},
 };
 
@@ -157,6 +164,94 @@ pub(crate) fn spawn_gated(command: Command) -> io::Result<(Gate, JoinHandle<io::
     let mut command = CommandWrap::from(command);
     command.wrap(ProcessGroup::leader());
     spawn(command)
+}
+
+/// Open a canonical executable path for direct byte hashing without following a link in its last
+/// component, returning the open handle to bind the subsequent spawn to the verified file.
+pub(crate) fn open_verified_executable(path: &Path) -> io::Result<File> {
+    crate::platform::open_regular(path)
+}
+
+/// Spawn a previously hashed executable directly without re-resolving `PATH` or `cwd`.
+///
+/// On Linux, native binaries execute directly through `/proc/self/fd/<fd>` with `arg0` set to
+/// `path`, binding `execve` to the exact verified inode even if the path is renamed meanwhile.
+/// For shebang scripts (whose interpreter resolves sibling imports from `argv[1]`) and on other
+/// Unix platforms, `pre_exec` verifies via async-signal-safe `lstat` that `path` still refers to
+/// the exact verified `(dev, ino, size, mtime)` immediately before `execve`.
+pub(crate) async fn spawn_verified(
+    path: &Path,
+    mut verified_file: File,
+    args: &[OsString],
+    cwd: &Path,
+    environment: &std::collections::BTreeMap<OsString, OsString>,
+) -> io::Result<Child> {
+    #[cfg(target_os = "linux")]
+    let use_proc_fd = {
+        verified_file.seek(SeekFrom::Start(0))?;
+        let mut magic = [0u8; 2];
+        let count = verified_file.read(&mut magic)?;
+        !(count == 2 && magic == *b"#!")
+    };
+    #[cfg(not(target_os = "linux"))]
+    let use_proc_fd = false;
+
+    let mut std_cmd = if use_proc_fd {
+        let mut cmd =
+            std::process::Command::new(format!("/proc/self/fd/{}", verified_file.as_raw_fd()));
+        cmd.arg0(path);
+        cmd
+    } else {
+        let meta = verified_file.metadata()?;
+        let dev = meta.dev();
+        let ino = meta.ino();
+        let size = meta.size();
+        let mtime = meta.mtime();
+        let mtime_nsec = meta.mtime_nsec();
+        let cpath = CString::new(path.as_os_str().as_bytes()).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "verified executable path contains interior NUL",
+            )
+        })?;
+        let mut cmd = std::process::Command::new(path);
+        // SAFETY: the closure executes only async-signal-safe `libc::lstat` on an already-owned
+        // `CString` before `execve` and performs no heap allocation on the success path.
+        unsafe {
+            cmd.pre_exec(move || {
+                let mut st: libc::stat = std::mem::zeroed();
+                if libc::lstat(cpath.as_ptr(), &mut st) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                if st.st_dev as u64 != dev
+                    || st.st_ino as u64 != ino
+                    || st.st_size as u64 != size
+                    || st.st_mtime as i64 != mtime
+                    || st.st_mtime_nsec as i64 != mtime_nsec
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "verified executable changed before exec",
+                    ));
+                }
+                Ok(())
+            });
+        }
+        cmd
+    };
+    std_cmd
+        .args(args)
+        .current_dir(cwd)
+        .env_clear()
+        .envs(environment.iter())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut command = Command::from(std_cmd);
+    command.kill_on_drop(true);
+    let spawned = spawn_now(command).await;
+    drop(verified_file);
+    spawned
 }
 
 /// Spawn `command` as the leader of a new process group, running at once. Without the gate's

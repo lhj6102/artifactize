@@ -32,11 +32,14 @@ use crate::{
     agent::error::Failure,
     llm::stdio_mcp,
     platform,
+    tools::ToolResult,
     types::{RequestKey, SessionId},
+    verify_tools,
 };
 
 use super::{
     VerifyBridgeState,
+    redactor::StreamRedactor,
     wire::{LINE_BYTES, McpEnv, McpServer},
 };
 
@@ -154,12 +157,40 @@ fn hex_prefix(bytes: &[u8], chars: usize) -> String {
     out
 }
 
-/// One incoming allowlisted MCP tool call from the ACP agent.
-pub struct BridgeCall {
-    pub id: stdio_mcp::RpcId,
-    pub name: String,
-    pub arguments: Value,
-    pub reply: oneshot::Sender<Value>,
+/// Reply returned by the ACP turn engine to one incoming Verify bridge call without exposing
+/// raw JSON-RPC frames outside `src/acp/` (`C-ACP-EDGE-ISOLATION`).
+pub(crate) enum BridgeReply {
+    Result(ToolResult),
+    NoActiveTurn,
+}
+
+/// One incoming allowlisted MCP tool call parsed and redacted at the ACP Verify bridge edge.
+pub(crate) struct BridgeCall {
+    pub(super) name: String,
+    pub(super) call: Result<verify_tools::Call, String>,
+    pub(super) summary: String,
+    pub(super) arguments: String,
+    pub(super) reply: oneshot::Sender<BridgeReply>,
+}
+
+/// Recursively redact every string value and object key inside a JSON value BEFORE serialization
+/// so secrets containing characters that JSON escapes (`"`, `\`, newlines) are still matched.
+pub(super) fn redact_json_value(value: &Value, redactor: &StreamRedactor) -> Value {
+    match value {
+        Value::String(text) => Value::String(redactor.redact_all(text)),
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| redact_json_value(item, redactor))
+                .collect(),
+        ),
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, val)| (redactor.redact_all(key), redact_json_value(val, redactor)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
 }
 
 /// One-turn loopback Verify MCP bridge.
@@ -178,7 +209,12 @@ impl VerifyBridge {
     /// Start a fresh loopback listener with a unique one-time capability token.
     /// Starts with `active_turn = false` so `tools/call` during `session/load` replay is
     /// rejected with `-32000 (No active Chat turn)` while `initialize`/`tools/list` succeed.
-    pub fn start(tools: stdio_mcp::Server) -> Result<Self, Failure> {
+    pub(crate) fn start(
+        session_id: SessionId,
+        send: usize,
+        redactor: StreamRedactor,
+        tools: stdio_mcp::Server,
+    ) -> Result<Self, Failure> {
         let address = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
         let listener = platform::net::exclusive_listener(address).map_err(bridge_error)?;
         let port = listener
@@ -187,7 +223,7 @@ impl VerifyBridge {
             .port()
             .to_string();
         let capability = crate::agent::uuid()?;
-        let (send, calls) = mpsc::channel(QUEUED_CALLS);
+        let (call_tx, calls) = mpsc::channel(QUEUED_CALLS);
         let active_turn = Arc::new(AtomicBool::new(false));
         let connected = Arc::new(AtomicBool::new(false));
         let in_flight = Arc::new(AtomicUsize::new(0));
@@ -195,8 +231,11 @@ impl VerifyBridge {
         let task = tokio::spawn(serve(
             listener,
             capability.clone(),
-            Arc::new(tools),
+            session_id,
             send,
+            redactor,
+            Arc::new(tools),
+            call_tx,
             active_turn.clone(),
             connected.clone(),
             in_flight.clone(),
@@ -257,7 +296,7 @@ impl VerifyBridge {
         self.in_flight.load(Ordering::SeqCst)
     }
 
-    pub async fn next(&mut self) -> Option<BridgeCall> {
+    pub(crate) async fn next(&mut self) -> Option<BridgeCall> {
         self.calls.recv().await
     }
 
@@ -287,11 +326,14 @@ fn bridge_error(error: io::Error) -> Failure {
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "The bridge task binds listener, capability, tools, channel, turn flags and shutdown token"
+    reason = "The bridge task binds listener, capability, session context, tools, channel, turn flags and shutdown token"
 )]
 async fn serve(
     listener: TcpListener,
     capability: String,
+    session_id: SessionId,
+    send: usize,
+    redactor: StreamRedactor,
     tools: Arc<stdio_mcp::Server>,
     calls: mpsc::Sender<BridgeCall>,
     active_turn: Arc<AtomicBool>,
@@ -314,6 +356,8 @@ async fn serve(
                     continue;
                 };
                 let capability = capability.clone();
+                let session_id = session_id.clone();
+                let redactor = redactor.clone();
                 let tools = tools.clone();
                 let calls = calls.clone();
                 let active_turn = active_turn.clone();
@@ -331,6 +375,9 @@ async fn serve(
                     if matches!(read, Ok(Ok(_))) && presented == capability.as_bytes() {
                         let _ = serve_stdio(
                             stream,
+                            &session_id,
+                            send,
+                            &redactor,
                             &tools,
                             &calls,
                             &active_turn,
@@ -349,8 +396,35 @@ async fn serve(
     while connections.join_next().await.is_some() {}
 }
 
+fn parse_bridge_call(
+    session_id: &SessionId,
+    send: usize,
+    name: &str,
+    arguments: Value,
+) -> Result<verify_tools::Call, String> {
+    let args_hash = canonical_args_hash(&arguments);
+    let map = match arguments {
+        Value::Object(map) => map,
+        _ => return Err("Tool arguments must be an object.".into()),
+    };
+    let mut call = verify_tools::Call::parse(name, map, time::OffsetDateTime::now_utc())
+        .map_err(|error| error.to_string())?;
+    if call.project.is_some() {
+        return Err("Chat Verify tools are scoped to this session's worktree.".into());
+    }
+    call.remap_acp_chat_key(session_id, send, args_hash)?;
+    Ok(call)
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Each authenticated bridge socket needs session context, redactor, tools, channel and turn flags"
+)]
 async fn serve_stdio(
     stream: tokio::net::TcpStream,
+    session_id: &SessionId,
+    send: usize,
+    redactor: &StreamRedactor,
     tools: &stdio_mcp::Server,
     calls: &mpsc::Sender<BridgeCall>,
     active_turn: &AtomicBool,
@@ -410,12 +484,21 @@ async fn serve_stdio(
                         )
                     } else {
                         _in_flight_guard = Some(guard);
+                        // Redact JSON string values BEFORE serialization so secrets containing
+                        // characters that JSON escapes are still matched (`C-ACP-EDGE-ISOLATION`).
+                        let redacted_value = redact_json_value(&arguments, redactor);
+                        let redacted_args = redactor.redact_all(&redacted_value.to_string());
+                        let summary_full = format!("{name} {redacted_args}");
+                        let summary = redactor
+                            .redact_all(&summary_full.chars().take(120).collect::<String>());
+                        let parsed = parse_bridge_call(session_id, send, &name, arguments);
                         let (reply_tx, receive) = oneshot::channel();
                         if calls
                             .send(BridgeCall {
-                                id: id.clone(),
                                 name,
-                                arguments,
+                                call: parsed,
+                                summary,
+                                arguments: redacted_args,
                                 reply: reply_tx,
                             })
                             .await
@@ -427,8 +510,8 @@ async fn serve_stdio(
                                 biased;
                                 () = shutdown.cancelled() => return Ok(()),
                                 res = receive => match res {
-                                    Ok(reply) => reply,
-                                    Err(_) => no_active_turn_error(&id),
+                                    Ok(BridgeReply::Result(result)) => stdio_mcp::call_reply(&id, result),
+                                    Ok(BridgeReply::NoActiveTurn) | Err(_) => no_active_turn_error(&id),
                                 },
                             }
                         }
@@ -462,7 +545,7 @@ impl Drop for InFlightGuard<'_> {
     }
 }
 
-pub(super) fn no_active_turn_error(id: &stdio_mcp::RpcId) -> Value {
+fn no_active_turn_error(id: &stdio_mcp::RpcId) -> Value {
     json!({
         "jsonrpc": "2.0",
         "id": id,
@@ -569,7 +652,14 @@ mod tests {
 
     #[tokio::test]
     async fn stop_retires_accepted_socket_connections() {
-        let bridge = VerifyBridge::start(stdio_mcp::Server::new(std::iter::empty())).unwrap();
+        let session: SessionId = "chat-bridge-test".parse().unwrap();
+        let bridge = VerifyBridge::start(
+            session,
+            1,
+            StreamRedactor::new(Vec::<String>::new()),
+            stdio_mcp::Server::new(std::iter::empty()),
+        )
+        .unwrap();
         let port: u16 = bridge.port.parse().unwrap();
         let capability = bridge.capability.clone();
         let mut client = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
@@ -597,5 +687,15 @@ mod tests {
             matches!(read, Ok(0) | Err(_)),
             "expected EOF or reset after stop, got {read:?} ({after:?})"
         );
+    }
+
+    #[test]
+    fn redact_json_value_catches_secrets_with_json_escaped_characters() {
+        let secret = "tok-\"quote\"\\slash\nline";
+        let redactor = StreamRedactor::new([secret.to_owned()]);
+        let raw = json!({ "note": format!("before {secret} after") });
+        let serialized = redact_json_value(&raw, &redactor).to_string();
+        assert!(!serialized.contains("quote"), "{serialized}");
+        assert!(serialized.contains("[REDACTED]"), "{serialized}");
     }
 }

@@ -265,7 +265,12 @@ impl Fixture {
 
         // Grant explicit Workspace Trust.
         let trust_record = chat
-            .trust_workspace(&self.repo, &agent, &requirement.fingerprint)
+            .trust_workspace(
+                &self.repo,
+                &agent,
+                &requirement.scope,
+                &requirement.fingerprint,
+            )
             .await
             .unwrap();
         assert_eq!(trust_record.agent_id, agent);
