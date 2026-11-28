@@ -121,7 +121,10 @@ pub(crate) fn verify_launch(
         &fingerprint,
     )? {
         Ok(()) => {
-            let runtime_fingerprint = fingerprint.runtime_fingerprint(catalog::auth_generation());
+            // A warm child or a remote session started with other variables (a secret since
+            // replaced, say) is not this launch's: their digest is part of the fingerprint.
+            let runtime_fingerprint = fingerprint
+                .runtime_fingerprint(catalog::auth_generation(), &spec.environment_digest());
             Ok(Ok(VerifiedAcpLaunch {
                 state: state.to_path_buf(),
                 scope,
@@ -879,7 +882,10 @@ async fn execute_on_child(
             if let Err(error) = recorder.check_saved() {
                 return Err((Failure::from(error), false));
             }
-            let (bounded_answer, _) = bound_text(&state.answer, FINAL_ANSWER_BYTES);
+            // Redacted whole: a secret split across text on either side of a tool call joins
+            // again here.
+            let answer = redactor.redact_all(&state.answer);
+            let (bounded_answer, _) = bound_text(&answer, FINAL_ANSWER_BYTES);
             let can_park_warm = in_flight_at_end == 0;
             Ok(CompletedTurn {
                 answer: bounded_answer,

@@ -110,7 +110,7 @@ impl LauncherFingerprint {
     }
 
     /// Combine with `auth_generation` into the `AcpBinding::runtime_fingerprint` key.
-    pub fn runtime_fingerprint(&self, auth_generation: u64) -> String {
+    pub fn runtime_fingerprint(&self, auth_generation: u64, environment: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(platform::path_text(&self.resolved_executable).as_bytes());
         hasher.update([0]);
@@ -119,6 +119,8 @@ impl LauncherFingerprint {
         hasher.update(self.args_hash.as_bytes());
         hasher.update([0]);
         hasher.update(auth_generation.to_le_bytes());
+        hasher.update([0]);
+        hasher.update(environment.as_bytes());
         hex_digest(hasher.finalize().as_slice())
     }
 }

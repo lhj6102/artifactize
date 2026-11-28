@@ -442,6 +442,26 @@ impl AgentSpec {
     }
 
     /// All secret values injected into this agent's environment (for `StreamRedactor`).
+    /// A digest of the variables this agent is launched with, its secrets included, for the
+    /// runtime fingerprint; the values themselves are never kept.
+    pub fn environment_digest(&self) -> String {
+        let mut text = Vec::new();
+        for (key, value) in &self.extra_env {
+            text.extend_from_slice(key.as_bytes());
+            text.push(0);
+            text.extend_from_slice(value.as_bytes());
+            text.push(0);
+        }
+        text.push(1);
+        for (key, secret) in &self.secret_env {
+            text.extend_from_slice(key.as_bytes());
+            text.push(0);
+            text.extend_from_slice(secret.expose().as_bytes());
+            text.push(0);
+        }
+        hex_sha256(&text)
+    }
+
     pub fn known_secrets(&self) -> Vec<String> {
         self.secret_env
             .values()

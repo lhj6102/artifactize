@@ -492,9 +492,12 @@ impl Receipts {
                         ChatTarget::Acp { agent, .. } => Some(agent.clone()),
                         _ => None,
                     };
+                    // A running turn owns the binding it claimed: the next turn sees the new
+                    // agent differ from it and neither reuses nor loads it.
+                    let running = owner(&transaction, &id)?.is_some();
                     if prev_agent != next_agent {
                         agent_changed = true;
-                        if let Some(binding) = session.acp_binding.as_mut() {
+                        if let Some(binding) = session.acp_binding.as_mut().filter(|_| !running) {
                             binding.generation = binding.generation.saturating_add(1);
                             binding.remote_session_id = None;
                             binding.warm_owner = None;

@@ -236,6 +236,9 @@ pub struct Connection {
     next_request_id: u64,
     replaying: Option<LoadPhase>,
     capabilities: Option<AgentCapabilities>,
+    /// Option and mode changes the agent reported while a configuration request waited for its
+    /// answer, for [`Self::apply_config_options`] to take into account.
+    config_updates: Vec<SessionEvent>,
 }
 
 impl Connection {
@@ -261,6 +264,7 @@ impl Connection {
             next_request_id: 0,
             replaying: None,
             capabilities: None,
+            config_updates: Vec::new(),
         }
     }
 
@@ -548,8 +552,11 @@ impl Connection {
         requested: &[ConfigSelection],
     ) -> Result<AppliedConfig, Problem> {
         let mut live = session.config_options.clone();
+        self.config_updates.clear();
         let mut notices = Vec::new();
-        let mut ordered: Vec<(u8, &ConfigSelection)> = requested
+        // Each selection's category as first read: a mode stays a mode even if a later refresh
+        // drops the option that named it.
+        let mut ordered: Vec<(u8, ConfigCategory, &ConfigSelection)> = requested
             .iter()
             .map(|sel| {
                 let category = sel
@@ -560,16 +567,16 @@ impl Connection {
                             .map(|opt| opt.category)
                     })
                     .unwrap_or_else(|| infer_category(&sel.id, None));
-                (category.apply_rank(), sel)
+                (category.apply_rank(), category, sel)
             })
             .collect();
-        ordered.sort_by_key(|(rank, _)| *rank);
+        ordered.sort_by_key(|(rank, _, _)| *rank);
 
         let mut effective = Vec::new();
         // The modes asked for, by option ID: a later setter can replace the whole list.
         let mut modes = Vec::new();
-        for (_, selection) in ordered {
-            let inferred_cat = selection
+        for (_, first_category, selection) in ordered {
+            let refreshed = selection
                 .category
                 .or_else(|| {
                     live.iter()
@@ -577,6 +584,11 @@ impl Connection {
                         .map(|opt| opt.category)
                 })
                 .unwrap_or_else(|| infer_category(&selection.id, None));
+            let inferred_cat = if first_category == ConfigCategory::Mode {
+                ConfigCategory::Mode
+            } else {
+                refreshed
+            };
 
             let Some(current_opt) = live
                 .iter()
@@ -632,6 +644,7 @@ impl Connection {
                     if let Some(opt) = live.iter_mut().find(|opt| opt.id == current_opt.id) {
                         opt.current_value = selection.value.clone();
                     }
+                    self.absorb_config_updates(&mut live);
                 } else if session.uses_legacy_modes && is_mode {
                     let confirmed = self
                         .set_legacy_mode(&session.session_id, &selection.value)
@@ -645,10 +658,13 @@ impl Connection {
                     if let Some(opt) = live.iter_mut().find(|opt| opt.id == current_opt.id) {
                         opt.current_value = selection.value.clone();
                     }
+                    self.absorb_config_updates(&mut live);
                 } else {
                     live = self
                         .set_config_option(&session.session_id, &current_opt.id, &selection.value)
                         .await?;
+                    // The answer is newer than anything reported while it was awaited.
+                    self.config_updates.clear();
                     let confirmed = live
                         .iter()
                         .find(|opt| opt.id == current_opt.id)
@@ -691,6 +707,25 @@ impl Connection {
             effective_selections: effective,
             notices,
         })
+    }
+
+    /// Take in what the agent reported while a legacy setter waited: a replaced option list, or
+    /// a mode it switched to.
+    fn absorb_config_updates(&mut self, live: &mut Vec<ConfigOption>) {
+        for event in std::mem::take(&mut self.config_updates) {
+            match event {
+                SessionEvent::ConfigOptionsUpdated { options } => *live = options,
+                SessionEvent::ModeChanged { mode_id } => {
+                    if let Some(mode) = live
+                        .iter_mut()
+                        .find(|opt| opt.category == ConfigCategory::Mode)
+                    {
+                        mode.current_value = mode_id;
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Inspect advertised models (and per-model thought levels when supported) for probes/CLI.
@@ -924,6 +959,12 @@ impl Connection {
                     WireFrame::ProtocolError(msg) => {
                         return Err(Problem::Failed(self.redactor.redact_all(&msg)));
                     }
+                    WireFrame::Update {
+                        event:
+                            event @ (SessionEvent::ConfigOptionsUpdated { .. }
+                            | SessionEvent::ModeChanged { .. }),
+                        ..
+                    } => self.config_updates.push(event),
                     WireFrame::Update { .. }
                     | WireFrame::Response { .. }
                     | WireFrame::Error { .. } => {}
