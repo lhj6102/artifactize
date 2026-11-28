@@ -36,8 +36,8 @@ use crate::{
 };
 
 use super::{
-    AcpBinding, AgentId, ConfigSelection, PermissionStatus, PlanStep, Problem, ToolDiff,
-    ToolLocation, ToolStatus, WarmOwner,
+    AcpBinding, AgentId, ConfigCategory, ConfigChoice, ConfigOption, ConfigSelection,
+    PermissionStatus, PlanStep, Problem, ToolDiff, ToolLocation, ToolStatus, WarmOwner,
     catalog::{self, AgentSpec},
     handoff,
     pool::{Pool, TakeOutcome, WarmChild},
@@ -202,6 +202,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
     let warm_candidate = match input.pool.take_for_turn(
         input.session_id,
         binding.as_ref(),
+        current_warm_owner,
         &input.launch.spec.id,
         &input.launch.fingerprint.executable_sha256,
         &input.launch.runtime_fingerprint,
@@ -268,6 +269,41 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
                 }
             }
             None => {}
+        }
+    }
+
+    // Reusing a warm child or loading its session needs the binding they come from to be this
+    // turn's: claim its generation first. A target change since the turn read it fails the claim,
+    // so neither is used and the turn opens a session of its own.
+    if child.is_some() || load_remote_id.is_some() {
+        let claimed = match expected_generation {
+            Some(expected) => input
+                .receipts
+                .claim_acp_generation(input.session_id, expected)
+                .await
+                .ok()
+                .flatten(),
+            None => None,
+        };
+        if let Some(claimed) = claimed {
+            generation = claimed;
+            expected_generation = Some(claimed);
+            if let Some(warm) = child.as_mut() {
+                warm.generation = claimed;
+            }
+        } else {
+            if let Some(warm) = child.take() {
+                let _ = warm.terminate().await;
+            }
+            load_remote_id = None;
+            let stored = input
+                .receipts
+                .acp_binding(input.session_id)
+                .await
+                .ok()
+                .flatten();
+            generation = stored.as_ref().map_or(1, |b| b.generation);
+            expected_generation = stored.as_ref().map(|b| b.generation);
         }
     }
 
@@ -561,7 +597,7 @@ async fn execute_on_child(
     };
     for notice in &applied.notices {
         recorder.event(Kind::Notice {
-            text: notice.clone(),
+            text: redactor.redact_all(notice),
         });
     }
     if let Some(reason) = load_fallback_reason {
@@ -584,7 +620,7 @@ async fn execute_on_child(
         .update_chat_turn_meta(
             input.session_id,
             &input.owner.token,
-            applied.live_options.clone(),
+            redact_options(&applied.live_options, &redactor),
             bridge.state(),
         )
         .await;
@@ -642,7 +678,9 @@ async fn execute_on_child(
     let mut cas_poll = tokio::time::interval(CAS_POLL_INTERVAL);
     cas_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_bridge_state = bridge.state();
-    let mut live_options = applied.live_options;
+    // What the Chat view shows of the agent's options: redacted, as everything it sent is.
+    let mut live_options = redact_options(&applied.live_options, &redactor);
+    let chosen = applied.effective_selections;
 
     let loop_result: Result<StopReason, Failure> = loop {
         // Pause TURN_TIMEOUT while any PENDING permission row is open.
@@ -742,8 +780,17 @@ async fn execute_on_child(
             frame = child.connection.next_prompt_frame(prompt_req_id, &opened.session_id) => {
                 match frame {
                     Ok(PromptFrame::Update(event)) => {
+                        // The turn runs under the mode the user chose, or not at all.
+                        let changed = match &event {
+                            SessionEvent::ConfigOptionsUpdated { options } => chosen_modes_stand(&chosen, options),
+                            SessionEvent::ModeChanged { mode_id } => chosen_mode_is(&chosen, mode_id),
+                            _ => Ok(()),
+                        };
+                        if let Err(problem) = changed {
+                            break Err(Failure::from(problem));
+                        }
                         if let SessionEvent::ConfigOptionsUpdated { options } = &event {
-                            live_options = options.clone();
+                            live_options = redact_options(options, &redactor);
                             let _ = input.receipts.update_chat_turn_meta(
                                 input.session_id,
                                 &input.owner.token,
@@ -1395,6 +1442,69 @@ impl TurnAccumulator {
             }
             SessionEvent::ConfigOptionsUpdated { .. } | SessionEvent::ModeChanged { .. } => {}
         }
+    }
+}
+
+/// The agent's options as the Chat view and the transcript may hold them: every name, value and
+/// description it sent redacted.
+fn redact_options(options: &[ConfigOption], redactor: &StreamRedactor) -> Vec<ConfigOption> {
+    options
+        .iter()
+        .map(|option| ConfigOption {
+            id: option.id.clone(),
+            name: redactor.redact_all(&option.name),
+            category: option.category,
+            current_value: redactor.redact_all(&option.current_value),
+            choices: option
+                .choices
+                .iter()
+                .map(|choice| ConfigChoice {
+                    value: redactor.redact_all(&choice.value),
+                    name: redactor.redact_all(&choice.name),
+                    description: choice
+                        .description
+                        .as_deref()
+                        .map(|text| redactor.redact_all(text)),
+                    bypass_warning: choice.bypass_warning,
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+/// The chosen modes, by option ID.
+fn chosen_modes(chosen: &[ConfigSelection]) -> impl Iterator<Item = &ConfigSelection> {
+    chosen
+        .iter()
+        .filter(|selection| selection.category == Some(ConfigCategory::Mode))
+}
+
+/// Whether every mode the user chose is still current in `options`: an agent may drop or change
+/// one mid-turn, and the turn never goes on under another mode.
+fn chosen_modes_stand(chosen: &[ConfigSelection], options: &[ConfigOption]) -> Result<(), Problem> {
+    for selection in chosen_modes(chosen) {
+        let actual = options
+            .iter()
+            .find(|option| option.id == selection.id)
+            .map(|option| option.current_value.clone());
+        if actual.as_deref() != Some(selection.value.as_str()) {
+            return Err(Problem::ModeMismatch {
+                requested: selection.value.clone(),
+                actual,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Whether the mode the agent reports switching to is the one the user chose, if they chose one.
+fn chosen_mode_is(chosen: &[ConfigSelection], mode_id: &str) -> Result<(), Problem> {
+    match chosen_modes(chosen).next() {
+        Some(selection) if selection.value != mode_id => Err(Problem::ModeMismatch {
+            requested: selection.value.clone(),
+            actual: Some(mode_id.to_owned()),
+        }),
+        _ => Ok(()),
     }
 }
 

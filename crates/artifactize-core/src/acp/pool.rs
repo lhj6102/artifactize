@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{platform, process, types::SessionId};
 
-use super::{AcpBinding, AgentId, Problem, engine::VerifiedAcpLaunch, wire::Connection};
+use super::{AcpBinding, AgentId, Problem, WarmOwner, engine::VerifiedAcpLaunch, wire::Connection};
 
 /// Bound idle warm child lifetime so Windows CWD locks do not outlive inactive sessions (`P-FILES`).
 pub const IDLE_TTL: Duration = Duration::from_secs(5 * 60);
@@ -170,6 +170,7 @@ impl Pool {
         &self,
         session_id: &SessionId,
         binding: Option<&AcpBinding>,
+        owner: WarmOwner,
         agent_id: &AgentId,
         verified_sha256: &str,
         runtime_fingerprint: &str,
@@ -184,7 +185,8 @@ impl Pool {
             && child.agent_id == *agent_id
             && child.runtime_fingerprint == runtime_fingerprint
             && child.last_used.elapsed() < IDLE_TTL
-            && binding.is_some_and(|b| b.generation == child.generation);
+            && binding
+                .is_some_and(|b| b.generation == child.generation && b.warm_owner == Some(owner));
         if matches {
             child.quiescent = false;
             child.last_used = Instant::now();

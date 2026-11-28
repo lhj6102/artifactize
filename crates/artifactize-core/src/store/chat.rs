@@ -975,6 +975,34 @@ impl Receipts {
 
     /// Bump `acp_binding.generation` and clear `remote_session_id` + `warm_owner` atomically
     /// (e.g. when refusing `session/load` for a dead/foreign `warm_owner` or digest mismatch).
+    /// Take the binding for one turn: when its generation is still `expected`, advance it and
+    /// return the new one, keeping its remote session and warm owner; `None` when it changed.
+    pub(crate) async fn claim_acp_generation(
+        &self,
+        id: &SessionId,
+        expected: u64,
+    ) -> Result<Option<u64>, String> {
+        let id = id.clone();
+        self.connection
+            .call(move |db| {
+                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let mut current = saved_chat(&transaction, &id)?;
+                let Some(binding) = current.acp_binding.as_mut() else {
+                    return Ok::<_, Error>(None);
+                };
+                if binding.generation != expected {
+                    return Ok(None);
+                }
+                binding.generation = expected.saturating_add(1);
+                let claimed = binding.generation;
+                save(&transaction, &current)?;
+                transaction.commit()?;
+                Ok(Some(claimed))
+            })
+            .await
+            .map_err(|error| error.to_string())
+    }
+
     /// The session's ACP binding as it is stored now.
     pub(crate) async fn acp_binding(&self, id: &SessionId) -> Result<Option<AcpBinding>, String> {
         let id = id.clone();
