@@ -111,9 +111,13 @@ kbd {
   color: var(--ink-3);
   cursor: default;
 }
-/* A quiet button: no face and no edge until the pointer is on it. */
+/* A quiet button: no face and no edge until the pointer is on it (D-SYS-7). */
 .button.quiet {
   background: transparent;
+  border-color: transparent;
+}
+.button.quiet:hover:not(:disabled) {
+  background: var(--surface-group);
   border-color: transparent;
 }
 .button.small {

@@ -237,6 +237,10 @@
     min-width: 0;
     outline: none;
   }
+  /* In Review's Main area, the conversation sits on the app surface (D-REV-1). */
+  .human.wide {
+    background: var(--surface-app);
+  }
   .human:focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: -2px;
