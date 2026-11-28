@@ -462,12 +462,47 @@ impl AgentSpec {
         hex_sha256(&text)
     }
 
+    /// All secret values exposed to this agent's environment (saved `secret_env` values PLUS any
+    /// inherited credential-bearing environment variables not stripped by `env_denylist`) for
+    /// `StreamRedactor` (`C-ACP-EDGE-ISOLATION`).
     pub fn known_secrets(&self) -> Vec<String> {
-        self.secret_env
+        let mut secrets: Vec<String> = self
+            .secret_env
             .values()
             .map(|secret| secret.expose().to_owned())
-            .collect()
+            .collect();
+        for (key, value) in self.build_env(false) {
+            let Some(key_str) = key.to_str() else {
+                continue;
+            };
+            if is_sensitive_env_name(key_str)
+                && let Some(val_str) = value.to_str()
+                && val_str.len() >= 6
+                && !secrets.iter().any(|existing| existing == val_str)
+            {
+                secrets.push(val_str.to_owned());
+            }
+        }
+        secrets
     }
+}
+
+fn is_sensitive_env_name(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    matches!(
+        upper.as_str(),
+        "ANTHROPIC_API_KEY"
+            | "OPENAI_API_KEY"
+            | "GEMINI_API_KEY"
+            | "GOOGLE_API_KEY"
+            | "GH_TOKEN"
+            | "GITHUB_TOKEN"
+    ) || upper.ends_with("_API_KEY")
+        || upper.ends_with("_TOKEN")
+        || upper.ends_with("_SECRET")
+        || upper.ends_with("_PASSWORD")
+        || upper.ends_with("_CREDENTIAL")
+        || upper.ends_with("_PRIVATE_KEY")
 }
 
 /// Summary of an ACP agent for Settings → Chat Agents and CLI `chat-agent list`.
@@ -857,14 +892,12 @@ pub async fn probe_spec(
         return entry.availability.clone();
     }
 
-    if let Some(worktree) = worktree
-        && let Err(error) = trust::outside_worktree(probe_dir.path(), worktree)
-    {
+    if let Err(error) = check_probe_dir_isolated(probe_dir.path(), worktree) {
         return AgentAvailability::Failed {
             executable: Some(resolved.clone()),
             version: None,
             error: format!(
-                "Refusing to probe {} inside the workspace: {error}",
+                "Refusing to probe {} inside a workspace: {error}",
                 spec.name
             ),
         };
@@ -882,6 +915,23 @@ pub async fn probe_spec(
         );
     }
     availability
+}
+
+/// Ensure a probe tempdir never lands inside a selected `worktree` OR inside any enclosing Git
+/// repository checkout (e.g. if `TMPDIR`/`TEMP` was pointed into a worktree), even for callers
+/// that pass `worktree: None` (`C-TRUST-BEFORE-WORKTREE`).
+fn check_probe_dir_isolated(probe_dir: &Path, worktree: Option<&Path>) -> Result<(), String> {
+    if let Some(worktree) = worktree {
+        trust::outside_worktree(probe_dir, worktree)?;
+    }
+    if let Some(repo_root) = crate::repository::identify(probe_dir).worktree_path {
+        return Err(format!(
+            "temporary probe directory {} is inside Git worktree {}.",
+            platform::path_text(probe_dir),
+            platform::path_text(&repo_root),
+        ));
+    }
+    Ok(())
 }
 
 async fn run_live_probe(
@@ -905,14 +955,12 @@ async fn run_live_probe(
             };
         }
     };
-    if let Some(worktree) = worktree
-        && let Err(error) = trust::outside_worktree(version_dir.path(), worktree)
-    {
+    if let Err(error) = check_probe_dir_isolated(version_dir.path(), worktree) {
         return AgentAvailability::Failed {
             executable: Some(executable.to_path_buf()),
             version: None,
             error: format!(
-                "Refusing to run {} version probe inside the workspace: {error}",
+                "Refusing to run {} version probe inside a workspace: {error}",
                 spec.name
             ),
         };
@@ -960,14 +1008,12 @@ async fn run_live_probe(
             };
         }
     };
-    if let Some(worktree) = worktree
-        && let Err(error) = trust::outside_worktree(probe_dir.path(), worktree)
-    {
+    if let Err(error) = check_probe_dir_isolated(probe_dir.path(), worktree) {
         return AgentAvailability::Failed {
             executable: Some(executable.to_path_buf()),
             version: detected_version.map(|v| v.to_string()),
             error: format!(
-                "Refusing to run {} model probe inside the workspace: {error}",
+                "Refusing to run {} model probe inside a workspace: {error}",
                 spec.name
             ),
         };
@@ -1638,9 +1684,10 @@ mod tests {
         assert!(agents_json.contains("MY_SECRET"));
 
         let spec = resolve_spec(&saved.id, Some(&state), Some(&worktree)).unwrap();
-        assert_eq!(
-            spec.known_secrets(),
-            vec!["top-secret-value-999".to_owned()]
+        assert!(
+            spec.known_secrets()
+                .iter()
+                .any(|value| value == "top-secret-value-999")
         );
         assert!(is_chat_agent("my-acp", Some(&state), Some(&worktree)));
 

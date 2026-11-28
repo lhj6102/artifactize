@@ -340,10 +340,18 @@ struct Session<'a, 'r> {
 type Started<'a, 'r> = Conversation<'a, 'r, ChildStdout, ChildStdin>;
 
 impl<'a, 'r> Session<'a, 'r> {
-    /// Start Claude Code and its session. Claude Code runs in the temporary directory, which
-    /// holds nothing of the review: it reads files only through the offered tools.
+    /// Start Claude Code and its session. Claude Code runs in an isolated temporary directory
+    /// outside any Git checkout so it holds nothing of the review and reads files only through
+    /// the offered tools (`C-EVAL-ARTIFACTIZE-DRIVEN`).
     async fn open(self, launch: &Launch<'_>) -> Result<(Started<'a, 'r>, Running), Failure> {
         let cwd = crate::platform::temporary_directory();
+        if let Some(repo_root) = crate::repository::identify(&cwd).worktree_path {
+            return Err(Failure::from(format!(
+                "Refusing to launch isolated claude-agent eval inside Git worktree {} (temporary directory {}).",
+                crate::platform::path_text(&repo_root),
+                crate::platform::path_text(&cwd),
+            )));
+        }
         let (channel, running) =
             channel::start(launch, &cwd, self.limits.deadline, self.cancellation).await?;
         let mut conversation = Conversation::new(self, channel);

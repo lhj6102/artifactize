@@ -608,16 +608,20 @@ impl Conversation {
         }
 
         let mut raw = Vec::new();
-        let mut saw_assistant_in_turn = false;
+        let mut saw_assistant_text_in_turn = false;
         for event in &self.events {
             match &event.kind {
                 Kind::Send(_) => {
-                    saw_assistant_in_turn = false;
+                    saw_assistant_text_in_turn = false;
                 }
                 Kind::Message(event) => {
                     let msg = event.message().clone();
-                    if matches!(msg, Message::Assistant { .. }) {
-                        saw_assistant_in_turn = true;
+                    if let Message::Assistant { content, .. } = &msg
+                        && content.iter().any(|part| {
+                            matches!(part, AssistantContent::Text(text) if !text.text.trim().is_empty())
+                        })
+                    {
+                        saw_assistant_text_in_turn = true;
                     }
                     raw.push(HistoryEntry::Message(msg));
                 }
@@ -625,11 +629,11 @@ impl Conversation {
                     raw.push(HistoryEntry::ToolOutcome(event.message().clone()));
                 }
                 Kind::Answer(Answer::Completed(text))
-                    if !saw_assistant_in_turn && !text.is_empty() =>
+                    if !saw_assistant_text_in_turn && !text.trim().is_empty() =>
                 {
-                    // Preserve a completed turn's answer in Direct history even if intermediate
-                    // ACP display events hit the per-turn display cap before flushing prose.
-                    saw_assistant_in_turn = true;
+                    // Preserve a completed turn's final prose in Direct history even if earlier
+                    // assistant messages held only tool calls or ACP hit the per-turn display cap.
+                    saw_assistant_text_in_turn = true;
                     raw.push(HistoryEntry::Message(Message::assistant(text.clone())));
                 }
                 _ => {}

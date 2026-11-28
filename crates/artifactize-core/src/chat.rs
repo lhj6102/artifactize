@@ -704,14 +704,19 @@ impl Chat {
             for child in drained {
                 let session_id = child.session_id.clone();
                 let generation = child.generation;
+                let stayed_quiescent = child.connection.is_quiescent();
                 let _ = child.terminate().await;
                 if let Some(warm_owner) = current_owner
                     && let Ok(session) = store::chat::load(&state, &session_id).await
                     && let Ok(receipts) = Receipts::open(&state, &session.worktree).await
                 {
-                    let _ = receipts
-                        .clear_acp_warm_owner(&session_id, generation, warm_owner)
-                        .await;
+                    if stayed_quiescent {
+                        let _ = receipts
+                            .clear_acp_warm_owner(&session_id, generation, warm_owner)
+                            .await;
+                    } else {
+                        let _ = receipts.bump_acp_generation(&session_id).await;
+                    }
                     let _ = receipts.close().await;
                 }
             }
@@ -1314,14 +1319,19 @@ impl Chat {
                 if &child.agent_id == agent_id {
                     let session_id = child.session_id.clone();
                     let generation = child.generation;
+                    let stayed_quiescent = child.connection.is_quiescent();
                     let _ = child.terminate().await;
                     if let Some(warm_owner) = current_owner
                         && let Ok(session) = store::chat::load(&self.state, &session_id).await
                         && let Ok(receipts) = Receipts::open(&self.state, &session.worktree).await
                     {
-                        let _ = receipts
-                            .clear_acp_warm_owner(&session_id, generation, warm_owner)
-                            .await;
+                        if stayed_quiescent {
+                            let _ = receipts
+                                .clear_acp_warm_owner(&session_id, generation, warm_owner)
+                                .await;
+                        } else {
+                            let _ = receipts.bump_acp_generation(&session_id).await;
+                        }
                         let _ = receipts.close().await;
                     }
                 } else {
@@ -1794,6 +1804,12 @@ impl Chat {
                 let stopped = receipts.stop_chat_by_token(id, token).await;
                 let closed = receipts.close().await;
                 let _ = stopped.and_then(|value| closed.map(|()| value))?;
+            } else if let Some(owner) = store::chat::turn_owner(&self.state, id).await? {
+                // Another process may currently hold SQLite ownership while this local send is
+                // still preparing: commit SQLite Stop and cancel its permissions too
+                // (`C-ONE-TURN-OWNERSHIP`).
+                let session = store::chat::load(&self.state, id).await?;
+                let _ = self.stop_exact(&session, owner).await?;
             }
             self.permission_notify.notify_waiters();
             entry.cancel.cancel();

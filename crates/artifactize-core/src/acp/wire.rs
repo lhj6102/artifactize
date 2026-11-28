@@ -95,14 +95,11 @@ pub struct AgentCapabilities {
     pub load_session: bool,
     pub logout_supported: bool,
     pub system_prompt_append: bool,
-    pub mcp_http: bool,
-    pub mcp_sse: bool,
 }
 
 /// Typed result of `initialize`.
 #[derive(Debug, Clone)]
 pub struct Initialized {
-    pub protocol_version: u32,
     pub capabilities: AgentCapabilities,
 }
 
@@ -211,6 +208,7 @@ pub enum WireFrame {
     PermissionRequest(IncomingPermission),
     UnknownServerRequest {
         id: RpcId,
+        #[cfg(test)]
         method: String,
     },
     Response {
@@ -371,10 +369,6 @@ impl Connection {
         }
     }
 
-    pub fn connection_id(&self) -> u64 {
-        self.id
-    }
-
     pub fn capabilities(&self) -> Option<&AgentCapabilities> {
         self.capabilities.as_ref()
     }
@@ -399,14 +393,9 @@ impl Connection {
                 .system_prompt
                 .append
                 || result.agent_capabilities.meta.system_prompt.append,
-            mcp_http: result.agent_capabilities.mcp_capabilities.http,
-            mcp_sse: result.agent_capabilities.mcp_capabilities.sse,
         };
         self.capabilities = Some(capabilities.clone());
-        Ok(Initialized {
-            protocol_version: result.protocol_version,
-            capabilities,
-        })
+        Ok(Initialized { capabilities })
     }
 
     pub async fn session_new(
@@ -1473,7 +1462,13 @@ pub(crate) fn parse_wire_frame(
                     redactor,
                 ))))
             } else {
-                Ok(Some(WireFrame::UnknownServerRequest { id, method }))
+                #[cfg(not(test))]
+                let _ = method;
+                Ok(Some(WireFrame::UnknownServerRequest {
+                    id,
+                    #[cfg(test)]
+                    method,
+                }))
             }
         }
         RawIncoming::Notification { method, params } => {
@@ -1637,19 +1632,9 @@ struct RawCapabilities {
     #[serde(default)]
     load_session: bool,
     #[serde(default)]
-    mcp_capabilities: RawMcpCapabilities,
-    #[serde(default)]
     auth: RawAuthCapabilities,
     #[serde(default, rename = "_meta")]
     meta: RawAgentMeta,
-}
-
-#[derive(Default, Deserialize)]
-struct RawMcpCapabilities {
-    #[serde(default)]
-    http: bool,
-    #[serde(default)]
-    sse: bool,
 }
 
 #[derive(Default, Deserialize)]

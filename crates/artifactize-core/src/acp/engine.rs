@@ -53,6 +53,11 @@ use super::{
 
 /// Poll interval for cross-window Stop and Permission decisions.
 const CAS_POLL_INTERVAL: Duration = Duration::from_millis(250);
+/// Maximum reserved config-fallback notices recorded outside the normal display cap so genuine
+/// model/effort changes still surface without allowing unbounded transcript growth.
+const MAX_CONFIG_FALLBACK_NOTICES: usize = 32;
+/// Maximum byte length of one config-fallback notice.
+const CONFIG_FALLBACK_NOTICE_BYTES: usize = 512;
 
 /// Pre-checked ACP launch context verified BEFORE a Chat turn is accepted into JSONL.
 pub(crate) struct VerifiedAcpLaunch {
@@ -800,9 +805,8 @@ async fn execute_on_child(
         )
     };
 
-    // 5. Check SQLite Stop FIRST, then synchronously drain any mode or config updates already
-    //    queued on stdout with NO `.await` between the mode verification and `start_prompt` so
-    //    a mode change arriving during SQLite I/O aborts before `session/prompt` is sent
+    // 5. Check SQLite Stop FIRST, then drain/reconcile any queued mode or config updates until
+    //    quiescent so NO `.await` sits between the final mode verification and `start_prompt`
     //    (`C-NO-SILENT-REGRESSION`, `C-ONE-TURN-OWNERSHIP`).
     if cancel.is_cancelled()
         || input
@@ -815,35 +819,7 @@ async fn execute_on_child(
         bridge.stop().await;
         return Err((Failure::cancelled(), false));
     }
-    if let Err(problem) = child
-        .connection
-        .drain_pending_config_updates(&opened.session_id, &mut live_raw)
-    {
-        bridge.stop().await;
-        return Err((Failure::from(problem), true));
-    }
-    if let Err(problem) = chosen_modes_stand(&chosen, &live_raw) {
-        bridge.stop().await;
-        return Err((Failure::from(problem), false));
-    }
-    let pre_prompt_notices =
-        reconcile_non_mode_options(&input.launch.spec.name, &live_raw, &mut chosen);
-    if !pre_prompt_notices.is_empty() {
-        for notice in pre_prompt_notices {
-            let text = bound_text(&redactor.redact_all(&notice), 512).0;
-            recorder.event(Kind::Notice { text });
-        }
-        live_options = redact_options(&live_raw, &redactor);
-        let _ = input
-            .receipts
-            .update_chat_turn_meta(
-                input.session_id,
-                &input.owner.token,
-                live_options.clone(),
-                bridge.state(),
-            )
-            .await;
-        // Re-check synchronously after the metadata SQLite await so no mode change slipped in.
+    loop {
         if let Err(problem) = child
             .connection
             .drain_pending_config_updates(&opened.session_id, &mut live_raw)
@@ -855,8 +831,31 @@ async fn execute_on_child(
             bridge.stop().await;
             return Err((Failure::from(problem), false));
         }
+        let pre_prompt_notices =
+            reconcile_non_mode_options(&input.launch.spec.name, &live_raw, &mut chosen);
+        if pre_prompt_notices.is_empty() {
+            break;
+        }
+        for notice in pre_prompt_notices {
+            state.record_config_fallback(recorder, &redactor, &notice);
+        }
+        live_options = redact_options(&live_raw, &redactor);
+        let _ = input
+            .receipts
+            .update_chat_turn_meta(
+                input.session_id,
+                &input.owner.token,
+                live_options.clone(),
+                bridge.state(),
+            )
+            .await;
     }
-    let mut cas_poll = tokio::time::interval(CAS_POLL_INTERVAL);
+    // Start the poll timer one full interval in the future so `start_prompt` writes immediately
+    // after the final mode check rather than awaiting a zero-delay SQLite poll tick first.
+    let mut cas_poll = tokio::time::interval_at(
+        tokio::time::Instant::now() + CAS_POLL_INTERVAL,
+        CAS_POLL_INTERVAL,
+    );
     cas_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut remaining_budget = CHAT_TURN_TIMEOUT;
     let prompt_started = StdInstant::now();
@@ -987,15 +986,15 @@ async fn execute_on_child(
                             break Err(Failure::from(problem));
                         }
                         if let SessionEvent::ConfigOptionsUpdated { options } = &event {
-                            // Config fallback notices are bounded and always recorded even if
-                            // intermediate display events hit the per-turn cap (`C-NO-SILENT-REGRESSION`).
+                            // Config fallback notices use a small reserved bounded allowance so
+                            // real mid-turn fallbacks still surface even after intermediate tool
+                            // output hits the display cap without allowing unbounded growth.
                             for notice in reconcile_non_mode_options(
                                 &input.launch.spec.name,
                                 options,
                                 &mut chosen,
                             ) {
-                                let text = bound_text(&redactor.redact_all(&notice), 512).0;
-                                recorder.event(Kind::Notice { text });
+                                state.record_config_fallback(recorder, &redactor, &notice);
                             }
                             live_options = redact_options(options, &redactor);
                             let _ = input.receipts.update_chat_turn_meta(
@@ -1517,6 +1516,7 @@ struct TurnAccumulator {
     persisted_bytes: usize,
     cap_noticed: bool,
     omitted_prose_at_cap: bool,
+    config_fallback_notices: usize,
 }
 
 impl TurnAccumulator {
@@ -1530,7 +1530,22 @@ impl TurnAccumulator {
             persisted_bytes: 0,
             cap_noticed: false,
             omitted_prose_at_cap: false,
+            config_fallback_notices: 0,
         }
+    }
+
+    fn record_config_fallback(
+        &mut self,
+        recorder: &mut Recorder,
+        redactor: &StreamRedactor,
+        notice: &str,
+    ) {
+        if self.config_fallback_notices >= MAX_CONFIG_FALLBACK_NOTICES {
+            return;
+        }
+        self.config_fallback_notices += 1;
+        let text = bound_text(&redactor.redact_all(notice), CONFIG_FALLBACK_NOTICE_BYTES).0;
+        recorder.event(Kind::Notice { text });
     }
 
     fn turn_index(&self) -> usize {
