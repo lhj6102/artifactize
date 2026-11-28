@@ -409,18 +409,25 @@ fn parse_bridge_call(
     send: usize,
     name: &str,
     arguments: Value,
+    raw_request_key: Option<String>,
     raw_args_hash: String,
 ) -> Result<verify_tools::Call, String> {
-    let map = match arguments {
+    let mut map = match arguments {
         Value::Object(map) => map,
         _ => return Err("Tool arguments must be an object.".into()),
     };
+    if raw_request_key.is_some() {
+        // Removed before `Call::parse` so a redacted `[REDACTED]` value does not trip
+        // `RequestKey` syntax validation; `remap_acp_chat_key` validates and hashes the raw key.
+        map.remove("request_key");
+        map.remove("requestKey");
+    }
     let mut call = verify_tools::Call::parse(name, map, time::OffsetDateTime::now_utc())
         .map_err(|error| error.to_string())?;
     if call.project.is_some() {
         return Err("Chat Verify tools are scoped to this session's worktree.".into());
     }
-    call.remap_acp_chat_key(session_id, send, raw_args_hash)?;
+    call.remap_acp_chat_key(session_id, send, raw_request_key, raw_args_hash)?;
     Ok(call)
 }
 
@@ -492,28 +499,40 @@ async fn serve_stdio(
                         )
                     } else {
                         _in_flight_guard = Some(guard);
-                        // Hash the raw agent-supplied arguments first so distinct requests whose
-                        // differing values redact to the same text still trigger a key-conflict
-                        // error (`C-ONE-TURN-OWNERSHIP`), then redact and parse at the edge so
-                        // neither unredacted known secrets nor unparsed JSON payloads ever leave
-                        // `src/acp/` (`C-ACP-EDGE-ISOLATION`).
+                        // Hash the raw agent-supplied arguments and extract any raw `request_key`
+                        // BEFORE redacting so distinct calls whose differing values redact to the
+                        // same text still detect key conflicts and valid secret-bearing keys still
+                        // hash cleanly into `chat/*` (`C-ONE-TURN-OWNERSHIP`). Derive display
+                        // arguments solely from the parsed typed `verify_tools::Call` so no raw
+                        // JSON payload ever leaves `src/acp/` (`C-ACP-EDGE-ISOLATION`).
                         let raw_args_hash = canonical_args_hash(&arguments);
+                        let raw_request_key = arguments
+                            .as_object()
+                            .and_then(|map| {
+                                map.get("request_key").or_else(|| map.get("requestKey"))
+                            })
+                            .and_then(Value::as_str)
+                            .map(ToOwned::to_owned);
                         let redacted_value = redact_json_value(&arguments, redactor);
                         let parsed = parse_bridge_call(
                             session_id,
                             send,
                             &name,
-                            redacted_value.clone(),
+                            redacted_value,
+                            raw_request_key,
                             raw_args_hash,
                         );
-                        let (summary, redacted_args) = if parsed.is_ok() {
-                            let redacted_args = redactor.redact_all(&redacted_value.to_string());
-                            let summary_full = format!("{name} {redacted_args}");
-                            let summary = redactor
-                                .redact_all(&summary_full.chars().take(120).collect::<String>());
-                            (summary, redacted_args)
-                        } else {
-                            (name.clone(), String::new())
+                        let (summary, redacted_args) = match &parsed {
+                            Ok(typed_call) => {
+                                let typed_args =
+                                    redactor.redact_all(&typed_call.display_arguments());
+                                let summary_full = format!("{name} {typed_args}");
+                                let summary = redactor.redact_all(
+                                    &summary_full.chars().take(120).collect::<String>(),
+                                );
+                                (summary, typed_args)
+                            }
+                            Err(_) => (name.clone(), String::new()),
                         };
                         let (reply_tx, receive) = oneshot::channel();
                         if calls

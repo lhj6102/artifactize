@@ -1098,7 +1098,7 @@ async fn execute_on_child_inner(
                     }
                 }
             }
-            call = bridge.next() => {
+            call = bridge.next(), if !child.connection.is_prompt_end_queued() => {
                 match call {
                     Some(call) => {
                         let current_bridge_state = bridge.state();
@@ -1113,6 +1113,7 @@ async fn execute_on_child_inner(
                         }
                         if let Err(error) = handle_bridge_call(
                             input,
+                            &child.connection,
                             call,
                             &redactor,
                             &mut state,
@@ -1465,12 +1466,19 @@ async fn process_pending_permissions(
 
 async fn handle_bridge_call(
     input: &AcpTurnInput<'_>,
+    conn: &super::wire::Connection,
     call: BridgeCall,
     redactor: &StreamRedactor,
     state: &mut TurnAccumulator,
     recorder: &mut Recorder,
     cancel: &CancellationToken,
 ) -> Result<(), Failure> {
+    // Refuse any late Verify call once the stdout reader has already observed the terminal
+    // `session/prompt` response, both before and after awaiting SQLite (`C-ONE-TURN-OWNERSHIP`).
+    if conn.is_prompt_end_queued() {
+        let _ = call.reply.send(BridgeReply::NoActiveTurn);
+        return Ok(());
+    }
     // Verify active turn ownership and stop state in SQLite at admission so a remote Stop that
     // committed between polling ticks never admits a new Verify Run (`C-ONE-TURN-OWNERSHIP`).
     if cancel.is_cancelled()
@@ -1483,6 +1491,10 @@ async fn handle_bridge_call(
         cancel.cancel();
         let _ = call.reply.send(BridgeReply::NoActiveTurn);
         return Err(Failure::cancelled());
+    }
+    if conn.is_prompt_end_queued() {
+        let _ = call.reply.send(BridgeReply::NoActiveTurn);
+        return Ok(());
     }
 
     let call_id = agent::uuid()?;

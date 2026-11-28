@@ -41,6 +41,14 @@ export const scenarios: Scenario[] = [
       await app.until(async () => [...await listed()].sort().join() === [id, otherId].sort().join(), "the waiting filter lists the claimed review beside the other");
       await app.review.filterFor("type:human is:unclaimed");
       await app.until(async () => (await listed()).join() === otherId, "the unclaimed filter lists only the other review");
+      await app.review.openListed(otherId);
+      await app.mode("Verify");
+      await app.graph.titled(runId);
+      await app.detail.until((detail) => detail.evals.some((row) => row.id === "e:release/signoff"), "returning to Verify restored the Artifact Detail as left");
+      await app.mode("Review");
+      assert.equal(await app.review.filter(), "type:human is:unclaimed", "returning to Review kept the filter");
+      await app.until(async () => (await listed()).join() === otherId, "returning to Review kept the filtered list");
+      await app.review.titleContains("release/signoff");
       await app.mode("Verify");
       await app.detail.reviewAction("Open in Review");
       await app.review.titleContains("release/signoff");
@@ -152,6 +160,12 @@ export const scenarios: Scenario[] = [
       const streamed = await app.chat.reading(run);
       assert.equal(streamed.top, reading.top, "a new streamed line does not move what is being read");
       assert.equal(streamed.atEnd, false);
+      // Switching to Verify and back restores Verify's selected Run without re-selecting it,
+      // and restores Chat's exact session and scrolled reading position (J-MODES, J-CHAT-READ).
+      await app.mode("Verify");
+      await app.graph.titled(run);
+      await app.mode("Chat");
+      await app.until(async () => { const where = await app.chat.reading(run); return where.top === reading.top && !where.atEnd; }, "returning to Chat restored the scrolled reading position");
       await app.chat.scrollToEnd(run);
       const closed = nativePath(fixture.root, STOP_STREAM_CLOSED);
       assert.equal(exists(closed), false, "the provider is still streaming before Stop");
@@ -160,6 +174,10 @@ export const scenarios: Scenario[] = [
       await app.chat.send(CONTINUE_PROMPT);
       await app.chat.says(CONTINUE_ANSWER);
       await app.chat.show("Graph");
+      await app.mode("Verify");
+      await app.graph.titled(run);
+      await app.mode("Chat");
+      await app.chat.viewShown("Graph");
     },
     restarted: async (app) => {
       await app.mode("Chat");

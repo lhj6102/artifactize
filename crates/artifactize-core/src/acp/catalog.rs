@@ -471,13 +471,13 @@ impl AgentSpec {
             .values()
             .map(|secret| secret.expose().to_owned())
             .collect();
-        for (key, value) in self.build_env(false) {
+        for (key, value) in self.build_env(true) {
             let Some(key_str) = key.to_str() else {
                 continue;
             };
             if is_sensitive_env_name(key_str)
                 && let Some(val_str) = value.to_str()
-                && val_str.len() >= 6
+                && !val_str.is_empty()
                 && !secrets.iter().any(|existing| existing == val_str)
             {
                 secrets.push(val_str.to_owned());
@@ -495,14 +495,24 @@ fn is_sensitive_env_name(name: &str) -> bool {
             | "OPENAI_API_KEY"
             | "GEMINI_API_KEY"
             | "GOOGLE_API_KEY"
+            | "AWS_SECRET_ACCESS_KEY"
+            | "AWS_ACCESS_KEY_ID"
+            | "AWS_SESSION_TOKEN"
             | "GH_TOKEN"
             | "GITHUB_TOKEN"
     ) || upper.ends_with("_API_KEY")
+        || upper.ends_with("_ACCESS_KEY")
+        || upper.ends_with("_SECRET_KEY")
+        || upper.ends_with("_PRIVATE_KEY")
+        || upper.ends_with("_AUTH_KEY")
+        || upper.ends_with("_SIGNING_KEY")
+        || upper.ends_with("_ENCRYPTION_KEY")
         || upper.ends_with("_TOKEN")
         || upper.ends_with("_SECRET")
         || upper.ends_with("_PASSWORD")
+        || upper.ends_with("_PASSWD")
         || upper.ends_with("_CREDENTIAL")
-        || upper.ends_with("_PRIVATE_KEY")
+        || upper.ends_with("_CREDENTIALS")
 }
 
 /// Summary of an ACP agent for Settings → Chat Agents and CLI `chat-agent list`.

@@ -153,11 +153,12 @@ pub(super) fn display_arguments(name: &str, arguments: &Value) -> String {
             let Some(map) = arguments.as_object().cloned() else {
                 return String::new();
             };
-            if crate::verify_tools::Call::parse(name, map, time::OffsetDateTime::now_utc()).is_err()
-            {
+            let Ok(call) =
+                crate::verify_tools::Call::parse(name, map, time::OffsetDateTime::now_utc())
+            else {
                 return String::new();
-            }
-            serde_json::to_string(arguments).unwrap_or_default()
+            };
+            call.display_arguments()
         }
         _ => return String::new(),
     };

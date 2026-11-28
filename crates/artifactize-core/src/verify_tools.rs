@@ -136,25 +136,66 @@ impl Call {
         matches!(self.command, Command::Verify(Verify::Start(_)))
     }
 
-    /// Remap an ACP agent-supplied `verify_start` `request_key` into the disjoint internal
-    /// `chat/<sha256[..32]>` namespace and attach precomputed canonical `request_args_hash`.
+    /// Remap an ACP agent-supplied `verify_start` `request_key` (validated from its original
+    /// unredacted value before SHA-256 hashing so a valid key containing a known secret still
+    /// maps cleanly into the disjoint `chat/<sha256[..32]>` namespace) and attach the
+    /// precomputed canonical `request_args_hash`.
     pub(crate) fn remap_acp_chat_key(
         &mut self,
         session_id: &crate::types::SessionId,
         send: usize,
+        raw_agent_key: Option<String>,
         args_hash: String,
     ) -> Result<(), String> {
-        if let Command::Verify(Verify::Start(args)) = &mut self.command
-            && let Some(agent_key) = args.request_key.take()
-        {
-            args.request_key = Some(crate::acp::verify_bridge::internal_chat_request_key(
-                session_id,
-                send,
-                agent_key.as_str(),
-            )?);
-            args.request_args_hash = Some(args_hash);
+        if let Command::Verify(Verify::Start(args)) = &mut self.command {
+            let agent_key = match raw_agent_key {
+                Some(raw) => Some(raw.parse::<crate::types::RequestKey>()?),
+                None => args.request_key.take(),
+            };
+            if let Some(agent_key) = agent_key {
+                args.request_key = Some(crate::acp::verify_bridge::internal_chat_request_key(
+                    session_id,
+                    send,
+                    agent_key.as_str(),
+                )?);
+                args.request_args_hash = Some(args_hash);
+            }
         }
         Ok(())
+    }
+
+    /// Format only the validated, typed fields of this call for public display in
+    /// `Block::Tool.arguments`, never forwarding raw JSON payloads (`C-ACP-EDGE-ISOLATION`).
+    pub(crate) fn display_arguments(&self) -> String {
+        use input::Read;
+        use serde_json::json;
+
+        let value = match &self.command {
+            Command::Verify(Verify::Start(args)) => json!({
+                "scope": args.scope.selection(),
+                "speculate": args.speculate,
+                "jobs": args.jobs,
+                "comment": args.comment,
+            }),
+            Command::Verify(Verify::Status(run) | Verify::Watch(run) | Verify::Cancel(run)) => {
+                json!({ "run": run })
+            }
+            Command::Verify(Verify::Wait(args)) => json!({
+                "run": args.run,
+                "seconds": args.duration().as_secs(),
+            }),
+            Command::Verify(Verify::Result(args)) => json!({ "run": args.run }),
+            Command::Inspect(inspection) => match &inspection.read {
+                Read::Status(status) => json!({ "scope": status.scope.selection() }),
+                Read::Run(run) => json!({ "run": run }),
+                Read::Request(id) => json!({ "id": id }),
+                Read::Models(provider) => json!({ "provider": provider }),
+                Read::Runs(runs) => json!({ "limit": runs.limit(), "offset": runs.offset }),
+                _ => json!({}),
+            },
+            Command::Plugin(_) => json!({}),
+        };
+        value.to_string()
     }
 }
 

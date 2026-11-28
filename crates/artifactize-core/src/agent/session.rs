@@ -616,11 +616,58 @@ impl Conversation {
         }
 
         let mut raw = Vec::new();
+        let mut in_chat_turn = false;
         let mut saw_assistant_text_in_turn = false;
+        let mut delivered_in_turn: std::collections::BTreeMap<
+            (usize, usize, crate::types::DeliveryBlock),
+            String,
+        > = std::collections::BTreeMap::new();
+        let flush_delivered = |raw: &mut Vec<HistoryEntry>,
+                               in_chat: bool,
+                               saw: &mut bool,
+                               delivered: &mut std::collections::BTreeMap<
+            (usize, usize, crate::types::DeliveryBlock),
+            String,
+        >| {
+            if in_chat && !*saw && !delivered.is_empty() {
+                let text = delivered
+                    .values()
+                    .map(String::as_str)
+                    .filter(|s| !s.trim().is_empty())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if !text.trim().is_empty() {
+                    *saw = true;
+                    raw.push(HistoryEntry::Message(Message::assistant(text)));
+                }
+            }
+            delivered.clear();
+        };
         for event in &self.events {
             match &event.kind {
                 Kind::Send(_) => {
+                    flush_delivered(
+                        &mut raw,
+                        in_chat_turn,
+                        &mut saw_assistant_text_in_turn,
+                        &mut delivered_in_turn,
+                    );
+                    in_chat_turn = true;
                     saw_assistant_text_in_turn = false;
+                }
+                Kind::Delivery(delivery)
+                    if in_chat_turn
+                        && delivery.kind == DeliveryKind::Text
+                        && !delivery.block.is_attempt() =>
+                {
+                    let slot = delivered_in_turn
+                        .entry((delivery.turn, delivery.attempt, delivery.block.clone()))
+                        .or_default();
+                    if delivery.state == DeliveryState::Delta {
+                        slot.push_str(&delivery.text);
+                    } else {
+                        slot.clone_from(&delivery.text);
+                    }
                 }
                 Kind::Message(event) => {
                     let msg = event.message().clone();
@@ -642,11 +689,26 @@ impl Conversation {
                     // Preserve a completed turn's final prose in Direct history even if earlier
                     // assistant messages held only tool calls or ACP hit the per-turn display cap.
                     saw_assistant_text_in_turn = true;
+                    delivered_in_turn.clear();
                     raw.push(HistoryEntry::Message(Message::assistant(text.clone())));
+                }
+                Kind::Answer(Answer::Failed { .. } | Answer::Empty) => {
+                    flush_delivered(
+                        &mut raw,
+                        in_chat_turn,
+                        &mut saw_assistant_text_in_turn,
+                        &mut delivered_in_turn,
+                    );
                 }
                 _ => {}
             }
         }
+        flush_delivered(
+            &mut raw,
+            in_chat_turn,
+            &mut saw_assistant_text_in_turn,
+            &mut delivered_in_turn,
+        );
         let mut normalized = Vec::with_capacity(raw.len());
         let mut index = 0;
         while index < raw.len() {
