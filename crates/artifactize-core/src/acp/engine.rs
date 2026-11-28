@@ -618,12 +618,16 @@ async fn execute_on_child(
         }
     };
 
-    // Persist `remote_session_id` with `generation` CAS.
+    // Persist `remote_session_id` with `generation` CAS, never storing a session ID that carries
+    // a known secret (`C-ACP-EDGE-ISOLATION`).
+    let persisted_remote_session_id = (redactor.redact_all(&opened.session_id)
+        == opened.session_id)
+        .then(|| opened.session_id.clone());
     let updated_binding = AcpBinding {
         agent_id: input.launch.spec.id.clone(),
         worktree: input.worktree.to_path_buf(),
         checkout: input.identity.clone(),
-        remote_session_id: Some(opened.session_id.clone()),
+        remote_session_id: persisted_remote_session_id,
         generation,
         settled_send,
         runtime_fingerprint: input.launch.runtime_fingerprint.clone(),
@@ -865,35 +869,6 @@ async fn execute_on_child(
                     ).await;
                 }
             }
-            call = bridge.next() => {
-                match call {
-                    Some(call) => {
-                        let current_bridge_state = bridge.state();
-                        if current_bridge_state != last_bridge_state {
-                            last_bridge_state = current_bridge_state;
-                            let _ = input.receipts.update_chat_turn_meta(
-                                input.session_id,
-                                &input.owner.token,
-                                live_options.clone(),
-                                current_bridge_state,
-                            ).await;
-                        }
-                        if let Err(error) = handle_bridge_call(
-                            input,
-                            call,
-                            &redactor,
-                            &mut state,
-                            recorder,
-                            cancel,
-                        ).await {
-                            break Err(error);
-                        }
-                    }
-                    None => {
-                        break Err(Failure::from("The ACP Verify MCP bridge stopped unexpectedly.".to_owned()));
-                    }
-                }
-            }
             frame = child.connection.next_prompt_frame(prompt_req_id, &opened.session_id) => {
                 match frame {
                     Ok(PromptFrame::Update(event)) => {
@@ -937,10 +912,40 @@ async fn execute_on_child(
                         }
                     }
                     Ok(PromptFrame::Finished(reason)) => {
+                        bridge.disarm_turn();
                         break Ok(reason);
                     }
                     Err(problem) => {
                         break Err(Failure::from(problem));
+                    }
+                }
+            }
+            call = bridge.next() => {
+                match call {
+                    Some(call) => {
+                        let current_bridge_state = bridge.state();
+                        if current_bridge_state != last_bridge_state {
+                            last_bridge_state = current_bridge_state;
+                            let _ = input.receipts.update_chat_turn_meta(
+                                input.session_id,
+                                &input.owner.token,
+                                live_options.clone(),
+                                current_bridge_state,
+                            ).await;
+                        }
+                        if let Err(error) = handle_bridge_call(
+                            input,
+                            call,
+                            &redactor,
+                            &mut state,
+                            recorder,
+                            cancel,
+                        ).await {
+                            break Err(error);
+                        }
+                    }
+                    None => {
+                        break Err(Failure::from("The ACP Verify MCP bridge stopped unexpectedly.".to_owned()));
                     }
                 }
             }
@@ -958,37 +963,46 @@ async fn execute_on_child(
 
     // Cancel any leftover pending permissions before draining or stopping: their rows first,
     // so no responder can select one the agent is then told was cancelled. Any leftover open
-    // permission at turn end (or a failed cancellation reply) means the child is not quiescent.
+    // permission at turn end (or a failed SQLite/wire cancellation) means the child is not
+    // quiescent, and a failed SQLite cancellation never sends unserialized wire `cancelled`.
     let had_leftover_permissions = !pending_perms.is_empty();
     let mut permissions_quiescent = !had_leftover_permissions;
     if had_leftover_permissions {
-        let _ = input
+        match input
             .receipts
             .cancel_open_chat_permissions(input.session_id, &input.owner.token)
-            .await;
-    }
-    for (_, slot) in std::mem::take(&mut pending_perms) {
-        if child
-            .connection
-            .send_permission_cancelled(slot.rpc_id)
             .await
-            .is_err()
         {
-            permissions_quiescent = false;
+            Ok(()) => {
+                for (_, slot) in std::mem::take(&mut pending_perms) {
+                    if child
+                        .connection
+                        .send_permission_cancelled(slot.rpc_id)
+                        .await
+                        .is_err()
+                    {
+                        permissions_quiescent = false;
+                    }
+                    state.record_display(
+                        recorder,
+                        Kind::AcpPermission(AcpPermissionEvent {
+                            permission_id: slot.permission_id,
+                            title: slot.title,
+                            tool_kind: slot.tool_kind,
+                            summary: slot.summary,
+                            detail: slot.detail,
+                            options: slot.options,
+                            status: PermissionStatus::Cancelled,
+                            selected_option_id: None,
+                        }),
+                    );
+                }
+            }
+            Err(_) => {
+                permissions_quiescent = false;
+                pending_perms.clear();
+            }
         }
-        state.record_display(
-            recorder,
-            Kind::AcpPermission(AcpPermissionEvent {
-                permission_id: slot.permission_id,
-                title: slot.title,
-                tool_kind: slot.tool_kind,
-                summary: slot.summary,
-                detail: slot.detail,
-                options: slot.options,
-                status: PermissionStatus::Cancelled,
-                selected_option_id: None,
-            }),
-        );
     }
 
     // Immediately retire the one-turn bridge listener and token before any next turn can arm.
@@ -1005,13 +1019,23 @@ async fn execute_on_child(
                     true,
                 ));
             }
-            if let Err(error) = recorder.check_saved() {
-                return Err((Failure::from(error), false));
-            }
             // Redacted whole: a secret split across text on either side of a tool call joins
             // again here.
             let answer = redactor.redact_all(&state.answer);
             let (bounded_answer, _) = bound_text(&answer, FINAL_ANSWER_BYTES);
+            // If intermediate events exhausted the per-turn display cap before prose was saved to
+            // `Kind::Message`, persist the bounded completed answer so later Direct turns keep full
+            // conversation history (`C-NO-SILENT-REGRESSION`).
+            if state.omitted_prose_at_cap && !bounded_answer.is_empty() {
+                recorder.message(
+                    state.turn_index(),
+                    &Message::assistant(bounded_answer.clone()),
+                    false,
+                );
+            }
+            if let Err(error) = recorder.check_saved() {
+                return Err((Failure::from(error), false));
+            }
             let can_park_warm = in_flight_at_end == 0 && permissions_quiescent;
             Ok(CompletedTurn {
                 answer: bounded_answer,
@@ -1377,6 +1401,7 @@ struct TurnAccumulator {
     display_events: usize,
     persisted_bytes: usize,
     cap_noticed: bool,
+    omitted_prose_at_cap: bool,
 }
 
 impl TurnAccumulator {
@@ -1389,6 +1414,7 @@ impl TurnAccumulator {
             display_events: 0,
             persisted_bytes: 0,
             cap_noticed: false,
+            omitted_prose_at_cap: false,
         }
     }
 
@@ -1469,6 +1495,7 @@ impl TurnAccumulator {
             let text = std::mem::take(&mut self.pending_text);
             let remaining = TURN_PERSISTED_BYTES.saturating_sub(self.persisted_bytes);
             if remaining == 0 || self.display_events >= TURN_DISPLAY_EVENTS {
+                self.omitted_prose_at_cap = true;
                 if !self.cap_noticed {
                     self.cap_noticed = true;
                     recorder.event(Kind::Notice {
@@ -1481,6 +1508,9 @@ impl TurnAccumulator {
                 return;
             }
             let (bounded, truncated) = bound_text(&text, remaining);
+            if truncated {
+                self.omitted_prose_at_cap = true;
+            }
             self.display_events += 1;
             self.persisted_bytes = self.persisted_bytes.saturating_add(bounded.len());
             recorder.message(self.turn_index(), &Message::assistant(bounded), false);
@@ -1544,7 +1574,15 @@ impl TurnAccumulator {
                 self.push_text(&tail_text, recorder);
                 self.flush_prose_segment(recorder);
                 let redacted_diff = diff.map(|d| redact_diff(d, redactor));
-                let redacted_output = output.as_deref().map(|o| redactor.redact_all(o));
+                let (redacted_output, re_truncated) = match output.as_deref() {
+                    Some(o) => {
+                        let redacted = redactor.redact_all(o);
+                        let (bounded, trunc) =
+                            bound_text(&redacted, super::wire::TOOL_OUTPUT_BYTES);
+                        (Some(bounded), trunc)
+                    }
+                    None => (None, false),
+                };
                 let title = redactor.redact_all(&title);
                 self.record_display(
                     recorder,
@@ -1559,7 +1597,7 @@ impl TurnAccumulator {
                         locations: redact_locations(locations, redactor),
                         output: redacted_output,
                         diff: redacted_diff,
-                        output_truncated,
+                        output_truncated: output_truncated || re_truncated,
                     }),
                 );
             }
@@ -1575,7 +1613,15 @@ impl TurnAccumulator {
                 output_truncated,
             } => {
                 let redacted_diff = diff.map(|d| redact_diff(d, redactor));
-                let redacted_output = output.as_deref().map(|o| redactor.redact_all(o));
+                let (redacted_output, re_truncated) = match output.as_deref() {
+                    Some(o) => {
+                        let redacted = redactor.redact_all(o);
+                        let (bounded, trunc) =
+                            bound_text(&redacted, super::wire::TOOL_OUTPUT_BYTES);
+                        (Some(bounded), trunc)
+                    }
+                    None => (None, false),
+                };
                 let failed = status.map(|s| s == ToolStatus::Failed);
                 self.record_display(
                     recorder,
@@ -1588,7 +1634,7 @@ impl TurnAccumulator {
                         locations: locations.map(|locations| redact_locations(locations, redactor)),
                         output: redacted_output,
                         diff: redacted_diff,
-                        output_truncated,
+                        output_truncated: output_truncated || re_truncated,
                         failed,
                         exit_code: None,
                     }),
@@ -1695,10 +1741,22 @@ fn redact_locations(locations: Vec<ToolLocation>, redactor: &StreamRedactor) -> 
 }
 
 fn redact_diff(diff: ToolDiff, redactor: &StreamRedactor) -> ToolDiff {
+    let half = super::wire::DIFF_BYTES / 2;
+    let (old_text, old_trunc) = match diff.old_text.as_deref() {
+        Some(t) => {
+            let redacted = redactor.redact_all(t);
+            let (bounded, trunc) = bound_text(&redacted, half);
+            (Some(bounded), trunc)
+        }
+        None => (None, false),
+    };
+    let redacted_new = redactor.redact_all(&diff.new_text);
+    let (new_text, new_trunc) =
+        bound_text(&redacted_new, super::wire::DIFF_BYTES.saturating_sub(half));
     ToolDiff {
         path: redactor.redact_all(&diff.path),
-        old_text: diff.old_text.as_deref().map(|t| redactor.redact_all(t)),
-        new_text: redactor.redact_all(&diff.new_text),
-        truncated: diff.truncated,
+        old_text,
+        new_text,
+        truncated: diff.truncated || old_trunc || new_trunc,
     }
 }

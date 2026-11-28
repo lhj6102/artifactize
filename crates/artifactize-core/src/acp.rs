@@ -302,24 +302,26 @@ impl WarmOwner {
 
 /// Persisted ACP session binding stored inside `chat_sessions.data` and guarded by atomic
 /// `generation` CAS across worktree moves, agent switches, warm pool reuse, and `session/load`.
+/// Confined to `artifactize-core` so raw ACP `remote_session_id` never crosses the public Chat API
+/// (`C-ACP-EDGE-ISOLATION`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AcpBinding {
-    pub agent_id: AgentId,
+pub(crate) struct AcpBinding {
+    pub(crate) agent_id: AgentId,
     #[serde(with = "crate::platform::path_serde")]
-    pub worktree: PathBuf,
-    pub checkout: repository::Identity,
+    pub(crate) worktree: PathBuf,
+    pub(crate) checkout: repository::Identity,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub remote_session_id: Option<String>,
-    pub generation: u64,
+    pub(crate) remote_session_id: Option<String>,
+    pub(crate) generation: u64,
     /// Last send confirmed durably saved with `Kind::Answer(Completed(_))`.
     #[serde(default)]
-    pub settled_send: usize,
+    pub(crate) settled_send: usize,
     /// `(resolved_executable, executable_sha256, args_hash, auth_generation)`.
     #[serde(default)]
-    pub runtime_fingerprint: String,
+    pub(crate) runtime_fingerprint: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub warm_owner: Option<WarmOwner>,
+    pub(crate) warm_owner: Option<WarmOwner>,
 }
 
 /// Structured ACP transport or setup failure mapped cleanly to `agent::error::Failure`.

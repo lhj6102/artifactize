@@ -338,6 +338,7 @@ pub(crate) fn open_verified_executable(path: &Path) -> io::Result<File> {
 pub(crate) async fn spawn_verified(
     path: &Path,
     verified_file: File,
+    _expected_sha256: &str,
     args: &[OsString],
     cwd: &Path,
     environment: &std::collections::BTreeMap<OsString, OsString>,

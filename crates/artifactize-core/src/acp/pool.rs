@@ -66,6 +66,7 @@ impl WarmChild {
         let mut child = process::spawn_verified_supervised(
             resolved_executable,
             verified_file,
+            &executable_sha256,
             &args,
             worktree,
             &env,

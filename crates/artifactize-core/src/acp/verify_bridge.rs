@@ -484,14 +484,19 @@ async fn serve_stdio(
                         )
                     } else {
                         _in_flight_guard = Some(guard);
-                        // Redact JSON string values BEFORE serialization so secrets containing
-                        // characters that JSON escapes are still matched (`C-ACP-EDGE-ISOLATION`).
+                        // Parse at the edge first: rejected/unparsed JSON payloads never leave
+                        // `src/acp/` into `Block::Tool.arguments` (`C-ACP-EDGE-ISOLATION`).
                         let redacted_value = redact_json_value(&arguments, redactor);
-                        let redacted_args = redactor.redact_all(&redacted_value.to_string());
-                        let summary_full = format!("{name} {redacted_args}");
-                        let summary = redactor
-                            .redact_all(&summary_full.chars().take(120).collect::<String>());
                         let parsed = parse_bridge_call(session_id, send, &name, arguments);
+                        let (summary, redacted_args) = if parsed.is_ok() {
+                            let redacted_args = redactor.redact_all(&redacted_value.to_string());
+                            let summary_full = format!("{name} {redacted_args}");
+                            let summary = redactor
+                                .redact_all(&summary_full.chars().take(120).collect::<String>());
+                            (summary, redacted_args)
+                        } else {
+                            (name.clone(), String::new())
+                        };
                         let (reply_tx, receive) = oneshot::channel();
                         if calls
                             .send(BridgeCall {

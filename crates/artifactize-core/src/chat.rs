@@ -314,7 +314,7 @@ pub struct Session {
     pub updated_at: Timestamp,
     activity: Option<Activity>,
     pub(crate) moved_from: Option<PathBuf>,
-    pub acp_binding: Option<AcpBinding>,
+    pub(crate) acp_binding: Option<AcpBinding>,
     /// Live ownership of a turn, read separately from the saved session.
     pub running: bool,
     /// Derived live from `running && has_pending_permission`; never persisted in `Activity`.
@@ -1907,8 +1907,50 @@ impl Chat {
                     .await?;
                 Ok(ChatTarget::direct(resolved))
             }
-            ChatTarget::Acp { agent, config } => {
-                let _spec = catalog::resolve_spec(&agent, Some(&self.state), Some(worktree))?;
+            ChatTarget::Acp { agent, mut config } => {
+                let spec = catalog::resolve_spec(&agent, Some(&self.state), Some(worktree))?;
+                // Preserve each ACP option's category when saved so an agent later re-advertising
+                // a former mode option ID as non-mode can never silently downgrade it
+                // (`C-NO-SILENT-REGRESSION`).
+                if config.iter().any(|selection| selection.category.is_none()) {
+                    let prev_config = match previous {
+                        Some(ChatTarget::Acp {
+                            agent: prev_agent,
+                            config,
+                        }) if prev_agent == &agent => Some(config.as_slice()),
+                        _ => None,
+                    };
+                    for selection in &mut config {
+                        if selection.category.is_none()
+                            && let Some(prev) = prev_config
+                        {
+                            selection.category = prev
+                                .iter()
+                                .find(|item| item.id == selection.id)
+                                .and_then(|item| item.category);
+                        }
+                    }
+                    if config.iter().any(|selection| selection.category.is_none())
+                        && let catalog::AgentAvailability::Ready { config_options, .. } =
+                            catalog::probe_spec(&spec, Some(worktree), false).await
+                    {
+                        for selection in &mut config {
+                            if selection.category.is_none() {
+                                selection.category = config_options
+                                    .iter()
+                                    .find(|opt| opt.id == selection.id)
+                                    .map(|opt| opt.category);
+                            }
+                        }
+                    }
+                    if let Some(missing) = config.iter().find(|selection| selection.category.is_none())
+                    {
+                        return Err(format!(
+                            "Option {:?} on {} must specify its category; choose the agent's options again.",
+                            missing.id, spec.name
+                        ));
+                    }
+                }
                 Ok(ChatTarget::Acp { agent, config })
             }
         }
@@ -2020,26 +2062,50 @@ fn default_config_selections(options: &[ConfigOption]) -> Vec<ConfigSelection> {
         .collect()
 }
 
-/// The engine a turn on `next` hands off from: the one the conversation's last turn ran on, as
-/// its send recorded it, when that differs. The picker saves its choice before the next send,
-/// so the saved target names the new engine, not the last one. A conversation whose sends
-/// predate that record falls back to `unrecorded`.
+/// The engine a turn on `next` hands off from: the one the conversation's last active turn ran on,
+/// as its send recorded it, when that differs. A turn that failed before the new engine produced
+/// any Handoff, output, tool call, or completion does not count as having transitioned the
+/// conversation, so a retry still surfaces the handoff (`C-NO-SILENT-REGRESSION`).
 fn handoff_from(
     conversation: Option<&Conversation>,
     next: &str,
     unrecorded: impl FnOnce() -> Option<String>,
 ) -> Option<String> {
-    let last = conversation.and_then(|conversation| {
-        conversation
-            .events()
-            .iter()
-            .rev()
-            .find_map(|event| match &event.kind {
-                Kind::Send(send) => Some(send.engine.clone()),
-                _ => None,
-            })
-    });
-    match last {
+    let mut last_active: Option<Option<String>> = None;
+    let mut current_send: Option<Option<String>> = None;
+    let mut current_ran = false;
+    if let Some(conversation) = conversation {
+        for event in conversation.events() {
+            match &event.kind {
+                Kind::Send(send) => {
+                    if current_ran && let Some(engine) = current_send.take() {
+                        last_active = Some(engine);
+                    }
+                    current_send = Some(send.engine.clone());
+                    current_ran = false;
+                }
+                Kind::Handoff(_)
+                | Kind::Delivery(_)
+                | Kind::AcpToolCall(_)
+                | Kind::Answer(Answer::Completed(_)) => {
+                    current_ran = true;
+                }
+                Kind::Message(message)
+                    if matches!(
+                        message.message(),
+                        rig_core::message::Message::Assistant { .. }
+                    ) =>
+                {
+                    current_ran = true;
+                }
+                _ => {}
+            }
+        }
+        if current_ran && let Some(engine) = current_send {
+            last_active = Some(engine);
+        }
+    }
+    match last_active {
         Some(Some(last)) => (last != next).then_some(last),
         Some(None) | None => unrecorded(),
     }

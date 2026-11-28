@@ -1,13 +1,13 @@
 //! Process groups, the pre-exec admission gate, and OS process start times.
 
 use std::{
-    ffi::{CString, OsString},
+    ffi::OsString,
     fs::File,
     io::{self, Read, Seek, SeekFrom, Write},
     net::Shutdown,
     os::{
         fd::AsRawFd,
-        unix::{ffi::OsStrExt, fs::MetadataExt, net::UnixStream, process::CommandExt},
+        unix::{net::UnixStream, process::CommandExt},
     },
     path::Path,
     process::Stdio,
@@ -25,6 +25,7 @@ use tokio::{
 pub(crate) struct Child {
     child: Box<dyn ChildWrapper>,
     group: Option<crate::process::ChildIdentity>,
+    _staged_dir: Option<super::PrivateTempDir>,
 }
 
 use crate::platform::ProcessOutcome;
@@ -172,73 +173,93 @@ pub(crate) fn open_verified_executable(path: &Path) -> io::Result<File> {
     crate::platform::open_regular(path)
 }
 
-/// Spawn a previously hashed executable directly without re-resolving `PATH` or `cwd`.
+/// Spawn a previously hashed executable directly without re-resolving `PATH` or `cwd` and
+/// without any pathname-replacement TOCTOU (`C-TRUST-BEFORE-WORKTREE`).
 ///
-/// On Linux, native binaries execute directly through `/proc/self/fd/<fd>` with `arg0` set to
-/// `path`, binding `execve` to the exact verified inode even if the path is renamed meanwhile.
-/// For shebang scripts (whose interpreter resolves sibling imports from `argv[1]`) and on other
-/// Unix platforms, `pre_exec` verifies via async-signal-safe `lstat` that `path` still refers to
-/// the exact verified `(dev, ino, size, mtime)` immediately before `execve`.
+/// On Linux, both native binaries and shebang scripts execute directly through `/proc/self/fd/<fd>`
+/// with `arg0` set to `path` (for `#!` scripts, `FD_CLOEXEC` is cleared on that descriptor in
+/// `pre_exec` so the kernel and interpreter read the exact verified open inode).
+/// On non-Linux Unix platforms (such as macOS, which has no `fexecve`), the verified file is
+/// streamed directly from `verified_file` into a private `0700` file while recomputing and
+/// verifying `expected_sha256`, executed from that private directory with `arg0` set to `path`,
+/// and kept alive on the returned `Child` until drop.
 pub(crate) async fn spawn_verified(
     path: &Path,
     mut verified_file: File,
+    expected_sha256: &str,
     args: &[OsString],
     cwd: &Path,
     environment: &std::collections::BTreeMap<OsString, OsString>,
 ) -> io::Result<Child> {
     #[cfg(target_os = "linux")]
-    let use_proc_fd = {
+    let (mut std_cmd, staged_dir): (std::process::Command, Option<super::PrivateTempDir>) = {
+        let _ = expected_sha256;
         verified_file.seek(SeekFrom::Start(0))?;
         let mut magic = [0u8; 2];
         let count = verified_file.read(&mut magic)?;
-        !(count == 2 && magic == *b"#!")
+        let is_script = count == 2 && magic == *b"#!";
+        let raw_fd = verified_file.as_raw_fd();
+        let mut cmd = std::process::Command::new(format!("/proc/self/fd/{raw_fd}"));
+        cmd.arg0(path);
+        if is_script {
+            // SAFETY: `fcntl(raw_fd, F_SETFD, 0)` is POSIX async-signal-safe and clears
+            // `FD_CLOEXEC` only in the forked child right before `execve("/proc/self/fd/<fd>")`
+            // so the shebang interpreter reads the exact open verified inode.
+            unsafe {
+                cmd.pre_exec(move || {
+                    if libc::fcntl(raw_fd, libc::F_SETFD, 0) == -1 {
+                        return Err(io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+        }
+        (cmd, None)
     };
     #[cfg(not(target_os = "linux"))]
-    let use_proc_fd = false;
+    let (mut std_cmd, staged_dir): (std::process::Command, Option<super::PrivateTempDir>) = {
+        use sha2::{Digest, Sha256};
+        use std::os::unix::fs::OpenOptionsExt;
 
-    let mut std_cmd = if use_proc_fd {
-        let mut cmd =
-            std::process::Command::new(format!("/proc/self/fd/{}", verified_file.as_raw_fd()));
-        cmd.arg0(path);
-        cmd
-    } else {
-        let meta = verified_file.metadata()?;
-        let dev = meta.dev();
-        let ino = meta.ino();
-        let size = meta.size();
-        let mtime = meta.mtime();
-        let mtime_nsec = meta.mtime_nsec();
-        let cpath = CString::new(path.as_os_str().as_bytes()).map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "verified executable path contains interior NUL",
-            )
-        })?;
-        let mut cmd = std::process::Command::new(path);
-        // SAFETY: the closure executes only async-signal-safe `libc::lstat` on an already-owned
-        // `CString` before `execve` and performs no heap allocation on the success path.
-        unsafe {
-            cmd.pre_exec(move || {
-                let mut st: libc::stat = std::mem::zeroed();
-                if libc::lstat(cpath.as_ptr(), &mut st) != 0 {
-                    return Err(io::Error::last_os_error());
-                }
-                if st.st_dev as u64 != dev
-                    || st.st_ino as u64 != ino
-                    || st.st_size as u64 != size
-                    || st.st_mtime as i64 != mtime
-                    || st.st_mtime_nsec as i64 != mtime_nsec
-                {
-                    return Err(io::Error::new(
-                        io::ErrorKind::PermissionDenied,
-                        "verified executable changed before exec",
-                    ));
-                }
-                Ok(())
-            });
+        let staged_dir = super::private_tempdir_in(
+            "artifactize-verified-",
+            &crate::platform::temporary_directory(),
+        )?;
+        let staged_path = staged_dir.path().join("exec");
+        let mut staged = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o700)
+            .open(&staged_path)?;
+        verified_file.seek(SeekFrom::Start(0))?;
+        let mut hasher = Sha256::new();
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let count = verified_file.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            hasher.update(&buffer[..count]);
+            staged.write_all(&buffer[..count])?;
         }
-        cmd
+        staged.flush()?;
+        drop(staged);
+        let digest = hasher
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        if digest != expected_sha256 {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "verified executable changed before exec",
+            ));
+        }
+        let mut cmd = std::process::Command::new(&staged_path);
+        cmd.arg0(path);
+        (cmd, Some(staged_dir))
     };
+
     std_cmd
         .args(args)
         .current_dir(cwd)
@@ -249,9 +270,10 @@ pub(crate) async fn spawn_verified(
         .stderr(Stdio::piped());
     let mut command = Command::from(std_cmd);
     command.kill_on_drop(true);
-    let spawned = spawn_now(command).await;
+    let mut spawned = spawn_now(command).await?;
     drop(verified_file);
-    spawned
+    spawned._staged_dir = staged_dir;
+    Ok(spawned)
 }
 
 /// Spawn `command` as the leader of a new process group, running at once. Without the gate's
@@ -268,6 +290,7 @@ pub(crate) async fn spawn_now(command: Command) -> io::Result<Child> {
     Ok(Child {
         group: Some(crate::process::child_identity(pid)?),
         child,
+        _staged_dir: None,
     })
 }
 
@@ -553,6 +576,7 @@ fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Ch
             Ok(group) => Ok(Child {
                 child,
                 group: Some(group),
+                _staged_dir: None,
             }),
             Err(_) => {
                 // With no admission byte, a successful native spawn means the

@@ -570,6 +570,7 @@ pub(crate) async fn spawn_handoff(command: &Command) -> Result<Child, Error> {
 pub(crate) async fn spawn_verified_supervised(
     path: &std::path::Path,
     verified_file: std::fs::File,
+    expected_sha256: &str,
     args: &[OsString],
     cwd: &std::path::Path,
     env: &BTreeMap<OsString, OsString>,
@@ -579,9 +580,16 @@ pub(crate) async fn spawn_verified_supervised(
         return Err(Error::Cancelled);
     }
     let environment = platform::environment::for_child(env);
-    let mut spawned = platform::spawn_verified(path, verified_file, args, cwd, &environment)
-        .await
-        .map_err(Error::Spawn)?;
+    let mut spawned = platform::spawn_verified(
+        path,
+        verified_file,
+        expected_sha256,
+        args,
+        cwd,
+        &environment,
+    )
+    .await
+    .map_err(Error::Spawn)?;
     if process_cancel.is_cancelled() {
         let _ = terminate(&mut spawned).await;
         return Err(Error::Cancelled);

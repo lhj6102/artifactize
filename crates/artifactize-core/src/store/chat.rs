@@ -465,7 +465,6 @@ impl Receipts {
                 session.view = current.view;
                 session.acp_binding = acp_binding.clone();
                 session.moved_from = None;
-                session.previous_engine = None;
                 save(&transaction, &session)?;
                 transaction.commit()?;
                 Ok::<_, Error>((target, acp_binding))
@@ -1129,6 +1128,9 @@ impl Receipts {
                     if let Some(session) = settled {
                         let mut current = saved_chat(&transaction, &id)?;
                         current.settle_from(&session);
+                        if session.outcome() == Some(crate::chat::Outcome::Completed) {
+                            current.previous_engine = None;
+                        }
                         if let Some((expected_gen, completed_send, warm_owner)) = settled_acp
                             && let Some(binding) = current.acp_binding.as_mut()
                             && binding.generation == expected_gen

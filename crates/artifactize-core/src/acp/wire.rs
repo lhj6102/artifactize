@@ -256,12 +256,18 @@ impl Connection {
     ) -> Self {
         let id = NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = mpsc::channel(UPDATE_CHANNEL_CAPACITY);
-        let reader_task = tokio::spawn(stdout_reader_loop(stdout, tx, hide_always_options));
+        let redactor = StreamRedactor::new(known_secrets);
+        let reader_task = tokio::spawn(stdout_reader_loop(
+            stdout,
+            tx,
+            hide_always_options,
+            redactor.clone(),
+        ));
         Self {
             id,
             agent_name: agent_name.into(),
             auth_hint: auth_hint.into(),
-            redactor: StreamRedactor::new(known_secrets),
+            redactor,
             write: stdin,
             frames: rx,
             reader_task,
@@ -631,13 +637,27 @@ impl Connection {
             };
 
             // A mode is satisfied only by an option the agent calls a mode; another option with
-            // the same ID never stands in for it.
+            // the same ID never stands in for it. Likewise, a legacy saved selection with no
+            // recorded category (whose ID is not unambiguously model/thought_level) could have
+            // been saved as a mode: refuse to let the agent reclassify it as non-mode.
             if inferred_cat == ConfigCategory::Mode && current_opt.category != ConfigCategory::Mode
             {
                 return Err(Problem::ModeMismatch {
                     requested: selection.value.clone(),
                     actual: None,
                 });
+            }
+            if selection.category.is_none()
+                && current_opt.category != ConfigCategory::Mode
+                && !matches!(
+                    infer_category(&selection.id, None),
+                    ConfigCategory::Model | ConfigCategory::ThoughtLevel
+                )
+            {
+                return Err(Problem::Failed(format!(
+                    "Saved option {:?} on {} has no recorded category and may have been a mode; choose the agent's options again.",
+                    selection.id, self.agent_name
+                )));
             }
             let is_mode = current_opt.category == ConfigCategory::Mode;
             let choice_exists = current_opt
@@ -1215,6 +1235,7 @@ async fn stdout_reader_loop(
     stdout: ChildStdout,
     tx: mpsc::Sender<WireFrame>,
     hide_always_options: bool,
+    redactor: StreamRedactor,
 ) {
     let mut reader = BufReader::new(stdout);
     let mut line = Vec::new();
@@ -1256,7 +1277,7 @@ async fn stdout_reader_loop(
             let _ = tx.send(WireFrame::SignedOut).await;
             return;
         }
-        let parsed = match parse_wire_frame(&line, hide_always_options) {
+        let parsed = match parse_wire_frame(&line, hide_always_options, &redactor) {
             Ok(Some(frame)) => frame,
             Ok(None) => continue,
             Err(error) => {
@@ -1316,6 +1337,7 @@ fn is_non_essential_display_delta(frame: &WireFrame) -> bool {
 pub(crate) fn parse_wire_frame(
     bytes: &[u8],
     hide_always_options: bool,
+    redactor: &StreamRedactor,
 ) -> Result<Option<WireFrame>, String> {
     let incoming: RawIncoming = serde_json::from_slice(bytes)
         .map_err(|error| format!("ACP agent wrote an invalid JSON-RPC message: {error}."))?;
@@ -1329,6 +1351,7 @@ pub(crate) fn parse_wire_frame(
                     id,
                     parsed,
                     hide_always_options,
+                    redactor,
                 ))))
             } else {
                 Ok(Some(WireFrame::UnknownServerRequest { id, method }))
@@ -1341,7 +1364,7 @@ pub(crate) fn parse_wire_frame(
             let update: RawUpdateNotification = serde_json::from_value(params)
                 .map_err(|_| "ACP agent sent malformed session/update notification.".to_owned())?;
             Ok(
-                normalize_update(update.update).map(|event| WireFrame::Update {
+                normalize_update(update.update, redactor).map(|event| WireFrame::Update {
                     session_id: update.session_id,
                     event,
                 }),
@@ -1997,7 +2020,10 @@ fn map_plan_status(status: Option<&str>) -> PlanStepStatus {
     }
 }
 
-fn extract_tool_content(items: Vec<RawToolContent>) -> (Option<String>, Option<ToolDiff>, bool) {
+fn extract_tool_content(
+    items: Vec<RawToolContent>,
+    redactor: &StreamRedactor,
+) -> (Option<String>, Option<ToolDiff>, bool) {
     let mut output_parts = Vec::new();
     let mut diff = None;
     for item in items {
@@ -2010,9 +2036,9 @@ fn extract_tool_content(items: Vec<RawToolContent>) -> (Option<String>, Option<T
                 old_text,
                 new_text,
             } => {
-                let (old_text, new_text, truncated) = bound_diff(old_text, new_text);
+                let (old_text, new_text, truncated) = bound_diff(old_text, new_text, redactor);
                 diff = Some(ToolDiff {
-                    path: platform::normalize_external_path(&path),
+                    path: redactor.redact_all(&platform::normalize_external_path(&path)),
                     old_text,
                     new_text,
                     truncated,
@@ -2024,22 +2050,30 @@ fn extract_tool_content(items: Vec<RawToolContent>) -> (Option<String>, Option<T
     if output_parts.is_empty() {
         (None, diff, false)
     } else {
-        let joined = output_parts.join("\n");
+        // Redact BEFORE truncating so a secret straddling the cap boundary is replaced cleanly
+        // and `[REDACTED]` expansion never exceeds `TOOL_OUTPUT_BYTES` (`C-ACP-EDGE-ISOLATION`).
+        let joined = redactor.redact_all(&output_parts.join("\n"));
         let (bounded, truncated) = bound_text(&joined, TOOL_OUTPUT_BYTES);
         (Some(bounded), diff, truncated)
     }
 }
 
-fn bound_diff(old_text: Option<String>, new_text: String) -> (Option<String>, String, bool) {
+fn bound_diff(
+    old_text: Option<String>,
+    new_text: String,
+    redactor: &StreamRedactor,
+) -> (Option<String>, String, bool) {
     let half = DIFF_BYTES / 2;
     let (old_bounded, old_trunc) = match old_text {
         Some(text) => {
-            let (b, t) = bound_text(&text, half);
+            let redacted = redactor.redact_all(&text);
+            let (b, t) = bound_text(&redacted, half);
             (Some(b), t)
         }
         None => (None, false),
     };
-    let (new_bounded, new_trunc) = bound_text(&new_text, DIFF_BYTES.saturating_sub(half));
+    let redacted_new = redactor.redact_all(&new_text);
+    let (new_bounded, new_trunc) = bound_text(&redacted_new, DIFF_BYTES.saturating_sub(half));
     (old_bounded, new_bounded, old_trunc || new_trunc)
 }
 
@@ -2054,7 +2088,7 @@ pub(crate) fn bound_text(text: &str, max_bytes: usize) -> (String, bool) {
     (text[..end].to_owned(), true)
 }
 
-fn normalize_update(raw: RawUpdate) -> Option<SessionEvent> {
+fn normalize_update(raw: RawUpdate, redactor: &StreamRedactor) -> Option<SessionEvent> {
     match raw {
         RawUpdate::AgentMessageChunk {
             content: RawContentBlock::Text { text },
@@ -2070,7 +2104,7 @@ fn normalize_update(raw: RawUpdate) -> Option<SessionEvent> {
             locations,
             content,
         } => {
-            let (output, diff, output_truncated) = extract_tool_content(content);
+            let (output, diff, output_truncated) = extract_tool_content(content, redactor);
             let locations: Vec<ToolLocation> = locations
                 .into_iter()
                 .map(|loc| ToolLocation {
@@ -2106,7 +2140,7 @@ fn normalize_update(raw: RawUpdate) -> Option<SessionEvent> {
             content,
         } => {
             let (output, diff, output_truncated) = content
-                .map(extract_tool_content)
+                .map(|items| extract_tool_content(items, redactor))
                 .unwrap_or((None, None, false));
             let locations = locations.map(|locs| {
                 locs.into_iter()
@@ -2151,7 +2185,10 @@ fn normalize_update(raw: RawUpdate) -> Option<SessionEvent> {
     }
 }
 
-fn format_permission_detail(input: RawPermissionInput) -> Option<String> {
+fn format_permission_detail(
+    input: RawPermissionInput,
+    redactor: &StreamRedactor,
+) -> Option<String> {
     let raw = match input {
         RawPermissionInput::Text(text) => text,
         RawPermissionInput::Fields(fields) => {
@@ -2207,7 +2244,8 @@ fn format_permission_detail(input: RawPermissionInput) -> Option<String> {
         RawPermissionInput::Other(_) => return None,
     };
     let cleaned = platform::clean_program_text(raw.as_bytes());
-    let (bounded, _) = bound_text(&cleaned, PERMISSION_DETAIL_BYTES);
+    let redacted = redactor.redact_all(&cleaned);
+    let (bounded, _) = bound_text(&redacted, PERMISSION_DETAIL_BYTES);
     (!bounded.trim().is_empty()).then_some(bounded)
 }
 
@@ -2215,6 +2253,7 @@ fn normalize_permission(
     rpc_id: RpcId,
     raw: RawPermissionParams,
     hide_always_options: bool,
+    redactor: &StreamRedactor,
 ) -> IncomingPermission {
     let tool = raw.tool_call.unwrap_or(RawPermissionToolCall {
         title: None,
@@ -2243,7 +2282,9 @@ fn normalize_permission(
     } else {
         title.clone()
     };
-    let detail = tool.raw_input.and_then(format_permission_detail);
+    let detail = tool
+        .raw_input
+        .and_then(|input| format_permission_detail(input, redactor));
     let options = raw
         .options
         .into_iter()
@@ -2364,7 +2405,8 @@ mod tests {
                 }
             }
         });
-        let frame = parse_wire_frame(thought_line.to_string().as_bytes(), false)
+        let no_secrets = StreamRedactor::new(Vec::<String>::new());
+        let frame = parse_wire_frame(thought_line.to_string().as_bytes(), false, &no_secrets)
             .unwrap()
             .unwrap();
         assert!(matches!(
@@ -2392,7 +2434,7 @@ mod tests {
                 ]
             }
         });
-        let frame = parse_wire_frame(perm_line.to_string().as_bytes(), false)
+        let frame = parse_wire_frame(perm_line.to_string().as_bytes(), false, &no_secrets)
             .unwrap()
             .unwrap();
         let WireFrame::PermissionRequest(req) = frame else {
@@ -2403,7 +2445,7 @@ mod tests {
         assert!(req.options[1].persists_in_agent_settings);
 
         // When a preset hides always options with unverified persistence scopes:
-        let frame_hidden = parse_wire_frame(perm_line.to_string().as_bytes(), true)
+        let frame_hidden = parse_wire_frame(perm_line.to_string().as_bytes(), true, &no_secrets)
             .unwrap()
             .unwrap();
         let WireFrame::PermissionRequest(req_hidden) = frame_hidden else {
@@ -2419,7 +2461,7 @@ mod tests {
             "method": "fs/read_text_file",
             "params": {}
         });
-        let frame = parse_wire_frame(unknown.to_string().as_bytes(), false)
+        let frame = parse_wire_frame(unknown.to_string().as_bytes(), false, &no_secrets)
             .unwrap()
             .unwrap();
         assert!(matches!(
@@ -2488,6 +2530,7 @@ mod tests {
 
     #[test]
     fn empty_current_mode_update_is_forwarded_and_raw_input_is_typed() {
+        let no_secrets = StreamRedactor::new(Vec::<String>::new());
         let mode_update = json!({
             "jsonrpc": "2.0",
             "method": "session/update",
@@ -2499,7 +2542,7 @@ mod tests {
                 }
             }
         });
-        let frame = parse_wire_frame(mode_update.to_string().as_bytes(), false)
+        let frame = parse_wire_frame(mode_update.to_string().as_bytes(), false, &no_secrets)
             .unwrap()
             .unwrap();
         assert!(matches!(
@@ -2527,7 +2570,7 @@ mod tests {
             }
         });
         let WireFrame::PermissionRequest(req) =
-            parse_wire_frame(perm_typed.to_string().as_bytes(), false)
+            parse_wire_frame(perm_typed.to_string().as_bytes(), false, &no_secrets)
                 .unwrap()
                 .unwrap()
         else {
@@ -2552,12 +2595,52 @@ mod tests {
             }
         });
         let WireFrame::PermissionRequest(req_unknown) =
-            parse_wire_frame(perm_unknown.to_string().as_bytes(), false)
+            parse_wire_frame(perm_unknown.to_string().as_bytes(), false, &no_secrets)
                 .unwrap()
                 .unwrap()
         else {
             panic!("expected permission request");
         };
         assert_eq!(req_unknown.detail, None);
+
+        // Secret straddling TOOL_OUTPUT_BYTES is redacted BEFORE truncation.
+        let secret = "sk-boundary-secret-token-xyz";
+        let boundary_redactor = StreamRedactor::new([secret.to_owned()]);
+        let prefix = "a".repeat(TOOL_OUTPUT_BYTES - 5);
+        let tool_line = json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": "s1",
+                "update": {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tc1",
+                    "title": "Dump",
+                    "kind": "execute",
+                    "status": "completed",
+                    "content": [{ "type": "content", "content": { "type": "text", "text": format!("{prefix}{secret}") } }]
+                }
+            }
+        });
+        let WireFrame::Update {
+            event:
+                SessionEvent::ToolCall {
+                    output: Some(output),
+                    output_truncated,
+                    ..
+                },
+            ..
+        } = parse_wire_frame(tool_line.to_string().as_bytes(), false, &boundary_redactor)
+            .unwrap()
+            .unwrap()
+        else {
+            panic!("expected tool_call update");
+        };
+        assert!(output_truncated);
+        assert!(output.len() <= TOOL_OUTPUT_BYTES);
+        assert!(
+            !output.contains("sk-bo"),
+            "secret prefix leaked across cap boundary"
+        );
     }
 }

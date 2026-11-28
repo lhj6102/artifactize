@@ -601,14 +601,31 @@ impl Conversation {
     /// right after that assistant message, so switching from a stopped legacy turn to ACP and
     /// later back to Direct API never sends unanswered `ToolCall`s to Anthropic/OpenAI.
     pub fn history(&self) -> Result<Vec<Message>, String> {
-        let raw = self
-            .events
-            .iter()
-            .filter_map(|event| match &event.kind {
-                Kind::Message(event) => Some(event.message().clone()),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
+        let mut raw = Vec::new();
+        let mut saw_assistant_in_turn = false;
+        for event in &self.events {
+            match &event.kind {
+                Kind::Send(_) => {
+                    saw_assistant_in_turn = false;
+                }
+                Kind::Message(event) => {
+                    let msg = event.message().clone();
+                    if matches!(msg, Message::Assistant { .. }) {
+                        saw_assistant_in_turn = true;
+                    }
+                    raw.push(msg);
+                }
+                Kind::Answer(Answer::Completed(text))
+                    if !saw_assistant_in_turn && !text.is_empty() =>
+                {
+                    // Preserve a completed turn's answer in Direct history even if intermediate
+                    // ACP display events hit the per-turn display cap before flushing prose.
+                    saw_assistant_in_turn = true;
+                    raw.push(Message::assistant(text.clone()));
+                }
+                _ => {}
+            }
+        }
         let mut normalized = Vec::with_capacity(raw.len());
         let mut index = 0;
         while index < raw.len() {

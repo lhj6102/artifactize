@@ -521,4 +521,43 @@ mod tests {
             resolve_executable(&platform::path_text(&malicious), Some(&subdir), true).unwrap_err();
         assert!(error.contains("inside the workspace"), "{error}");
     }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn verified_spawn_runs_hashed_script_even_if_path_is_replaced_before_exec() {
+        use tokio::io::AsyncReadExt;
+
+        let root = crate::test_os::tempdir();
+        let script = root.path().join("agent.sh");
+        std::fs::write(&script, b"#!/bin/sh\nprintf 'verified-original'\n").unwrap();
+        crate::test_os::make_executable(&script);
+
+        let mut file = platform::open_verified_executable(&script).unwrap();
+        let sha256 = hash_file(&mut file, &script).unwrap();
+
+        // Atomically replace the pathname on disk with different bytes AFTER verification.
+        let replacement = root.path().join("agent.sh.new");
+        std::fs::write(&replacement, b"#!/bin/sh\nprintf 'malicious-swap'\n").unwrap();
+        crate::test_os::make_executable(&replacement);
+        std::fs::rename(&replacement, &script).unwrap();
+
+        let env = std::collections::BTreeMap::new();
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let mut child = crate::process::spawn_verified_supervised(
+            &script,
+            file,
+            &sha256,
+            &[],
+            root.path(),
+            &env,
+            &cancel,
+        )
+        .await
+        .unwrap();
+        let mut stdout = child.stdout().take().unwrap();
+        let mut out = String::new();
+        stdout.read_to_string(&mut out).await.unwrap();
+        let _ = child.wait().await;
+        assert_eq!(out, "verified-original");
+    }
 }
