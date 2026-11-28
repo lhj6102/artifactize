@@ -218,9 +218,9 @@ describe("Markdown", () => {
 
 describe("Artifactize Viewer", () => {
   const graph = JSON.stringify({
-    artifacts: { "front-design": { kind: "folder", type: "html" }, front: { kind: "folder", type: null } },
+    artifacts: { "front-design": { kind: "folder", toolsets: ["files", "html"] }, front: { kind: "folder", toolsets: [] } },
     evals: {
-      "front-design/matches-layout": { target: "front-design", title: "The page matches the layout", criteria: { kind: "agent" }, payload: { instruction: "Compare the page with the layout." }, reads: ["front"] },
+      "front-design/matches-layout": { target: "front-design", title: "The page matches the layout", criteria: { kind: "agent" }, instruction: "Compare the page with the layout.", reads: ["front"] },
     },
     relations: [{ source: "front", target: "front-design", kind: "instruction" }],
   });
@@ -235,9 +235,9 @@ describe("Artifactize Viewer", () => {
     expect(within(strip).getByRole("button", { name: "Fit" }).hasAttribute("disabled")).toBe(false);
     expect(within(strip).queryByRole("button", { name: /^Find/ })).toBeNull();
     const node = [...container.querySelectorAll<HTMLElement>(".svelte-flow__node")].find((each) => each.textContent?.includes("front-design"))!;
-    expect(node.textContent).toContain("html");
+    expect(node.querySelector(".tag")?.textContent).toBe("files & html");
     const other = [...container.querySelectorAll<HTMLElement>(".svelte-flow__node")].find((each) => !each.textContent?.includes("front-design"))!;
-    expect(other.textContent).toContain("custom");
+    expect(other.querySelector(".tag")).toBeNull();
     await fireEvent.click(node);
     const panel = await screen.findByRole("region", { name: "Artifact front-design" });
     const evaluation = within(panel).getByRole("region", { name: "front-design/matches-layout" });

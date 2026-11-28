@@ -303,7 +303,7 @@ export class Graph {
     return (await named.isExisting()) ? named : this.browser.$(TOOLS).$(`button*=${name}`);
   }
 
-  /** Whether the stage header shows the graph's tool `name` (Find, Fit, New Artifact, Reset layout…). */
+  /** Whether the stage header shows the graph's tool `name` (Find, Fit, Refresh…). */
   async hasTool(name: string): Promise<boolean> {
     return (await this.toolButton(name)).isExisting();
   }

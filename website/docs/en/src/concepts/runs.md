@@ -41,7 +41,7 @@ By default, an eval waits until its upstream dependency gates are satisfied (`GR
 
 ## Sign-offs and the end of a Run {#sign-offs-and-the-end-of-a-run}
 
-A Human eval starts only after every non-Human (`runtime` and `agent`) eval on its **same Artifact** is `GREEN` (even if `PROVISIONAL`), in addition to its `{name}` dependency gates; if a sibling machine eval is `RED` or `ERROR`, the Human eval is `BLOCKED`.
+A Human eval starts only after every non-Human (`runtime` and `agent`) eval on its **same Artifact** is `GREEN` (even if `PROVISIONAL`), in addition to its input dependency gates; if a sibling machine eval is `RED` or `ERROR`, the Human eval is `BLOCKED`.
 
 Once ready, a selected Human sign-off is recorded as a **`DEFERRED` request** that never holds up other evals: the open Run shows **`WAITING_HUMAN`**, downstream checks that depend on the sign-off proceed once their other prerequisites and scheduling limits allow, and their passing (`GREEN`) verdicts are marked **`PROVISIONAL`** until the sign-off is submitted (while `RED` or `ERROR` verdicts show as-is). Non-forced concurrent Runs in the same local state that need a sign-off with the same reuse key join the existing waiting request as **followers** instead of creating duplicate prompts.
 

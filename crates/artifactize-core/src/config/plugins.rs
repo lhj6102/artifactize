@@ -1,16 +1,26 @@
-//! Project-local Artifact types. Built-ins and installed plugins use the same manifest.
+//! Toolsets that come with artifactize or a plugin. A plugin is a folder with a `plugin.toml`
+//! naming its namespace, its `.artf` files declaring that namespace's toolset and any macros,
+//! and optionally a viewer page.
 
-use std::{collections::BTreeMap, fs::File, io::Read, path::Path, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    fs::File,
+    io::Read,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use serde::{Deserialize, Serialize};
 
-use super::{Artifact, ArtifactKind, ConfigError, LogicalPath, Views, discovery::DEFINITION_DIR};
+use super::{ConfigError, LogicalPath, PluginName, discovery::DEFINITION_DIR};
 use crate::{platform, scope};
 
 pub(super) const DIRECTORY: &str = "plugins";
 const MANIFEST: &str = "plugin.toml";
 /// A viewer opens one web document. Bound what a launch copies across IPC.
 const DOCUMENT_BYTES: u64 = 8 * 1024 * 1024;
+/// A plugin's `.artf` files, bounded like any document a plugin carries.
+const MAX_SOURCES: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -21,21 +31,52 @@ pub enum BuiltinViewer {
 }
 
 impl BuiltinViewer {
-    const MANIFESTS: [(Self, &str); 3] = [
-        (Self::Files, include_str!("plugins/files.toml")),
-        (Self::Markdown, include_str!("plugins/markdown.toml")),
-        (Self::Artifactize, include_str!("plugins/artifactize.toml")),
+    // Kept as text rather than `.artf` files: any `.artf` file marks its folder as a workspace.
+    const ALL: [(Self, &'static str, &'static str, &'static str); 3] = [
+        (
+            Self::Files,
+            "files",
+            "File Explorer",
+            r#"// The built-in File Explorer: an Artifact's files for agents and people.
+tool files = {
+  agent list = builtin(op = "list")
+  agent glob = builtin(op = "glob")
+  agent grep = builtin(op = "grep")
+  agent read = builtin(op = "read")
+  human view = viewer(description = "Open @{artf self} in File Explorer.")
+}
+"#,
+        ),
+        (
+            Self::Markdown,
+            "markdown",
+            "Markdown",
+            r#"// The built-in Markdown viewer.
+tool markdown = {
+  agent read = builtin(op = "read")
+  human view = viewer(description = "Open @{artf self} in Markdown.")
+}
+"#,
+        ),
+        (
+            Self::Artifactize,
+            "artifactize",
+            "Artifactize Viewer",
+            r#"// The built-in Artifactize Viewer of the definitions under .artifactize/.
+tool artifactize = {
+  agent declarations = builtin(op = "declarations", args = [])
+  human view = viewer(description = "Open @{artf self} in Artifactize Viewer.")
+}
+"#,
+        ),
     ];
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Manifest {
-    #[serde(rename = "type")]
-    name: super::ArtifactType,
+    namespace: PluginName,
     title: String,
-    #[serde(default)]
-    views: Views,
     viewer: Option<WebEntry>,
 }
 
@@ -45,7 +86,7 @@ struct WebEntry {
     entry: LogicalPath,
 }
 
-/// A viewer selected by the type's manifest, never by a path supplied by a web page.
+/// A viewer selected by its plugin, never by a path supplied by a web page.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum ViewerEntry {
@@ -56,8 +97,8 @@ pub enum ViewerEntry {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginInfo {
-    #[serde(rename = "type")]
-    pub name: super::ArtifactType,
+    #[serde(rename = "namespace")]
+    pub name: PluginName,
     pub title: String,
     pub builtin: bool,
     pub viewer: bool,
@@ -67,124 +108,28 @@ pub struct PluginInfo {
 pub(crate) struct Plugin {
     pub info: PluginInfo,
     pub viewer: Option<ViewerEntry>,
-    views: Views,
+    /// Its `.artf` files, by their path under `plugins/<namespace>/`.
+    pub sources: Vec<(PathBuf, String)>,
 }
 
 impl Plugin {
-    fn parse(
-        source: &str,
-        viewer: Option<BuiltinViewer>,
-        directory: Option<&Path>,
-    ) -> Result<Self, String> {
-        let manifest: Manifest = toml::from_str(source).map_err(|error| error.to_string())?;
-        super::validation::text(&manifest.title, "Plugin title")?;
-        let table = toml::de::DeTable::parse(source).map_err(|error| error.to_string())?;
-        let document =
-            toml::Spanned::new(table.span(), toml::de::DeValue::Table(table.into_inner()));
-        manifest.views.validate(
-            &super::location::Location::root(source, &document).child("views"),
-            &mut super::schemas::Schemas::default(),
-            None,
-        )?;
-        let entry = match (viewer, &manifest.viewer, directory) {
-            (Some(viewer), None, None) => Some(ViewerEntry::Builtin { viewer }),
-            (None, Some(web), Some(directory)) => {
-                if Path::new(web.entry.as_str())
-                    .extension()
-                    .is_none_or(|extension| extension != "html")
-                {
-                    return Err(
-                        "viewer.entry must name an .html file in the plugin directory.".into(),
-                    );
-                }
-                let file = scope::open_scoped(directory, web.entry.as_str())
-                    .map_err(|error| format!("viewer.entry {}: {error}", web.entry))?;
-                Some(ViewerEntry::Web {
-                    html: read_document(file)?.into(),
-                })
-            }
-            (None, None, Some(_)) => None,
-            _ => return Err("Invalid plugin viewer entry.".into()),
-        };
-        let declares_viewer = manifest
-            .views
-            .human_tools
-            .values()
-            .any(|tool| matches!(tool, super::HumanTool::Viewer(_)));
-        if declares_viewer != entry.is_some() {
-            return Err(
-                "A viewer entry and a Human tool with kind = \"viewer\" must be declared together."
-                    .into(),
-            );
-        }
-        Ok(Self {
-            info: PluginInfo {
-                name: manifest.name,
-                title: manifest.title,
-                builtin: viewer.is_some(),
-                viewer: entry.is_some(),
-            },
-            viewer: entry,
-            views: manifest.views,
-        })
-    }
-
-    pub(super) fn apply(self: &Arc<Self>, artifact: &mut Artifact) -> Result<(), String> {
-        if artifact.kind() == ArtifactKind::Live && (self.info.viewer || self.views.agent_tools.values().any(|tool| {
-            matches!(tool, super::AgentTool::Builtin(tool) if !matches!(tool.builtin, super::Builtin::Graph | super::Builtin::Help | super::Builtin::Open))
-        }) || self.views.human_tools.values().any(|tool| {
-            matches!(tool, super::HumanTool::Builtin(tool) if !matches!(tool.builtin, super::Builtin::Graph | super::Builtin::Help | super::Builtin::Open))
-        })) {
-            return Err("This plugin needs a local Artifact target, not a Live URI.".into());
-        }
-        if matches!(
-            self.viewer,
-            Some(ViewerEntry::Builtin {
-                viewer: BuiltinViewer::Artifactize
+    pub(super) fn source_files(&self) -> impl Iterator<Item = super::lang::SourceFile> + '_ {
+        self.sources
+            .iter()
+            .map(|(path, text)| super::lang::SourceFile {
+                path: PathBuf::from(DIRECTORY)
+                    .join(self.info.name.as_str())
+                    .join(path),
+                text: text.clone(),
+                origin: super::lang::Origin::Plugin(super::lang::PluginSource {
+                    namespace: self.info.name.to_string(),
+                    viewer: self.viewer.is_some(),
+                }),
             })
-        ) && !artifact
-            .path
-            .local()
-            .is_some_and(|path| path.starts_with(DEFINITION_DIR))
-        {
-            return Err(
-                "type = \"artifactize\" must target definitions under .artifactize/.".into(),
-            );
-        }
-        inherit(
-            &mut artifact.views.agent_tools,
-            &self.views.agent_tools,
-            "Agent tool",
-        )?;
-        inherit(
-            &mut artifact.views.agent_sessions,
-            &self.views.agent_sessions,
-            "Agent tool session",
-        )?;
-        inherit(
-            &mut artifact.views.human_tools,
-            &self.views.human_tools,
-            "Human tool",
-        )?;
-        artifact.plugin = Some(Arc::clone(self));
-        Ok(())
     }
 }
 
-fn inherit<T: Clone>(
-    own: &mut BTreeMap<super::ToolOperationName, T>,
-    inherited: &BTreeMap<super::ToolOperationName, T>,
-    kind: &str,
-) -> Result<(), String> {
-    for (name, tool) in inherited {
-        if own.insert(name.clone(), tool.clone()).is_some() {
-            return Err(format!(
-                "{kind} {name} is already provided by the plugin; remove or rename your declaration."
-            ));
-        }
-    }
-    Ok(())
-}
+pub(crate) type Catalog = BTreeMap<PluginName, Arc<Plugin>>;
 
 pub(crate) fn read_document(file: File) -> Result<String, String> {
     if !file
@@ -205,14 +150,21 @@ pub(crate) fn read_document(file: File) -> Result<String, String> {
 }
 
 fn builtins() -> impl Iterator<Item = Plugin> {
-    BuiltinViewer::MANIFESTS
+    BuiltinViewer::ALL
         .into_iter()
-        .map(|(viewer, source)| {
-            Plugin::parse(source, Some(viewer), None).expect("embedded plugin manifest")
+        .map(|(viewer, name, title, source)| Plugin {
+            info: PluginInfo {
+                name: name.parse().expect("a built-in plugin name"),
+                title: title.into(),
+                builtin: true,
+                viewer: true,
+            },
+            viewer: Some(ViewerEntry::Builtin { viewer }),
+            sources: vec![(PathBuf::from(format!("{name}.artf")), source.into())],
         })
 }
 
-fn definitions(root: &Path) -> Result<std::path::PathBuf, ConfigError> {
+fn definitions(root: &Path) -> Result<PathBuf, ConfigError> {
     let root = platform::canonicalize(root).map_err(|error| ConfigError::new(root, error))?;
     let definitions = root.join(DEFINITION_DIR);
     if !platform::paths::reusable_directory(&root, DEFINITION_DIR)
@@ -226,19 +178,105 @@ fn definitions(root: &Path) -> Result<std::path::PathBuf, ConfigError> {
     Ok(definitions)
 }
 
-fn read(directory: &Path) -> Result<Plugin, ConfigError> {
-    let manifest = directory.join(MANIFEST);
+/// Read one plugin folder: its manifest, its viewer page and its `.artf` files.
+pub(super) fn read(directory: &Path) -> Result<Plugin, ConfigError> {
+    let manifest_path = directory.join(MANIFEST);
     let source = scope::open_scoped(directory, MANIFEST)
-        .map_err(|error| ConfigError::new(&manifest, error))?;
-    let source = read_document(source).map_err(|error| ConfigError::new(&manifest, error))?;
-    Plugin::parse(&source, None, Some(directory))
-        .map_err(|error| ConfigError::new(&manifest, error))
+        .map_err(|error| ConfigError::new(&manifest_path, error))?;
+    let source = read_document(source).map_err(|error| ConfigError::new(&manifest_path, error))?;
+    let table: toml::Table =
+        toml::from_str(&source).map_err(|error| ConfigError::new(&manifest_path, error))?;
+    if table.contains_key("type") || table.contains_key("views") {
+        return Err(ConfigError::new(
+            &manifest_path,
+            "This plugin.toml is from before 0.27: it names its `namespace` now and declares its tools in an .artf file. Run artifactize config migrate in a project that has it installed, or update the plugin.",
+        ));
+    }
+    let manifest: Manifest =
+        toml::from_str(&source).map_err(|error| ConfigError::new(&manifest_path, error))?;
+    super::validation::text(&manifest.title, "Plugin title")
+        .map_err(|error| ConfigError::new(&manifest_path, error))?;
+    let viewer = manifest
+        .viewer
+        .map(|web| {
+            if Path::new(web.entry.as_str())
+                .extension()
+                .is_none_or(|extension| extension != "html")
+            {
+                return Err(
+                    "viewer.entry must name an .html file in the plugin directory.".to_owned(),
+                );
+            }
+            let file = scope::open_scoped(directory, web.entry.as_str())
+                .map_err(|error| format!("viewer.entry {}: {error}", web.entry))?;
+            Ok(ViewerEntry::Web {
+                html: read_document(file)?.into(),
+            })
+        })
+        .transpose()
+        .map_err(|error| ConfigError::new(&manifest_path, error))?;
+    let opened =
+        platform::open_directory(directory).map_err(|error| ConfigError::new(directory, error))?;
+    let mut sources = Vec::new();
+    for entry in platform::read_dir(&opened).map_err(|error| ConfigError::new(directory, error))? {
+        let entry = entry.map_err(|error| ConfigError::new(directory, error))?;
+        let name = entry.file_name();
+        if !name.as_encoded_bytes().ends_with(b".artf") {
+            continue;
+        }
+        let path = directory.join(&name);
+        if entry
+            .file_type()
+            .map_err(|error| ConfigError::new(&path, error))?
+            != platform::FileKind::File
+        {
+            return Err(ConfigError::new(
+                &path,
+                "A plugin's definition must be a regular file.",
+            ));
+        }
+        let text = super::discovery::read_regular_text(&path)
+            .map_err(|error| ConfigError::new(&path, error))?;
+        sources.push((PathBuf::from(name), text));
+    }
+    if sources.len() > MAX_SOURCES {
+        return Err(ConfigError::new(
+            directory,
+            format!("A plugin holds at most {MAX_SOURCES} .artf files."),
+        ));
+    }
+    sources.sort();
+    if sources.is_empty() {
+        return Err(ConfigError::new(
+            directory,
+            format!(
+                "Plugin {} declares no tools: add an .artf file with `tool {} = {{ … }}`.",
+                manifest.namespace, manifest.namespace
+            ),
+        ));
+    }
+    Ok(Plugin {
+        info: PluginInfo {
+            name: manifest.namespace,
+            title: manifest.title,
+            builtin: false,
+            viewer: viewer.is_some(),
+        },
+        viewer,
+        sources,
+    })
 }
 
-pub(super) fn catalog(
-    root: &Path,
-) -> Result<BTreeMap<super::ArtifactType, Arc<Plugin>>, ConfigError> {
-    let mut plugins: BTreeMap<_, _> = builtins()
+/// The built-in plugins alone.
+pub(crate) fn builtin_catalog() -> Catalog {
+    builtins()
+        .map(|plugin| (plugin.info.name.clone(), Arc::new(plugin)))
+        .collect()
+}
+
+/// The built-in plugins and those installed under `.artifactize/plugins/`.
+pub(crate) fn catalog(root: &Path) -> Result<Catalog, ConfigError> {
+    let mut plugins: Catalog = builtins()
         .map(|plugin| (plugin.info.name.clone(), Arc::new(plugin)))
         .collect();
     let parent = root.join(DEFINITION_DIR);
@@ -278,13 +316,13 @@ pub(super) fn catalog(
         if name != plugin.info.name.as_str() {
             return Err(ConfigError::new(
                 &path,
-                "The directory name must match the plugin's type.",
+                "The directory name must match the plugin's namespace.",
             ));
         }
         if plugins.contains_key(&plugin.info.name) {
             return Err(ConfigError::new(
                 &path,
-                "Built-in plugin types are reserved.",
+                "Built-in plugin namespaces are reserved.",
             ));
         }
         plugins.insert(plugin.info.name.clone(), Arc::new(plugin));
@@ -298,17 +336,45 @@ pub fn list(root: &Path) -> Result<Vec<PluginInfo>, ConfigError> {
         .map(|plugins| plugins.values().map(|plugin| plugin.info.clone()).collect())
 }
 
+/// A plugin's files must read on their own: its toolset and macros, with the built-ins.
+fn validate(plugin: &Plugin) -> Result<(), ConfigError> {
+    let files = builtins()
+        .chain(std::iter::once(Plugin {
+            info: plugin.info.clone(),
+            viewer: plugin.viewer.clone(),
+            sources: plugin.sources.clone(),
+        }))
+        .flat_map(|plugin| plugin.source_files().collect::<Vec<_>>())
+        .collect();
+    // A plugin declares toolsets and macros, never profiles: no environment to read.
+    let program =
+        super::lang::read(files, &|_| None).map_err(|(sources, error)| sources.error(error))?;
+    if !program.symbols.iter().any(|symbol| {
+        symbol.kind == "tool" && !symbol.is_macro && symbol.name == plugin.info.name.as_str()
+    }) {
+        return Err(ConfigError::new(
+            PathBuf::from(plugin.info.name.as_str()),
+            format!(
+                "Plugin {0} declares no `tool {0} = {{ … }}`.",
+                plugin.info.name
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// Install a complete folder, so readers can never observe a half-written plugin.
 pub fn add(root: &Path, source: &Path) -> Result<PluginInfo, ConfigError> {
     let definitions = definitions(root)?;
     let directory = definitions.join(DIRECTORY);
     let source = platform::canonicalize(source).map_err(|error| ConfigError::new(source, error))?;
     let plugin = read(&source)?;
+    validate(&plugin)?;
     let installed = directory.join(plugin.info.name.as_str());
     if builtins().any(|builtin| builtin.info.name == plugin.info.name) {
         return Err(ConfigError::new(
             &installed,
-            "Built-in plugin types are reserved.",
+            "Built-in plugin namespaces are reserved.",
         ));
     }
     ensure_directory(&definitions, DIRECTORY)
@@ -340,7 +406,7 @@ pub fn add(root: &Path, source: &Path) -> Result<PluginInfo, ConfigError> {
     if validated.info.name != plugin.info.name {
         return Err(ConfigError::new(
             &installed,
-            "Plugin type changed during installation.",
+            "Plugin namespace changed during installation.",
         ));
     }
     platform::paths::rename_open_file(&payload, &installed)
@@ -365,7 +431,7 @@ fn ensure_directory(parent: &Path, name: &str) -> std::io::Result<()> {
 }
 
 /// Remove an installed package, even if its manifest is no longer valid.
-pub fn remove(root: &Path, name: &super::ArtifactType) -> Result<(), ConfigError> {
+pub fn remove(root: &Path, name: &PluginName) -> Result<(), ConfigError> {
     let definitions = definitions(root)?;
     let directory = definitions.join(DIRECTORY);
     let path = directory.join(name.as_str());
@@ -394,4 +460,109 @@ pub fn remove(root: &Path, name: &super::ArtifactType) -> Result<(), ConfigError
     staged
         .close()
         .map_err(|error| ConfigError::new(&path, error))
+}
+
+/// The plugins a migration reads with: the built-ins, the current ones as installed, and each
+/// one installed before 0.27 converted in memory. Returns the files a converted plugin is
+/// written as: its new manifest and its toolset.
+pub(super) fn migrate(root: &Path) -> Result<(Catalog, Vec<(PathBuf, String)>), ConfigError> {
+    let mut plugins: Catalog = builtins()
+        .map(|plugin| (plugin.info.name.clone(), Arc::new(plugin)))
+        .collect();
+    let mut writes = Vec::new();
+    let directory = root.join(DEFINITION_DIR).join(DIRECTORY);
+    if !platform::paths::reusable_directory(root, DEFINITION_DIR)
+        .map_err(|error| ConfigError::new(root.join(DEFINITION_DIR), error))?
+        || !platform::paths::reusable_directory(&root.join(DEFINITION_DIR), DIRECTORY)
+            .map_err(|error| ConfigError::new(&directory, error))?
+    {
+        return Ok((plugins, writes));
+    }
+    let opened = platform::open_directory(&directory)
+        .map_err(|error| ConfigError::new(&directory, error))?;
+    for entry in platform::read_dir(&opened).map_err(|error| ConfigError::new(&directory, error))? {
+        let entry = entry.map_err(|error| ConfigError::new(&directory, error))?;
+        let name = entry.file_name();
+        let path = directory.join(&name);
+        if name.as_encoded_bytes().starts_with(b".")
+            || entry
+                .file_type()
+                .map_err(|error| ConfigError::new(&path, error))?
+                != platform::FileKind::Directory
+        {
+            continue;
+        }
+        let manifest_path = path.join(MANIFEST);
+        let source = super::discovery::read_regular_text(&manifest_path)
+            .map_err(|error| ConfigError::new(&manifest_path, error))?;
+        let table: toml::Table =
+            toml::from_str(&source).map_err(|error| ConfigError::new(&manifest_path, error))?;
+        if !table.contains_key("type") && !table.contains_key("views") {
+            let plugin = read(&path)?;
+            plugins.insert(plugin.info.name.clone(), Arc::new(plugin));
+            continue;
+        }
+        let invalid = |message: &str| ConfigError::new(&manifest_path, message);
+        let namespace: PluginName = table
+            .get("type")
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| invalid("An old plugin.toml names its `type`."))?
+            .parse()
+            .map_err(|error: String| invalid(&error))?;
+        let title = table
+            .get("title")
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| invalid("A plugin.toml has a `title`."))?
+            .to_owned();
+        let entry = table
+            .get("viewer")
+            .and_then(|viewer| viewer.get("entry"))
+            .and_then(toml::Value::as_str)
+            .map(str::to_owned);
+        let views = serde_json::to_value(
+            table
+                .get("views")
+                .cloned()
+                .unwrap_or_else(|| toml::Table::new().into()),
+        )
+        .expect("TOML is JSON");
+        let tools = super::convert::toolset_text(namespace.as_str(), &views, entry.is_some())
+            .map_err(|error| invalid(&error))?;
+        let mut manifest = toml::Table::new();
+        manifest.insert("namespace".into(), namespace.to_string().into());
+        manifest.insert("title".into(), title.clone().into());
+        if let Some(entry) = &entry {
+            let mut viewer = toml::Table::new();
+            viewer.insert("entry".into(), entry.clone().into());
+            manifest.insert("viewer".into(), viewer.into());
+        }
+        let viewer = entry
+            .map(|entry| {
+                let file = scope::open_scoped(&path, &entry)
+                    .map_err(|error| invalid(&format!("viewer.entry {entry}: {error}")))?;
+                Ok::<_, ConfigError>(ViewerEntry::Web {
+                    html: read_document(file).map_err(|error| invalid(&error))?.into(),
+                })
+            })
+            .transpose()?;
+        let file = PathBuf::from(format!("{namespace}.artf"));
+        let plugin = Plugin {
+            info: PluginInfo {
+                name: namespace.clone(),
+                title,
+                builtin: false,
+                viewer: viewer.is_some(),
+            },
+            viewer,
+            sources: vec![(file.clone(), tools.clone())],
+        };
+        validate(&plugin)?;
+        writes.push((
+            manifest_path.clone(),
+            toml::to_string(&manifest).expect("a manifest is TOML"),
+        ));
+        writes.push((path.join(file), tools));
+        plugins.insert(namespace, Arc::new(plugin));
+    }
+    Ok((plugins, writes))
 }

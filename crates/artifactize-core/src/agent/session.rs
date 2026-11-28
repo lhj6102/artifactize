@@ -257,7 +257,7 @@ impl Recorder {
         id: &crate::types::SessionId,
         send: usize,
     ) -> Result<Self, String> {
-        use std::io::{Read as _, Seek as _, SeekFrom};
+        use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
         match platform::open_no_follow(std::fs::File::options().read(true).append(true), path) {
             Ok(mut file) => {
                 let end = file
@@ -279,8 +279,16 @@ impl Recorder {
                             .iter()
                             .rposition(|&byte| byte == b'\n')
                             .map_or(0, |at| at + 1);
-                        file.set_len(len as u64)
-                            .map_err(|error| error.to_string())?;
+                        if Event::parse(&bytes[len..]).is_ok() {
+                            // Complete final JSONL event missing only its trailing newline:
+                            // preserve it cleanly rather than truncating a valid event away.
+                            file.write_all(b"\n")
+                                .and_then(|()| file.flush())
+                                .map_err(|error| error.to_string())?;
+                        } else {
+                            file.set_len(len as u64)
+                                .map_err(|error| error.to_string())?;
+                        }
                     }
                 }
                 Ok(Self {
@@ -598,21 +606,120 @@ impl Conversation {
 
     /// Every message in order, the review's and its follow-ups', ready to send again. Tool
     /// calls anywhere in the history whose turn stopped before answering get an error result
-    /// right after that assistant message, so switching from a stopped legacy turn to ACP and
-    /// later back to Direct API never sends unanswered `ToolCall`s to Anthropic/OpenAI.
+    /// right after that assistant message, preserving any already-recorded `ToolOutcome` results
+    /// so switching from a stopped or interrupted turn to ACP and later back to Direct API never
+    /// drops saved tool outcomes or sends unanswered `ToolCall`s to Anthropic/OpenAI.
     pub fn history(&self) -> Result<Vec<Message>, String> {
-        let raw = self
-            .events
-            .iter()
-            .filter_map(|event| match &event.kind {
-                Kind::Message(event) => Some(event.message().clone()),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
+        enum HistoryEntry {
+            Message(Message),
+            ToolOutcome(Message),
+        }
+
+        let mut raw = Vec::new();
+        let mut in_chat_turn = false;
+        let mut saw_assistant_text_in_turn = false;
+        let mut delivered_in_turn: std::collections::BTreeMap<
+            (usize, usize, crate::types::DeliveryBlock),
+            String,
+        > = std::collections::BTreeMap::new();
+        let flush_delivered = |raw: &mut Vec<HistoryEntry>,
+                               in_chat: bool,
+                               saw: &mut bool,
+                               delivered: &mut std::collections::BTreeMap<
+            (usize, usize, crate::types::DeliveryBlock),
+            String,
+        >| {
+            if in_chat && !*saw && !delivered.is_empty() {
+                let text = delivered
+                    .values()
+                    .map(String::as_str)
+                    .filter(|s| !s.trim().is_empty())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if !text.trim().is_empty() {
+                    *saw = true;
+                    raw.push(HistoryEntry::Message(Message::assistant(text)));
+                }
+            }
+            delivered.clear();
+        };
+        for event in &self.events {
+            match &event.kind {
+                Kind::Send(_) => {
+                    flush_delivered(
+                        &mut raw,
+                        in_chat_turn,
+                        &mut saw_assistant_text_in_turn,
+                        &mut delivered_in_turn,
+                    );
+                    in_chat_turn = true;
+                    saw_assistant_text_in_turn = false;
+                }
+                Kind::Delivery(delivery)
+                    if in_chat_turn
+                        && delivery.kind == DeliveryKind::Text
+                        && !delivery.block.is_attempt() =>
+                {
+                    let slot = delivered_in_turn
+                        .entry((delivery.turn, delivery.attempt, delivery.block.clone()))
+                        .or_default();
+                    if delivery.state == DeliveryState::Delta {
+                        slot.push_str(&delivery.text);
+                    } else {
+                        slot.clone_from(&delivery.text);
+                    }
+                }
+                Kind::Message(event) => {
+                    let msg = event.message().clone();
+                    if let Message::Assistant { content, .. } = &msg
+                        && content.iter().any(|part| {
+                            matches!(part, AssistantContent::Text(text) if !text.text.trim().is_empty())
+                        })
+                    {
+                        saw_assistant_text_in_turn = true;
+                    }
+                    raw.push(HistoryEntry::Message(msg));
+                }
+                Kind::ToolOutcome(event) => {
+                    raw.push(HistoryEntry::ToolOutcome(event.message().clone()));
+                }
+                Kind::Answer(Answer::Completed(text))
+                    if !saw_assistant_text_in_turn && !text.trim().is_empty() =>
+                {
+                    // Preserve a completed turn's final prose in Direct history even if earlier
+                    // assistant messages held only tool calls or ACP hit the per-turn display cap.
+                    saw_assistant_text_in_turn = true;
+                    delivered_in_turn.clear();
+                    raw.push(HistoryEntry::Message(Message::assistant(text.clone())));
+                }
+                Kind::Answer(Answer::Failed { .. } | Answer::Empty) => {
+                    flush_delivered(
+                        &mut raw,
+                        in_chat_turn,
+                        &mut saw_assistant_text_in_turn,
+                        &mut delivered_in_turn,
+                    );
+                }
+                _ => {}
+            }
+        }
+        flush_delivered(
+            &mut raw,
+            in_chat_turn,
+            &mut saw_assistant_text_in_turn,
+            &mut delivered_in_turn,
+        );
         let mut normalized = Vec::with_capacity(raw.len());
         let mut index = 0;
         while index < raw.len() {
-            let message = raw[index].clone();
+            let entry = &raw[index];
+            let message = match entry {
+                HistoryEntry::Message(msg) => msg.clone(),
+                HistoryEntry::ToolOutcome(_) => {
+                    index += 1;
+                    continue;
+                }
+            };
             match &message {
                 Message::Assistant { content, .. } => {
                     let calls: Vec<_> = content
@@ -627,29 +734,48 @@ impl Conversation {
                     if calls.is_empty() {
                         continue;
                     }
-                    // Collect any immediately following user tool-result messages answering this assistant turn.
+                    // Collect any immediately following user tool-result messages and individual
+                    // `ToolOutcome` events answering this assistant turn. Combined `Message`
+                    // results take precedence; individual `ToolOutcome` results recover real tool
+                    // outputs if the turn was interrupted before writing the combined message.
                     let mut answered = std::collections::BTreeSet::new();
+                    let mut outcome_results: Vec<UserContent> = Vec::new();
                     let mut last_tool_result_pos = None;
                     while index < raw.len() {
-                        let is_tool_result_msg = match &raw[index] {
-                            Message::User { content } => content
-                                .iter()
-                                .any(|part| matches!(part, UserContent::ToolResult(_))),
-                            _ => false,
-                        };
-                        if !is_tool_result_msg {
-                            break;
-                        }
-                        if let Message::User { content } = &raw[index] {
-                            for part in content {
-                                if let UserContent::ToolResult(result) = part {
-                                    answered.insert(result.call.wire().into_owned());
+                        match &raw[index] {
+                            HistoryEntry::ToolOutcome(Message::User { content }) => {
+                                for part in content {
+                                    if matches!(part, UserContent::ToolResult(_)) {
+                                        outcome_results.push(part.clone());
+                                    }
                                 }
+                                index += 1;
+                            }
+                            HistoryEntry::Message(msg @ Message::User { content })
+                                if content
+                                    .iter()
+                                    .any(|part| matches!(part, UserContent::ToolResult(_))) =>
+                            {
+                                for part in content {
+                                    if let UserContent::ToolResult(result) = part {
+                                        answered.insert(result.call.wire().into_owned());
+                                    }
+                                }
+                                last_tool_result_pos = Some(normalized.len());
+                                normalized.push(msg.clone());
+                                index += 1;
+                            }
+                            _ => break,
+                        }
+                    }
+                    let mut recovered: Vec<UserContent> = Vec::new();
+                    for part in outcome_results {
+                        if let UserContent::ToolResult(ref result) = part {
+                            let wire_id = result.call.wire().into_owned();
+                            if answered.insert(wire_id) {
+                                recovered.push(part);
                             }
                         }
-                        last_tool_result_pos = Some(normalized.len());
-                        normalized.push(raw[index].clone());
-                        index += 1;
                     }
                     let missing: Vec<_> = calls
                         .iter()
@@ -660,13 +786,14 @@ impl Conversation {
                             )]))
                         })
                         .collect();
-                    if !missing.is_empty() {
+                    recovered.extend(missing);
+                    if !recovered.is_empty() {
                         if let Some(pos) = last_tool_result_pos
                             && let Some(Message::User { content }) = normalized.get_mut(pos)
                         {
-                            content.extend(missing);
+                            content.extend(recovered);
                         } else {
-                            normalized.push(Message::User { content: missing });
+                            normalized.push(Message::User { content: recovered });
                         }
                     }
                 }

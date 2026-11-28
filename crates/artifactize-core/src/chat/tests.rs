@@ -40,6 +40,7 @@ fn test_session(
         live_config_options: Vec::new(),
         verify_bridge_state: VerifyBridgeState::NotConnected,
         legacy_migration_notice,
+        previous_engine: None,
         unavailable: None,
     }
 }
@@ -272,6 +273,47 @@ async fn catalog_search_matches_all_words_across_labels_without_reordering() {
 }
 
 #[test]
+fn a_turn_hands_off_from_the_engine_its_last_send_ran_on_whatever_target_is_saved() {
+    let root = crate::test_os::tempdir();
+    let file = root.path().join("chat-sessions").join("handoff.jsonl");
+    let id = "chat-handoff".parse().unwrap();
+    let mut recorder = Recorder::chat(root.path(), &file, &id, 1).unwrap();
+    recorder.event(Kind::Send(Send {
+        text: Some("First".into()),
+        engine: Some("Direct (codex / small)".into()),
+        ..Send::default()
+    }));
+    recorder.event(Kind::Answer(Answer::Completed("done".into())));
+    drop(recorder);
+    let conversation = Conversation::load(&file).unwrap();
+    let saved = || Some("from the saved target".to_owned());
+    // The picker changed the engine: the handoff names the one the last turn ran on.
+    assert_eq!(
+        handoff_from(conversation.as_ref(), "ACP (antigravity)", saved),
+        Some("Direct (codex / small)".into())
+    );
+    // The same engine again hands off from nothing, whatever the saved target says.
+    assert_eq!(
+        handoff_from(conversation.as_ref(), "Direct (codex / small)", saved),
+        None
+    );
+    // Before any turn, or for sends that predate the record, the saved target decides.
+    assert_eq!(handoff_from(None, "ACP (antigravity)", saved), saved());
+    let older = root.path().join("chat-sessions").join("older.jsonl");
+    let mut recorder = Recorder::chat(root.path(), &older, &id, 1).unwrap();
+    recorder.event(Kind::Send(Send {
+        text: Some("First".into()),
+        ..Send::default()
+    }));
+    drop(recorder);
+    let older = Conversation::load(&older).unwrap();
+    assert_eq!(
+        handoff_from(older.as_ref(), "ACP (antigravity)", saved),
+        saved()
+    );
+}
+
+#[test]
 fn a_saved_mcp_command_result_exposes_its_exit_and_decodes_its_output() {
     use rig_core::message::{
         AssistantContent, ToolCall, ToolFunction, ToolName, ToolResultContent,
@@ -284,9 +326,7 @@ fn a_saved_mcp_command_result_exposes_its_exit_and_decodes_its_output() {
     let mut recorder = Recorder::chat(root.path(), &file, &id, 1).unwrap();
     recorder.event(Kind::Send(Send {
         text: Some("Run the fixture".into()),
-        framing: None,
-        files_changed: None,
-        tools: None,
+        ..Send::default()
     }));
     let call = ToolCall::from_wire(
         "call-command",
@@ -329,7 +369,7 @@ fn legacy_session_wire_migrates_codex_antigravity_and_retired_claude_agent() {
         "selection": {"backend": "codex", "model": "saved-model", "effort": "high"},
         "createdAt": "2026-11-21T00:00:00Z", "updatedAt": "2026-11-21T00:00:00Z",
     });
-    let session: Session = serde_json::from_value(codex_record).unwrap();
+    let session = Session::from_storage_json(&codex_record.to_string()).unwrap();
     assert!(!session.legacy_migration_notice);
     assert_eq!(
         session.target,
@@ -347,8 +387,11 @@ fn legacy_session_wire_migrates_codex_antigravity_and_retired_claude_agent() {
         "model": {"backend": "antigravity", "model": "gemini-3-pro", "effort": "medium"},
         "createdAt": "2026-11-21T00:00:00Z", "updatedAt": "2026-11-21T00:00:00Z",
     });
-    let session: Session = serde_json::from_value(agy_record).unwrap();
+    let session = Session::from_storage_json(&agy_record.to_string()).unwrap();
     assert!(session.legacy_migration_notice);
+    // Persisting metadata (e.g. set_chat_view) before the first ACP send must preserve the notice.
+    let roundtripped = Session::from_storage_json(&session.to_storage_json().unwrap()).unwrap();
+    assert!(roundtripped.legacy_migration_notice);
     assert!(matches!(
         session.target,
         Some(ChatTarget::Acp { ref agent, ref config })
@@ -365,7 +408,7 @@ fn legacy_session_wire_migrates_codex_antigravity_and_retired_claude_agent() {
         "model": {"backend": "claude-agent", "model": "sonnet", "effort": "high"},
         "createdAt": "2026-11-21T00:00:00Z", "updatedAt": "2026-11-21T00:00:00Z",
     });
-    let session: Session = serde_json::from_value(claude_record).unwrap();
+    let session = Session::from_storage_json(&claude_record.to_string()).unwrap();
     assert!(session.legacy_migration_notice);
     assert_eq!(
         session.target,
@@ -379,7 +422,7 @@ fn legacy_session_wire_migrates_codex_antigravity_and_retired_claude_agent() {
 #[tokio::test]
 async fn permission_cas_enforces_stop_precedence_and_validates_options() {
     use crate::acp::{PermissionOption, PermissionOptionKind, PermissionStatus};
-    use crate::store::chat::{DeliverClaim, NewPermission, Owner};
+    use crate::store::chat::{NewPermission, Owner, PermissionDelivery};
 
     let root = crate::test_os::tempdir();
     let worktree = root.path().join("repo");
@@ -440,12 +483,15 @@ async fn permission_cas_enforces_stop_precedence_and_validates_options() {
             .await
             .is_err()
     );
+    // Nothing is written to the agent for a choice nobody made yet.
     assert_eq!(
         receipts
-            .begin_deliver_chat_permission(&session.id, &owner.token, "perm-1")
+            .deliver_chat_permission(&session.id, &owner.token, "perm-1", |_| async {
+                panic!("nothing is written before a choice")
+            })
             .await
             .unwrap(),
-        DeliverClaim::StillPending
+        PermissionDelivery::StillPending
     );
 
     // Valid selection transitions PENDING -> SELECTED, then Stop cancels SELECTED before delivery.
@@ -457,16 +503,30 @@ async fn permission_cas_enforces_stop_precedence_and_validates_options() {
     );
     assert!(
         receipts
+            .chat_turn_active(&session.id, &owner)
+            .await
+            .unwrap()
+    );
+    assert!(
+        receipts
             .stop_chat_by_token(&session.id, &owner.token)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !receipts
+            .chat_turn_active(&session.id, &owner)
             .await
             .unwrap()
     );
     assert_eq!(
         receipts
-            .begin_deliver_chat_permission(&session.id, &owner.token, "perm-1")
+            .deliver_chat_permission(&session.id, &owner.token, "perm-1", |_| async {
+                panic!("nothing is written after a Stop")
+            })
             .await
             .unwrap(),
-        DeliverClaim::Cancelled
+        PermissionDelivery::Cancelled
     );
     let rows = store::chat::list_permissions(&state, &session.id)
         .await

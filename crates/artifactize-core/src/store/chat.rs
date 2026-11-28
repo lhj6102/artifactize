@@ -75,12 +75,18 @@ pub(crate) struct NewPermission {
     pub created_at: Timestamp,
 }
 
-/// Result of attempting to transition a permission from `SELECTED` to `DELIVERING` right before
-/// writing the ACP wire response.
+/// How long the reply to a permission may take to reach the agent while its delivery holds the
+/// store's write lock.
+const DELIVERY_WRITE_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// What became of one attempt to deliver a permission's choice to the agent.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum DeliverClaim {
-    /// CAS succeeded (`SELECTED -> DELIVERING`); owner may now write `selected` to wire.
-    Deliver { option_id: String },
+pub(crate) enum PermissionDelivery {
+    /// The agent was sent `selected` with this option while the turn still owned the
+    /// permission: `SELECTED -> DELIVERING -> DELIVERED` in one transaction.
+    Delivered { option_id: String },
+    /// The write failed or did not finish in time: `DELIVERING -> EXPIRED`.
+    Expired { option_id: String },
     /// Stop won or owner lost token; owner must send ACP `cancelled` instead.
     Cancelled,
     /// Permission is still `PENDING` (user has not chosen yet).
@@ -148,7 +154,7 @@ pub(crate) async fn for_branch(state: &Path, branch: &Place) -> Result<Vec<Sessi
         let mut sessions = Vec::new();
         for row in statement.query_map([], session_row)? {
             let (data, owner, pending_perm) = row?;
-            let saved: Session = serde_json::from_str(&data)?;
+            let saved = Session::from_storage_json(&data)?;
             if saved.branch() == branch {
                 sessions.push(with_activity(saved, owner, pending_perm, &state_path)?);
             }
@@ -177,7 +183,7 @@ pub(crate) async fn active_turns(
             let (data, owner) = row?;
             let owner: Owner = serde_json::from_str(&owner)?;
             if owner.live().map_err(Error::Invalid)? == live {
-                let mut session: Session = serde_json::from_str(&data)?;
+                let mut session = Session::from_storage_json(&data)?;
                 if !live {
                     refresh_activity(&mut session, &state_path);
                 }
@@ -215,27 +221,39 @@ pub(crate) async fn list_permissions(
 }
 
 /// Compute a lightweight SQLite watermark across `(chat_sessions, chat_active_turns,
-/// chat_pending_permissions)` for `watch.rs`.
+/// chat_pending_permissions)` for `watch.rs`, hashing raw row JSON so internal ACP bindings and
+/// turn ownership tokens never cross the public Chat API (`C-ACP-EDGE-ISOLATION`).
 pub(crate) async fn watermark(
     state: &Path,
     id: &SessionId,
 ) -> Result<Option<ChatWatermark>, String> {
+    use sha2::{Digest, Sha256};
+
+    fn hash_text(text: &str) -> String {
+        Sha256::digest(text.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
     let id = id.clone();
     read(state, move |db| {
         let session_updated_at: Option<String> = db
             .query_row(
                 "SELECT updated_at || '|' || data FROM chat_sessions WHERE id=?1",
                 [&id],
-                |row| row.get(0),
+                |row| row.get::<_, String>(0),
             )
-            .optional()?;
+            .optional()?
+            .map(|raw| hash_text(&raw));
         let active_turn_hash: Option<String> = db
             .query_row(
                 "SELECT data FROM chat_active_turns WHERE session_id=?1",
                 [&id],
-                |row| row.get(0),
+                |row| row.get::<_, String>(0),
             )
-            .optional()?;
+            .optional()?
+            .map(|raw| hash_text(&raw));
         let mut stmt = db.prepare(
             "SELECT permission_id, status, COALESCE(selected_option_id,'') \
              FROM chat_pending_permissions WHERE session_id=?1 ORDER BY created_at, permission_id",
@@ -282,7 +300,12 @@ fn session(
     (data, owner, pending_perm): (String, Option<String>, bool),
     state: &Path,
 ) -> Result<Session, Error> {
-    with_activity(serde_json::from_str(&data)?, owner, pending_perm, state)
+    with_activity(
+        Session::from_storage_json(&data)?,
+        owner,
+        pending_perm,
+        state,
+    )
 }
 
 fn with_activity(
@@ -414,7 +437,7 @@ impl Receipts {
                         session.id,
                         crate::platform::path_text(&session.worktree),
                         session.updated_at,
-                        serde_json::to_string(&session)?
+                        session.to_storage_json()?
                     ],
                 )?;
                 Ok::<_, Error>(())
@@ -428,9 +451,11 @@ impl Receipts {
     /// never overwrite a concurrent `generation` bump.
     pub(crate) async fn accept_chat(
         &self,
+        state: &Path,
         session: &Session,
         selection: Option<ChatTarget>,
     ) -> Result<(ChatTarget, Option<AcpBinding>), String> {
+        let state = state.to_owned();
         let mut session = session.clone();
         self.connection
             .call(move |db| {
@@ -455,6 +480,16 @@ impl Receipts {
                         binding.warm_owner = None;
                     }
                 }
+                let switched = current.target.as_ref() != Some(&target);
+                session.previous_engine = if current.previous_engine.is_some() {
+                    current.previous_engine
+                } else if switched {
+                    current.target.as_ref().map(|prev| {
+                        crate::chat::resolved_engine_label(prev, &state, &session.worktree)
+                    })
+                } else {
+                    None
+                };
                 session.target = Some(target.clone());
                 session.view = current.view;
                 session.acp_binding = acp_binding.clone();
@@ -492,13 +527,27 @@ impl Receipts {
                         ChatTarget::Acp { agent, .. } => Some(agent.clone()),
                         _ => None,
                     };
+                    // A running turn owns the binding it claimed: the next turn sees the new
+                    // agent differ from it and neither reuses nor loads it.
+                    let running = owner(&transaction, &id)?.is_some();
                     if prev_agent != next_agent {
                         agent_changed = true;
-                        if let Some(binding) = session.acp_binding.as_mut() {
+                        if let Some(binding) = session.acp_binding.as_mut().filter(|_| !running) {
                             binding.generation = binding.generation.saturating_add(1);
                             binding.remote_session_id = None;
                             binding.warm_owner = None;
                         }
+                    }
+                    // Remember the engine the conversation last ran on before a picker switch so
+                    // legacy transcripts without `Send.engine` still emit a Handoff event.
+                    if session.previous_engine.is_none()
+                        && let Some(prev) = &session.target
+                    {
+                        session.previous_engine = Some(crate::chat::resolved_engine_label(
+                            prev,
+                            &state,
+                            &session.worktree,
+                        ));
                     }
                     session.target = Some(target);
                     session.updated_at = crate::broker::now();
@@ -710,6 +759,31 @@ impl Receipts {
             .map_err(|error| error.to_string())
     }
 
+    /// Settle the open permissions of the turn `owner_token` still owns (`PENDING`/`SELECTED` ->
+    /// `CANCELLED`, `DELIVERING` -> `EXPIRED`) before it tells the agent they are cancelled: a
+    /// concurrent [`Self::respond_chat_permission`] then finds no `PENDING` row to select.
+    pub(crate) async fn cancel_open_chat_permissions(
+        &self,
+        session_id: &SessionId,
+        owner_token: &str,
+    ) -> Result<(), String> {
+        let session_id = session_id.clone();
+        let owner_token = owner_token.to_owned();
+        self.connection
+            .call(move |db| {
+                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                if owner(&transaction, &session_id)?
+                    .is_some_and(|active| active.token == owner_token)
+                {
+                    cleanup_open_permissions(&transaction, &session_id, crate::broker::now())?;
+                }
+                transaction.commit()?;
+                Ok::<_, Error>(())
+            })
+            .await
+            .map_err(|error| error.to_string())
+    }
+
     /// Step 2 of Permission CAS: user selects `option_id` (`PENDING -> SELECTED`), validating
     /// active owner token, `!stop_requested`, and membership in `options_json` in one `IMMEDIATE`
     /// transaction.
@@ -764,83 +838,87 @@ impl Receipts {
             .map_err(|error| error.to_string())
     }
 
-    /// Step 3 of Permission CAS: immediately before writing `selected` onto the ACP wire,
-    /// atomically check `Owner.token == owner_token && !stop_requested` and CAS
-    /// `SELECTED -> DELIVERING`.
-    pub(crate) async fn begin_deliver_chat_permission(
+    /// Deliver the person's choice to the agent: claim it (`SELECTED -> DELIVERING`) against the
+    /// owner token and `stop_requested`, have `write` send `selected` with the chosen option, and
+    /// record `DELIVERED` or `EXPIRED`, all in one `IMMEDIATE` transaction. The write lock is held
+    /// while the reply goes out, so a Stop either committed before the claim, which then sees it
+    /// and cancels, or waits until the delivery is recorded; never between the two.
+    pub(crate) async fn deliver_chat_permission<W, F>(
         &self,
         session_id: &SessionId,
         owner_token: &str,
         permission_id: &str,
-    ) -> Result<DeliverClaim, String> {
+        write: W,
+    ) -> Result<PermissionDelivery, String>
+    where
+        W: FnOnce(String) -> F,
+        F: std::future::Future<Output = bool>,
+    {
         let session_id = session_id.clone();
         let owner_token = owner_token.to_owned();
         let permission_id = permission_id.to_owned();
-        self.connection
-            .call(move |db| {
-                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
-                let Some(active) = owner(&transaction, &session_id)? else {
-                    return Ok::<_, Error>(DeliverClaim::Cancelled);
-                };
-                if active.token != owner_token || active.stop_requested {
-                    return Ok(DeliverClaim::Cancelled);
-                }
-                let row: Option<(String, Option<String>)> = transaction
-                    .query_row(
-                        "SELECT status, selected_option_id FROM chat_pending_permissions \
-                         WHERE session_id=?1 AND owner_token=?2 AND permission_id=?3",
-                        params![session_id, owner_token, permission_id],
-                        |row| Ok((row.get(0)?, row.get(1)?)),
-                    )
-                    .optional()?;
-                match row {
-                    Some((status, _)) if status == "PENDING" => Ok(DeliverClaim::StillPending),
-                    Some((status, Some(option_id))) if status == "SELECTED" => {
-                        let updated = transaction.execute(
-                            "UPDATE chat_pending_permissions SET status='DELIVERING' \
-                             WHERE session_id=?1 AND owner_token=?2 AND permission_id=?3 AND status='SELECTED'",
-                            params![session_id, owner_token, permission_id],
-                        )?;
-                        transaction.commit()?;
-                        if updated == 1 {
-                            Ok(DeliverClaim::Deliver { option_id })
-                        } else {
-                            Ok(DeliverClaim::Cancelled)
-                        }
-                    }
-                    _ => Ok(DeliverClaim::Cancelled),
-                }
+        let (claimed, claim) = tokio::sync::oneshot::channel::<String>();
+        let (wrote, written) = std::sync::mpsc::channel::<bool>();
+        let recorded = self.connection.call(move |db| {
+            let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let Some(active) = owner(&transaction, &session_id)? else {
+                return Ok::<_, Error>(PermissionDelivery::Cancelled);
+            };
+            if active.token != owner_token || active.stop_requested {
+                return Ok(PermissionDelivery::Cancelled);
+            }
+            let row: Option<(String, Option<String>)> = transaction
+                .query_row(
+                    "SELECT status, selected_option_id FROM chat_pending_permissions \
+                     WHERE session_id=?1 AND owner_token=?2 AND permission_id=?3",
+                    params![session_id, owner_token, permission_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            let option_id = match row {
+                Some((status, _)) if status == "PENDING" => return Ok(PermissionDelivery::StillPending),
+                Some((status, Some(option_id))) if status == "SELECTED" => option_id,
+                _ => return Ok(PermissionDelivery::Cancelled),
+            };
+            transaction.execute(
+                "UPDATE chat_pending_permissions SET status='DELIVERING' \
+                 WHERE session_id=?1 AND owner_token=?2 AND permission_id=?3 AND status='SELECTED'",
+                params![session_id, owner_token, permission_id],
+            )?;
+            if claimed.send(option_id.clone()).is_err() {
+                return Ok(PermissionDelivery::Cancelled);
+            }
+            // The write side answers within its own DELIVERY_WRITE_LIMIT, or by going away;
+            // waiting on it here, not on a second clock, keeps the lock until the write ended.
+            let delivered = written.recv().unwrap_or(false);
+            transaction.execute(
+                "UPDATE chat_pending_permissions SET status=?1, resolved_at=?2 \
+                 WHERE session_id=?3 AND owner_token=?4 AND permission_id=?5 AND status='DELIVERING'",
+                params![
+                    if delivered { "DELIVERED" } else { "EXPIRED" },
+                    crate::broker::now(),
+                    session_id,
+                    owner_token,
+                    permission_id
+                ],
+            )?;
+            transaction.commit()?;
+            Ok(if delivered {
+                PermissionDelivery::Delivered { option_id }
+            } else {
+                PermissionDelivery::Expired { option_id }
             })
-            .await
-            .map_err(|error| error.to_string())
-    }
-
-    /// Finish delivery after writing the ACP wire reply: `DELIVERING -> DELIVERED` or `EXPIRED`
-    /// (on broken pipe / EOF).
-    pub(crate) async fn finish_deliver_chat_permission(
-        &self,
-        session_id: &SessionId,
-        owner_token: &str,
-        permission_id: &str,
-        delivered: bool,
-    ) -> Result<(), String> {
-        let session_id = session_id.clone();
-        let owner_token = owner_token.to_owned();
-        let permission_id = permission_id.to_owned();
-        let next = if delivered { "DELIVERED" } else { "EXPIRED" };
-        self.connection
-            .call(move |db| {
-                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
-                transaction.execute(
-                    "UPDATE chat_pending_permissions SET status=?1, resolved_at=?2 \
-                     WHERE session_id=?3 AND owner_token=?4 AND permission_id=?5 AND status='DELIVERING'",
-                    params![next, crate::broker::now(), session_id, owner_token, permission_id],
-                )?;
-                transaction.commit()?;
-                Ok::<_, Error>(())
-            })
-            .await
-            .map_err(|error| error.to_string())
+        });
+        let sent = async move {
+            if let Ok(option_id) = claim.await {
+                let delivered = tokio::time::timeout(DELIVERY_WRITE_LIMIT, write(option_id))
+                    .await
+                    .unwrap_or(false);
+                let _ = wrote.send(delivered);
+            }
+        };
+        let (recorded, ()) = tokio::join!(recorded, sent);
+        recorded.map_err(|error| error.to_string())
     }
 
     /// Uniform SQLite Stop transaction used across ALL local and remote Stop paths:
@@ -862,7 +940,7 @@ impl Receipts {
                 if updated != 0 {
                     transaction.execute(
                         "UPDATE chat_pending_permissions SET status='CANCELLED', resolved_at=?1 \
-                         WHERE session_id=?2 AND owner_token=?3 AND status IN ('PENDING','SELECTED')",
+                         WHERE session_id=?2 AND owner_token=?3 AND status IN ('PENDING','SELECTED','DELIVERING')",
                         params![crate::broker::now(), id, expected.token],
                     )?;
                 }
@@ -893,7 +971,7 @@ impl Receipts {
                 if updated != 0 {
                     transaction.execute(
                         "UPDATE chat_pending_permissions SET status='CANCELLED', resolved_at=?1 \
-                         WHERE session_id=?2 AND owner_token=?3 AND status IN ('PENDING','SELECTED')",
+                         WHERE session_id=?2 AND owner_token=?3 AND status IN ('PENDING','SELECTED','DELIVERING')",
                         params![crate::broker::now(), id, token],
                     )?;
                 }
@@ -916,6 +994,25 @@ impl Receipts {
                 Ok::<_, Error>(
                     owner(db, &id)?
                         .is_some_and(|current| current.token == token && current.stop_requested),
+                )
+            })
+            .await
+            .map_err(|error| error.to_string())
+    }
+
+    /// Whether `expected` still owns the active turn for `id` and no Stop has been requested.
+    pub(crate) async fn chat_turn_active(
+        &self,
+        id: &SessionId,
+        expected: &Owner,
+    ) -> Result<bool, String> {
+        let id = id.clone();
+        let token = expected.token.clone();
+        self.connection
+            .call(move |db| {
+                Ok::<_, Error>(
+                    owner(db, &id)?
+                        .is_some_and(|current| current.token == token && !current.stop_requested),
                 )
             })
             .await
@@ -950,6 +1047,43 @@ impl Receipts {
 
     /// Bump `acp_binding.generation` and clear `remote_session_id` + `warm_owner` atomically
     /// (e.g. when refusing `session/load` for a dead/foreign `warm_owner` or digest mismatch).
+    /// Take the binding for one turn: when its generation is still `expected`, advance it and
+    /// return the new one, keeping its remote session and warm owner; `None` when it changed.
+    pub(crate) async fn claim_acp_generation(
+        &self,
+        id: &SessionId,
+        expected: u64,
+    ) -> Result<Option<u64>, String> {
+        let id = id.clone();
+        self.connection
+            .call(move |db| {
+                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let mut current = saved_chat(&transaction, &id)?;
+                let Some(binding) = current.acp_binding.as_mut() else {
+                    return Ok::<_, Error>(None);
+                };
+                if binding.generation != expected {
+                    return Ok(None);
+                }
+                binding.generation = expected.saturating_add(1);
+                let claimed = binding.generation;
+                save(&transaction, &current)?;
+                transaction.commit()?;
+                Ok(Some(claimed))
+            })
+            .await
+            .map_err(|error| error.to_string())
+    }
+
+    /// The session's ACP binding as it is stored now.
+    pub(crate) async fn acp_binding(&self, id: &SessionId) -> Result<Option<AcpBinding>, String> {
+        let id = id.clone();
+        self.connection
+            .call(move |db| Ok::<_, Error>(saved_chat(db, &id)?.acp_binding))
+            .await
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) async fn bump_acp_generation(&self, id: &SessionId) -> Result<u64, String> {
         let id = id.clone();
         self.connection
@@ -968,6 +1102,39 @@ impl Receipts {
                 }
                 transaction.commit()?;
                 Ok::<_, Error>(next_gen)
+            })
+            .await
+            .map_err(|error| error.to_string())
+    }
+
+    /// Conditionally invalidate `session/load` eligibility (bump `generation` and clear
+    /// `remote_session_id` + `warm_owner`) ONLY when `generation == expected_generation` and
+    /// `warm_owner == Some(current_owner)`, so a stale non-quiescent eviction can never clobber a
+    /// newer turn's binding (`C-ONE-TURN-OWNERSHIP`).
+    pub(crate) async fn invalidate_acp_generation(
+        &self,
+        id: &SessionId,
+        expected_generation: u64,
+        current_owner: WarmOwner,
+    ) -> Result<bool, String> {
+        let id = id.clone();
+        self.connection
+            .call(move |db| {
+                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let mut current = saved_chat(&transaction, &id)?;
+                let mut invalidated = false;
+                if let Some(binding) = current.acp_binding.as_mut()
+                    && binding.generation == expected_generation
+                    && binding.warm_owner == Some(current_owner)
+                {
+                    binding.generation = binding.generation.saturating_add(1);
+                    binding.remote_session_id = None;
+                    binding.warm_owner = None;
+                    save(&transaction, &current)?;
+                    invalidated = true;
+                }
+                transaction.commit()?;
+                Ok::<_, Error>(invalidated)
             })
             .await
             .map_err(|error| error.to_string())
@@ -1027,6 +1194,9 @@ impl Receipts {
                     if let Some(session) = settled {
                         let mut current = saved_chat(&transaction, &id)?;
                         current.settle_from(&session);
+                        if session.outcome() == Some(crate::chat::Outcome::Completed) {
+                            current.previous_engine = None;
+                        }
                         if let Some((expected_gen, completed_send, warm_owner)) = settled_acp
                             && let Some(binding) = current.acp_binding.as_mut()
                             && binding.generation == expected_gen
@@ -1051,7 +1221,7 @@ fn saved_chat(db: &Connection, id: &SessionId) -> Result<Session, Error> {
     let data: String = db.query_row("SELECT data FROM chat_sessions WHERE id=?", [id], |row| {
         row.get(0)
     })?;
-    Ok(serde_json::from_str(&data)?)
+    Ok(Session::from_storage_json(&data)?)
 }
 
 fn save(db: &Connection, session: &Session) -> Result<(), Error> {
@@ -1060,7 +1230,7 @@ fn save(db: &Connection, session: &Session) -> Result<(), Error> {
         params![
             crate::platform::path_text(&session.worktree),
             session.updated_at,
-            serde_json::to_string(session)?,
+            session.to_storage_json()?,
             session.id
         ],
     )?;

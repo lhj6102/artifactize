@@ -7,7 +7,7 @@ description: How a builder iterates with artifactize verify while fixing RED eva
 
 You are building in a project that artifactize verifies, and a Run came back RED. When a
 fix changes an Artifact's fingerprint (for example, editing source files covered by
-`artifactsum`, as opposed to ignored files or formatting/comment-only edits to `.artf`),
+`artifactsum`, as opposed to ignored files or comment-only edits to `.artf` definitions),
 that change makes the earlier results of every eval whose reuse key covers that Artifact
 stale: they need review again, including evals that were GREEN. Running all of them after
 every fix (`verify --all`) costs time and money on each iteration, and a fix that targets
@@ -40,7 +40,7 @@ finished. If you cannot remedy the cause, stop and report the blocker.
 
 ## Plan A: focus first, sweep last (the default)
 
-**Focus.** Take one RED eval and read its findings: `verify_result` names the failing
+**Focus.** Take one RED eval and read its issues: `verify_result` names the failing
 requests of the Run and their request IDs, `request_show` returns the reviewer's reported
 result and `request_logs` a runtime eval's output (CLI: `artifactize run show RUN_ID --json`
 for the request ID, `artifactize request show REQUEST_ID --json` for the saved result,
@@ -117,7 +117,7 @@ run everything once:
   pending sign-off belongs to the newer Run, while the older Run can still settle `YELLOW`):
   1. **Failure takes priority**: if any machine request or non-superseded Human request in
      the Run is already `RED` or `ERROR` (even if other machine requests are still `RUNNING`
-     or `QUEUED`), read its finding with `request_show` / `request_logs` and return to focus
+     or `QUEUED`), read its issues with `request_show` / `request_logs` and return to focus
      immediately without calling `verify_wait` again or waiting for pending sign-offs.
   2. **Otherwise wait for runnable machine work**: if no request has failed (`RED` or
      non-superseded `ERROR`) and any machine request is still in `RUNNING`, `QUEUED`, or
@@ -163,7 +163,7 @@ as a specification, a rule document or a library, focus on those evals too:
 3. References between peers in a reference cycle do not gate on the peer itself, though a
    Human eval still waits for its own Artifact's machine evals (`config_graph` components
    include both reference cycles and `parts` composition; identify reference-cycle peers by
-   following mutual `{name}` eval references rather than `parts` links). When your focus in
+   following the inputs the Artifacts' evals name, each naming the other, rather than `parts` links). When your focus in
    Plan B touches an Artifact in a reference cycle, keep the full set of evals from step 2
    and add every eval on every Artifact in that reference cycle (including the remaining
    evals on the Artifact already in focus) to the same focus Run with speculation (for

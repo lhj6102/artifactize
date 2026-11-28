@@ -139,6 +139,41 @@ impl ChatTarget {
     }
 }
 
+/// Resolve a `ChatTarget`'s display and handoff engine label, enriching `DirectBackend::Custom`
+/// with its resolved alias provider or endpoint URL without any secret API key
+/// (`C-NO-SILENT-REGRESSION`).
+pub(crate) fn resolved_engine_label(target: &ChatTarget, state: &Path, worktree: &Path) -> String {
+    match target {
+        ChatTarget::Direct {
+            backend: DirectBackend::Custom { name },
+            model,
+            ..
+        } => {
+            let backend = DirectBackend::Custom { name: name.clone() }.to_backend();
+            let detail = providers::list(Some(state), Some(worktree))
+                .ok()
+                .and_then(|listed| listed.custom.get(&backend).cloned())
+                .map(|view| match view {
+                    providers::CustomView::Alias { provider } => {
+                        format!("{name} -> {provider}")
+                    }
+                    providers::CustomView::Endpoint { api, url, .. } => {
+                        let api_name = match api {
+                            llm::EndpointApi::OpenaiResponses => "openai-responses",
+                            llm::EndpointApi::OpenaiChat => "openai-chat",
+                            llm::EndpointApi::Anthropic => "anthropic",
+                            llm::EndpointApi::Gemini => "gemini",
+                        };
+                        format!("{name} [{api_name} @ {}]", url.as_str())
+                    }
+                })
+                .unwrap_or_else(|| name.to_string());
+            format!("Direct ({detail} / {model})")
+        }
+        _ => target.engine_label(),
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum SendError {
     #[error("Choose a Chat agent or model before sending a Chat message.")]
@@ -231,6 +266,10 @@ struct SessionWire {
     moved_from: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     acp_binding: Option<AcpBinding>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    legacy_migration_notice: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    previous_engine: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -297,8 +336,7 @@ impl LegacyModelWire {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(from = "SessionWire", into = "SessionWire")]
+#[derive(Debug, Clone)]
 pub struct Session {
     pub id: SessionId,
     pub title: String,
@@ -310,7 +348,7 @@ pub struct Session {
     pub updated_at: Timestamp,
     activity: Option<Activity>,
     pub(crate) moved_from: Option<PathBuf>,
-    pub acp_binding: Option<AcpBinding>,
+    pub(crate) acp_binding: Option<AcpBinding>,
     /// Live ownership of a turn, read separately from the saved session.
     pub running: bool,
     /// Derived live from `running && has_pending_permission`; never persisted in `Activity`.
@@ -322,6 +360,9 @@ pub struct Session {
     /// True when this historical session was saved on a legacy engine (`claude-agent` or legacy
     /// `antigravity`) so the UI and handoff surface the transition explicitly (`C-NO-SILENT-REGRESSION`).
     pub legacy_migration_notice: bool,
+    /// Engine label the conversation ran on before a picker switch, for legacy transcripts whose
+    /// `Kind::Send` events predate `Send.engine` (`C-NO-SILENT-REGRESSION`).
+    pub(crate) previous_engine: Option<String>,
     pub unavailable: Option<String>,
 }
 
@@ -335,10 +376,14 @@ impl From<SessionWire> for Session {
         let target = wire
             .target
             .or_else(|| wire.model.and_then(LegacyModelWire::migrate));
-        let legacy_migration_notice = target
-            .as_ref()
-            .is_some_and(ChatTarget::is_legacy_claude_agent)
+        let legacy_migration_notice = wire.legacy_migration_notice
+            || target
+                .as_ref()
+                .is_some_and(ChatTarget::is_legacy_claude_agent)
             || migrated_from_legacy_antigravity;
+        let previous_engine = wire
+            .previous_engine
+            .or_else(|| migrated_from_legacy_antigravity.then(|| "Legacy Antigravity".to_owned()));
         Self {
             id: wire.id,
             title: wire.title,
@@ -356,6 +401,7 @@ impl From<SessionWire> for Session {
             live_config_options: Vec::new(),
             verify_bridge_state: VerifyBridgeState::NotConnected,
             legacy_migration_notice,
+            previous_engine,
             unavailable: None,
         }
     }
@@ -376,11 +422,25 @@ impl From<Session> for SessionWire {
             activity: session.activity,
             moved_from: session.moved_from,
             acp_binding: session.acp_binding,
+            legacy_migration_notice: session.legacy_migration_notice,
+            previous_engine: session.previous_engine,
         }
     }
 }
 
 impl Session {
+    /// Persist into SQLite `chat_sessions.data` via crate-private `SessionWire` so internal
+    /// ACP binding state (`remote_session_id`) never crosses the public Chat API
+    /// (`C-ACP-EDGE-ISOLATION`).
+    pub(crate) fn to_storage_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(&SessionWire::from(self.clone()))
+    }
+
+    /// Decode from SQLite `chat_sessions.data` via edge-migrating `SessionWire`.
+    pub(crate) fn from_storage_json(data: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str::<SessionWire>(data).map(Self::from)
+    }
+
     /// Stable across branch switches or removal of the saved checkout.
     pub fn branch(&self) -> Place {
         Place::for_checkout(
@@ -524,6 +584,9 @@ pub struct View {
     pub turns: Vec<Turn>,
     pub live_config_options: Vec<ConfigOption>,
     pub verify_bridge_state: VerifyBridgeState,
+    /// The engine or agent the conversation last ran on, when the session's target is another:
+    /// the next message continues there with a Handoff.
+    pub handoff_from: Option<String>,
 }
 
 #[derive(Clone)]
@@ -552,6 +615,9 @@ struct ActiveEntry {
     cancel: CancellationToken,
     owner_token: Option<String>,
     worktree: Option<PathBuf>,
+    /// A Stop came before the turn published its ownership: the turn commits the durable Stop
+    /// itself once it does (`record_owner`).
+    stopped: bool,
 }
 
 /// Resolved execution engine for a single accepted Chat turn (`T-ILLEGAL-STATES`).
@@ -609,8 +675,11 @@ impl Chat {
             active.closed = true;
             active
                 .turns
-                .iter()
-                .map(|(id, entry)| (id.clone(), entry.clone()))
+                .iter_mut()
+                .map(|(id, entry)| {
+                    entry.stopped |= entry.owner_token.is_none();
+                    (id.clone(), entry.clone())
+                })
                 .collect()
         };
         let state = self.state.clone();
@@ -670,14 +739,21 @@ impl Chat {
             for child in drained {
                 let session_id = child.session_id.clone();
                 let generation = child.generation;
+                let stayed_quiescent = child.connection.is_quiescent();
                 let _ = child.terminate().await;
                 if let Some(warm_owner) = current_owner
                     && let Ok(session) = store::chat::load(&state, &session_id).await
                     && let Ok(receipts) = Receipts::open(&state, &session.worktree).await
                 {
-                    let _ = receipts
-                        .clear_acp_warm_owner(&session_id, generation, warm_owner)
-                        .await;
+                    if stayed_quiescent {
+                        let _ = receipts
+                            .clear_acp_warm_owner(&session_id, generation, warm_owner)
+                            .await;
+                    } else {
+                        let _ = receipts
+                            .invalidate_acp_generation(&session_id, generation, warm_owner)
+                            .await;
+                    }
                     let _ = receipts.close().await;
                 }
             }
@@ -854,6 +930,7 @@ impl Chat {
             live_config_options: Vec::new(),
             verify_bridge_state: VerifyBridgeState::NotConnected,
             legacy_migration_notice,
+            previous_engine: None,
             unavailable: None,
         };
         let session = crate::task::blocking(move || session.with_checkout()).await?;
@@ -1149,6 +1226,16 @@ impl Chat {
         let verify_bridge_state = session.verify_bridge_state;
         let live_permissions = store::chat::list_permissions(&self.state, id).await?;
         let conversation = Conversation::load(&path(&self.state, id))?;
+        let handoff_from = session.target.as_ref().and_then(|target| {
+            let next = resolved_engine_label(target, &self.state, &session.worktree);
+            handoff_from(conversation.as_ref(), &next, || {
+                session
+                    .previous_engine
+                    .as_ref()
+                    .filter(|prev| *prev != &next)
+                    .cloned()
+            })
+        });
         let mut turns = transcript::turns(conversation.as_ref(), running, &live_permissions);
         transcript::update_runs(&self.state, &session.worktree, id, &mut turns).await;
         Ok(View {
@@ -1158,6 +1245,7 @@ impl Chat {
             turns,
             live_config_options,
             verify_bridge_state,
+            handoff_from,
         })
     }
 
@@ -1207,11 +1295,15 @@ impl Chat {
         Ok(updated)
     }
 
-    /// Record explicit machine-local Workspace Trust for an ACP agent on a worktree/repo scope.
+    /// Record explicit machine-local Workspace Trust for an ACP agent on the `shown_scope` and
+    /// `shown` launcher fingerprint presented to the user. If either the checkout scope or the
+    /// executable changed since the prompt was shown, consent is refused (`C-TRUST-BEFORE-WORKTREE`).
     pub async fn trust_workspace(
         &self,
         worktree: &Path,
         agent_id: &AgentId,
+        shown_scope: &TrustScope,
+        shown: &acp::trust::LauncherFingerprint,
     ) -> Result<TrustRecord, String> {
         let worktree =
             crate::workspace::canonical_target(worktree).map_err(|error| error.to_string())?;
@@ -1230,6 +1322,18 @@ impl Chat {
             Ok::<_, String>((spec, scope, fingerprint))
         })
         .await??;
+        if scope != *shown_scope {
+            return Err(format!(
+                "The workspace checkout changed after you were asked to trust {}; send the message again to review the new scope.",
+                spec.name
+            ));
+        }
+        if fingerprint != *shown {
+            return Err(format!(
+                "{}'s launcher changed after you were asked to trust it; send the message again to review the new one.",
+                spec.name
+            ));
+        }
         acp::trust::grant_trust(Some(&self.state), None, spec.id, scope, fingerprint).await
     }
 
@@ -1252,14 +1356,21 @@ impl Chat {
                 if &child.agent_id == agent_id {
                     let session_id = child.session_id.clone();
                     let generation = child.generation;
+                    let stayed_quiescent = child.connection.is_quiescent();
                     let _ = child.terminate().await;
                     if let Some(warm_owner) = current_owner
                         && let Ok(session) = store::chat::load(&self.state, &session_id).await
                         && let Ok(receipts) = Receipts::open(&self.state, &session.worktree).await
                     {
-                        let _ = receipts
-                            .clear_acp_warm_owner(&session_id, generation, warm_owner)
-                            .await;
+                        if stayed_quiescent {
+                            let _ = receipts
+                                .clear_acp_warm_owner(&session_id, generation, warm_owner)
+                                .await;
+                        } else {
+                            let _ = receipts
+                                .invalidate_acp_generation(&session_id, generation, warm_owner)
+                                .await;
+                        }
                         let _ = receipts.close().await;
                     }
                 } else {
@@ -1329,7 +1440,12 @@ impl Chat {
             // Claim and read the checkout in one transaction. If a move won the race, this
             // turn starts on the newly saved workspace, never the stale path read above.
             let session = receipts.claim_chat(&self.state, id, &owner).await?;
-            self.record_owner(id, owner.token.clone(), session.worktree.clone());
+            if self.record_owner(id, owner.token.clone(), session.worktree.clone()) {
+                receipts
+                    .stop_chat_by_token(id, &owner.token)
+                    .await
+                    .map_err(SendError::Failed)?;
+            }
             let prepared = async {
                 let mut session = crate::task::blocking(move || session.with_checkout()).await?;
                 if let Some(reason) = session.unavailable.take() {
@@ -1359,6 +1475,8 @@ impl Chat {
                     .transpose()?
                     .unwrap_or_default();
 
+                let effective_engine_label =
+                    resolved_engine_label(&effective_target, &self.state, &session.worktree);
                 let engine = match &effective_target {
                     ChatTarget::LegacyClaudeAgent { .. } => {
                         return Err(SendError::LegacyRetired(
@@ -1371,16 +1489,32 @@ impl Chat {
                         model,
                         effort,
                     } => {
-                        let engine_label = effective_target.engine_label();
-                        let previous_label = previous_target
-                            .as_ref()
-                            .map(ChatTarget::engine_label)
-                            .filter(|prev| prev != &engine_label)
-                            .or_else(|| {
+                        let engine_label = effective_engine_label.clone();
+                        let previous_label =
+                            handoff_from(conversation.as_ref(), &engine_label, || {
                                 session
-                                    .acp_binding
+                                    .previous_engine
                                     .as_ref()
-                                    .map(|b| format!("ACP ({})", b.agent_id))
+                                    .filter(|prev| *prev != &engine_label)
+                                    .cloned()
+                                    .or_else(|| {
+                                        previous_target
+                                            .as_ref()
+                                            .map(|prev| {
+                                                resolved_engine_label(
+                                                    prev,
+                                                    &self.state,
+                                                    &session.worktree,
+                                                )
+                                            })
+                                            .filter(|prev| prev != &engine_label)
+                                    })
+                                    .or_else(|| {
+                                        session
+                                            .acp_binding
+                                            .as_ref()
+                                            .map(|b| format!("ACP ({})", b.agent_id))
+                                    })
                             });
                         let prior_turns_count =
                             conversation.as_ref().map(Conversation::sends).unwrap_or(0);
@@ -1414,11 +1548,27 @@ impl Chat {
                         };
                         let prior_turns = transcript::turns(conversation.as_ref(), false, &[]);
                         let last_outcome = conversation.as_ref().and_then(transcript::last_outcome);
-                        let previous_engine_label = previous_engine_label(
-                            previous_target.as_ref(),
-                            session.acp_binding.as_ref(),
-                            session.legacy_migration_notice,
-                            agent,
+                        let next_engine_label = effective_engine_label.clone();
+                        let previous_engine_label = handoff_from(
+                            conversation.as_ref(),
+                            &next_engine_label,
+                            || {
+                                session
+                                    .previous_engine
+                                    .as_ref()
+                                    .filter(|prev| *prev != &next_engine_label)
+                                    .cloned()
+                                    .or_else(|| {
+                                        previous_engine_label(
+                                            previous_target.as_ref(),
+                                            session.acp_binding.as_ref(),
+                                            session.legacy_migration_notice,
+                                            agent,
+                                            &self.state,
+                                            &session.worktree,
+                                        )
+                                    })
+                            },
                         );
                         ChatEngine::Acp {
                             config: config.clone(),
@@ -1448,9 +1598,8 @@ impl Chat {
                 let mut recorder = Recorder::chat(&self.state, &file, id, send)?;
                 recorder.event(Kind::Send(Send {
                     text: Some(text.to_owned()),
-                    framing: None,
-                    files_changed: None,
-                    tools: None,
+                    engine: Some(effective_engine_label),
+                    ..Send::default()
                 }));
                 let prompt = rig_core::message::Message::user(text.to_owned());
                 recorder.message(1, &prompt, false);
@@ -1461,7 +1610,7 @@ impl Chat {
                     unseen: false,
                 });
                 let (_target, acp_binding) = receipts
-                    .accept_chat(&session, Some(effective_target))
+                    .accept_chat(&self.state, &session, Some(effective_target))
                     .await?;
                 Ok::<_, SendError>((session, recorder, send, history, engine, acp_binding, context))
             }
@@ -1605,7 +1754,9 @@ impl Chat {
                             &mut recorder,
                         )
                         .await;
-                        let completed_send = outcome.result.is_ok().then_some(send);
+                        // Only a quiescent session counts as settled for `session/load`.
+                        let completed_send =
+                            (outcome.result.is_ok() && outcome.resumable).then_some(send);
                         if outcome.warm_owner.is_some() {
                             park_reaper = true;
                         }
@@ -1658,14 +1809,23 @@ impl Chat {
             for child in expired {
                 let session_id = child.session_id.clone();
                 let generation = child.generation;
+                let stayed_quiescent = child.connection.is_quiescent();
                 let _ = child.terminate().await;
                 if let Some(warm_owner) = current_owner
                     && let Ok(session) = store::chat::load(&state, &session_id).await
                     && let Ok(receipts) = Receipts::open(&state, &session.worktree).await
                 {
-                    let _ = receipts
-                        .clear_acp_warm_owner(&session_id, generation, warm_owner)
-                        .await;
+                    if stayed_quiescent {
+                        let _ = receipts
+                            .clear_acp_warm_owner(&session_id, generation, warm_owner)
+                            .await;
+                    } else {
+                        // Unsolicited frames arrived while parked: invalidate `session/load`
+                        // eligibility only if our generation/owner still matches.
+                        let _ = receipts
+                            .invalidate_acp_generation(&session_id, generation, warm_owner)
+                            .await;
+                    }
                     let _ = receipts.close().await;
                 }
             }
@@ -1676,20 +1836,31 @@ impl Chat {
     /// Always commits the SQLite Stop transaction (`stop_requested = true` + permission
     /// cancellation) BEFORE firing the in-memory CancellationToken.
     pub async fn stop(&self, id: &SessionId) -> Result<bool, String> {
+        // Under the lock that publishes ownership: a turn not yet owned in SQLite is marked, and
+        // commits this Stop itself as it takes ownership.
         let local = self
             .active
             .state
             .lock()
             .expect("Chat active turns lock")
             .turns
-            .get(id)
-            .cloned();
+            .get_mut(id)
+            .map(|entry| {
+                entry.stopped |= entry.owner_token.is_none();
+                entry.clone()
+            });
         if let Some(entry) = local {
             if let (Some(token), Some(worktree)) = (&entry.owner_token, &entry.worktree) {
                 let receipts = Receipts::open(&self.state, worktree).await?;
                 let stopped = receipts.stop_chat_by_token(id, token).await;
                 let closed = receipts.close().await;
                 let _ = stopped.and_then(|value| closed.map(|()| value))?;
+            } else if let Some(owner) = store::chat::turn_owner(&self.state, id).await? {
+                // Another process may currently hold SQLite ownership while this local send is
+                // still preparing: commit SQLite Stop and cancel its permissions too
+                // (`C-ONE-TURN-OWNERSHIP`).
+                let session = store::chat::load(&self.state, id).await?;
+                let _ = self.stop_exact(&session, owner).await?;
             }
             self.permission_notify.notify_waiters();
             entry.cancel.cancel();
@@ -1712,25 +1883,37 @@ impl Chat {
     /// The desktop's quit prompt names every running Chat. Deliver the same Stop to those
     /// turns even when another process owns them, before the desktop window closes.
     pub async fn stop_running(&self) -> Result<(), StopRunningError> {
+        // Under the lock that publishes ownership: a turn not yet owned in SQLite is marked, and
+        // commits this Stop itself as it takes ownership (`record_owner`).
         let local: Vec<(SessionId, ActiveEntry)> = {
-            let active = self.active.state.lock().expect("Chat active turns lock");
+            let mut active = self.active.state.lock().expect("Chat active turns lock");
             active
                 .turns
-                .iter()
-                .map(|(id, entry)| (id.clone(), entry.clone()))
+                .iter_mut()
+                .map(|(id, entry)| {
+                    entry.stopped |= entry.owner_token.is_none();
+                    (id.clone(), entry.clone())
+                })
                 .collect()
         };
         let mut failed = Vec::new();
-        let mut local_ids = std::collections::BTreeSet::new();
+        // Turns stopped here through their exact `(session_id, owner_token)` CAS; the sweep below
+        // skips only rows whose exact token was matched and updated. A turn whose token matched no
+        // row (e.g. replaced by a newer turn in the same process) is still caught by the sweep.
+        let mut stopped_tokens = std::collections::BTreeSet::new();
         for (id, entry) in local {
-            local_ids.insert(id.clone());
             if let (Some(token), Some(worktree)) = (&entry.owner_token, &entry.worktree) {
                 match Receipts::open(&self.state, worktree).await {
                     Ok(receipts) => {
                         let stopped = receipts.stop_chat_by_token(&id, token).await;
                         let closed = receipts.close().await;
-                        match stopped.and(closed) {
-                            Ok(()) => entry.cancel.cancel(),
+                        match stopped.and_then(|matched| closed.map(|()| matched)) {
+                            Ok(matched) => {
+                                entry.cancel.cancel();
+                                if matched {
+                                    stopped_tokens.insert((id.clone(), token.clone()));
+                                }
+                            }
                             Err(error) => failed.push(format!("{id}: {error}")),
                         }
                     }
@@ -1745,7 +1928,9 @@ impl Chat {
             .await
             .map_err(StopRunningError::Unreadable)?;
         for (session, owner) in turns {
-            if owner.in_current_process() && local_ids.contains(&session.id) {
+            if owner.in_current_process()
+                && stopped_tokens.contains(&(session.id.clone(), owner.token.clone()))
+            {
                 continue;
             }
             if let Err(error) = self.stop_exact(&session, owner).await {
@@ -1811,8 +1996,47 @@ impl Chat {
                     .await?;
                 Ok(ChatTarget::direct(resolved))
             }
-            ChatTarget::Acp { agent, config } => {
-                let _spec = catalog::resolve_spec(&agent, Some(&self.state), Some(worktree))?;
+            ChatTarget::Acp { agent, mut config } => {
+                let spec = catalog::resolve_spec(&agent, Some(&self.state), Some(worktree))?;
+                // Preserve each ACP option's category when saved so an agent later re-advertising
+                // a former mode option ID as non-mode can never silently downgrade it
+                // (`C-NO-SILENT-REGRESSION`). Never fill a missing category from a live probe.
+                if config.iter().any(|selection| selection.category.is_none()) {
+                    let prev_config = match previous {
+                        Some(ChatTarget::Acp {
+                            agent: prev_agent,
+                            config,
+                        }) if prev_agent == &agent => Some(config.as_slice()),
+                        _ => None,
+                    };
+                    for selection in &mut config {
+                        if selection.category.is_none()
+                            && let Some(prev) = prev_config
+                        {
+                            selection.category = prev
+                                .iter()
+                                .find(|item| item.id == selection.id)
+                                .and_then(|item| item.category);
+                        }
+                        if selection.category.is_none() {
+                            selection.category = match selection.id.as_str() {
+                                "model" => Some(ConfigCategory::Model),
+                                "mode" => Some(ConfigCategory::Mode),
+                                "thought_level" | "thinking" | "thinking_level" | "effort" => {
+                                    Some(ConfigCategory::ThoughtLevel)
+                                }
+                                _ => None,
+                            };
+                        }
+                    }
+                    if let Some(missing) = config.iter().find(|selection| selection.category.is_none())
+                    {
+                        return Err(format!(
+                            "Option {:?} on {} must specify its category; choose the agent's options again.",
+                            missing.id, spec.name
+                        ));
+                    }
+                }
                 Ok(ChatTarget::Acp { agent, config })
             }
         }
@@ -1884,6 +2108,7 @@ impl Chat {
                     cancel: cancel.clone(),
                     owner_token: None,
                     worktree: None,
+                    stopped: false,
                 });
                 Ok(Active {
                     chat: self.clone(),
@@ -1894,18 +2119,20 @@ impl Chat {
         }
     }
 
-    fn record_owner(&self, id: &SessionId, token: String, worktree: PathBuf) {
-        if let Some(entry) = self
-            .active
+    /// Publish the turn's SQLite ownership; true when a Stop came before it, which the turn then
+    /// commits durably itself.
+    fn record_owner(&self, id: &SessionId, token: String, worktree: PathBuf) -> bool {
+        self.active
             .state
             .lock()
             .expect("Chat active turns lock")
             .turns
             .get_mut(id)
-        {
-            entry.owner_token = Some(token);
-            entry.worktree = Some(worktree);
-        }
+            .is_some_and(|entry| {
+                entry.owner_token = Some(token);
+                entry.worktree = Some(worktree);
+                entry.stopped
+            })
     }
 }
 
@@ -1921,11 +2148,62 @@ fn default_config_selections(options: &[ConfigOption]) -> Vec<ConfigSelection> {
         .collect()
 }
 
+/// The engine a turn on `next` hands off from: the one the conversation's last active turn ran on,
+/// as its send recorded it, when that differs. A turn that failed before the new engine produced
+/// any Handoff, output, tool call, or completion does not count as having transitioned the
+/// conversation, so a retry still surfaces the handoff (`C-NO-SILENT-REGRESSION`).
+fn handoff_from(
+    conversation: Option<&Conversation>,
+    next: &str,
+    unrecorded: impl FnOnce() -> Option<String>,
+) -> Option<String> {
+    let mut last_active: Option<Option<String>> = None;
+    let mut current_send: Option<Option<String>> = None;
+    let mut current_ran = false;
+    if let Some(conversation) = conversation {
+        for event in conversation.events() {
+            match &event.kind {
+                Kind::Send(send) => {
+                    if current_ran && let Some(engine) = current_send.take() {
+                        last_active = Some(engine);
+                    }
+                    current_send = Some(send.engine.clone());
+                    current_ran = false;
+                }
+                Kind::Handoff(_)
+                | Kind::Delivery(_)
+                | Kind::AcpToolCall(_)
+                | Kind::Answer(Answer::Completed(_)) => {
+                    current_ran = true;
+                }
+                Kind::Message(message)
+                    if matches!(
+                        message.message(),
+                        rig_core::message::Message::Assistant { .. }
+                    ) =>
+                {
+                    current_ran = true;
+                }
+                _ => {}
+            }
+        }
+        if current_ran && let Some(engine) = current_send {
+            last_active = Some(engine);
+        }
+    }
+    match last_active {
+        Some(Some(last)) => (last != next).then_some(last),
+        Some(None) | None => unrecorded(),
+    }
+}
+
 fn previous_engine_label(
     previous_target: Option<&ChatTarget>,
     binding: Option<&AcpBinding>,
     legacy_migration_notice: bool,
     next_agent: &AgentId,
+    state: &Path,
+    worktree: &Path,
 ) -> Option<String> {
     if let Some(prev) = previous_target {
         match prev {
@@ -1934,7 +2212,7 @@ fn previous_engine_label(
                     return Some("Legacy Antigravity".into());
                 }
             }
-            other => return Some(other.engine_label()),
+            other => return Some(resolved_engine_label(other, state, worktree)),
         }
     }
     if let Some(binding) = binding

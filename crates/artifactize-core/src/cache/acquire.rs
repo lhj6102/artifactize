@@ -226,8 +226,10 @@ async fn compute(
     scope::validate_file_target(&config.root, &config.artifacts[id])
         .map_err(|error| error.to_string())?;
     let result = match &config.artifacts[id].fingerprint {
+        // What the definitions bound under its target declare once expanded, not their bytes.
         Some(Fingerprint::Graph) => Ok(PreparedFingerprint {
-            value: crate::graph_structure::read(&config.root)?.fingerprint(),
+            value: crate::graph_structure::read_scoped(&config.root, &config.artifacts[id])?
+                .fingerprint(),
             manifest: None,
         }),
         Some(Fingerprint::Artifactsum { files, ignore }) => {

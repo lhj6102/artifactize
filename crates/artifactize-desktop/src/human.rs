@@ -6,15 +6,15 @@
 //! errors are the terminal's.
 pub(crate) mod draft;
 mod draft_queue;
-mod form;
 mod jobs;
 pub(crate) mod log;
 pub(crate) mod search;
 mod searches;
+mod verdict;
 
-pub use form::{Draft, FormView, Verdict};
 use jobs::{Action, Jobs};
 pub(crate) use jobs::{Caller, Lease};
+pub use verdict::Verdict;
 
 use crate::ids::{JobId, RequestKey};
 use crate::{
@@ -388,27 +388,20 @@ pub(crate) fn kind(kind: HumanToolKind) -> ToolKind {
     }
 }
 
-/// A settled result as its reviewer entered it: the verdict, then each field the form asked
-/// for, without the constants the form filled in.
+/// A settled result as its reviewer entered it: the verdict, then its issues.
 fn completed(request: &store::Request) -> Option<Vec<ResultEntry>> {
     let result = request.result()?;
-    let verdict = result.verdict();
-    let constants: BTreeSet<String> = review::form(request, verdict)
-        .map(|form| {
-            form.fields
-                .into_iter()
-                .filter(|field| matches!(field.input, review::Input::Fixed(_)))
-                .map(|field| field.name)
-                .collect()
-        })
-        .unwrap_or_default();
-    let verdict = serde_json::json!(verdict);
-    let fields = result.owner_fields();
-    Some(crate::detail::result_entries(
-        std::iter::once((&"verdict".to_owned(), &verdict))
-            .chain(fields.iter().filter(|(key, _)| !constants.contains(*key)))
-            .collect::<Vec<_>>(),
-    ))
+    let verdict = Verdict::from(result.verdict());
+    let mut entries = vec![ResultEntry::Text {
+        key: "verdict".to_owned(),
+        text: match verdict {
+            Verdict::Green => "GREEN",
+            Verdict::Red => "RED",
+        }
+        .to_owned(),
+    }];
+    entries.extend(crate::detail::issue_entries(&result.issues()));
+    Some(entries)
 }
 
 fn view(
@@ -643,21 +636,6 @@ pub async fn human_open(
     Ok(show(&app, number, &request))
 }
 
-/// The form for `verdict`, from the owner schema recorded with request `id`, holding the values
-/// of `kept` (the earlier draft of this verdict) when the schema still takes them.
-#[tauri::command]
-#[specta::specta]
-pub async fn human_form(
-    app: tauri::State<'_, App>,
-    id: RequestKey,
-    verdict: Verdict,
-    kept: Option<Draft>,
-) -> Result<FormView, Failure> {
-    let id = id.into_inner();
-    guard(&app, &id, review::review_refusal).await?;
-    form::template(&opened(&app, &id)?.request, verdict, kept)
-}
-
 async fn run_job(app: &App, work: Job, cancel: CancellationToken) -> Outcome {
     work.run(
         app.launch.state.clone(),
@@ -811,68 +789,16 @@ async fn guard(
     }
 }
 
-fn opened(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
-    app.human
-        .views
-        .lock()
-        .expect("views lock")
-        .get(id)
-        .map(|(_, view)| view.owner.clone())
-        .ok_or_else(|| Failure::Missing("Open the request first.".into()))
-}
-
-/// `draft` of request `id` with field `name` set to `value`, as the library's form takes it.
-#[tauri::command]
-#[specta::specta]
-pub async fn human_edit_field(
-    app: tauri::State<'_, App>,
-    id: RequestKey,
-    draft: Draft,
-    name: String,
-    value: form::FieldValue,
-) -> Result<Draft, Failure> {
-    let id = id.into_inner();
-    form::edit_field(&opened(&app, &id)?.request, draft, &name, value)
-}
-
-/// `draft` of request `id` with an empty item added to its list field `name`, as the library's
-/// form adds it.
-#[tauri::command]
-#[specta::specta]
-pub async fn human_add_item(
-    app: tauri::State<'_, App>,
-    id: RequestKey,
-    draft: Draft,
-    name: String,
-) -> Result<Draft, Failure> {
-    let id = id.into_inner();
-    form::add_item(&opened(&app, &id)?.request, draft, &name)
-}
-
-/// `draft` of request `id` with item `item` removed from its list field `name`; the library's
-/// form keeps one empty item.
-#[tauri::command]
-#[specta::specta]
-pub async fn human_remove_item(
-    app: tauri::State<'_, App>,
-    id: RequestKey,
-    draft: Draft,
-    name: String,
-    item: u32,
-) -> Result<Draft, Failure> {
-    let id = id.into_inner();
-    form::remove_item(&opened(&app, &id)?.request, draft, &name, item)
-}
-
-/// Submit `draft` for request `id` and publish it like `request submit`. A result the
-/// schema rejects keeps the request waiting and fails as `invalid`.
+/// Submit `verdict` with `issues` for request `id` and publish it like `request submit`: GREEN
+/// with none, RED with at least one, or it fails as `invalid` and the request keeps waiting.
 #[tauri::command]
 #[specta::specta]
 pub async fn human_submit(
     app: tauri::State<'_, App>,
     caller: Caller,
     id: RequestKey,
-    draft: Draft,
+    verdict: Verdict,
+    issues: Vec<String>,
     job: JobId,
 ) -> Result<Submitted, Failure> {
     let id = id.into_inner();
@@ -882,7 +808,8 @@ pub async fn human_submit(
         .await?;
     let owner = &turn.owners[0];
     let request = guard(&app, owner, review::review_refusal).await?;
-    let result = form::submission(&request.request, draft)?;
+    let result = artifactize_core::human::Submission::new(verdict.into(), issues)
+        .map_err(Failure::Invalid)?;
     submit(
         &app,
         work,

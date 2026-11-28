@@ -44,7 +44,7 @@ describe("openRequest", () => {
     await app.openRequest(view.id);
     const opened = app.reviews[view.id];
     expect(app.reviewMode.shown).toEqual({ kind: "review", id: view.id });
-    await waitFor(() => expect(opened.form?.verdict).toBe("GREEN"));
+    await waitFor(() => expect(opened.verdict).toBe("GREEN"));
     expect(opened.owned).toBe(true);
     expect(opened.submittable("")).toBe(true);
   });

@@ -111,33 +111,16 @@ pub struct HumanEval {
     pub deps: Field<Vec<ArtifactName>>,
     declaration: Field<super::definitions::Declaration>,
     pub extra: Map<String, Value>,
-    pass: Result<crate::review::Specification, String>,
-    fail: Result<crate::review::Specification, String>,
 }
 
 impl HumanEval {
     pub(crate) fn declaration(&self) -> Option<&super::definitions::Declaration> {
         self.declaration.value()
     }
-    pub(crate) fn form(
-        &self,
-        verdict: crate::runtime::Verdict,
-    ) -> Result<crate::review::Form, String> {
-        let spec = match verdict {
-            crate::runtime::Verdict::Green => &self.pass,
-            crate::runtime::Verdict::Red => &self.fail,
-        };
-        spec.as_ref()
-            .map(|spec| crate::review::Form::from_spec(verdict, spec))
-            .map_err(Clone::clone)
-    }
 }
 
 impl From<HumanEvalWire> for HumanEval {
     fn from(wire: HumanEvalWire) -> Self {
-        let saved = wire.declaration.value();
-        let pass = crate::review::Specification::parse(saved.and_then(|d| d.pass_schema.value()));
-        let fail = crate::review::Specification::parse(saved.and_then(|d| d.fail_schema.value()));
         Self {
             id: wire.id,
             target: wire.target,
@@ -145,8 +128,6 @@ impl From<HumanEvalWire> for HumanEval {
             deps: wire.deps,
             declaration: wire.declaration,
             extra: wire.extra,
-            pass,
-            fail,
         }
     }
 }

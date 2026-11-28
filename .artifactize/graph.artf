@@ -1,2 +1,4 @@
-basis = true
-path = ".artifactize/"
+artf graph = {
+  basis = true
+  path = ".artifactize/"
+}

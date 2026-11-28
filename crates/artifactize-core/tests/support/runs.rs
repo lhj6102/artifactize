@@ -594,6 +594,27 @@ impl RecordOutput for Command {
     }
 }
 
+/// What runtime request `request` printed on `stream` (`stdout` or `stderr`), as `request logs`
+/// reads it from the state at `state`, each line ended by a newline. A runtime result keeps no
+/// output of its own.
+pub fn logged(state: &Path, request: &str, stream: &str) -> String {
+    let output = std::process::Command::new(super::os::cli())
+        .arg("--state-dir")
+        .arg(state)
+        .args(["request", "logs", request, "--stream", stream, "--json"])
+        .env("ARTIFACTIZE_REMOTE", "off")
+        .record_output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let logs: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    logs["streams"][0]["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|line| format!("{}\n", line["text"].as_str().unwrap()))
+        .collect()
+}
+
 /// Tests of cleanup cancel the Run explicitly rather than assigning execution to a watcher.
 pub fn cancel_active(state: &Path, repo: &Path) -> artifactize_core::types::RunId {
     std::thread::scope(|scope| {

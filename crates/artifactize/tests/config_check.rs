@@ -95,8 +95,8 @@ fn config_check_reports_bad_references_without_opening_runtime_inputs() {
     let error = json_output(&output)["error"].as_str().unwrap().to_owned();
     // Reference validation reports the authored logical declaration path.
     assert!(error.contains(".artifactize/review.artf"), "{error}");
-    assert!(error.contains("review/run"));
-    assert!(error.contains("Unknown Artifact reference {missing}"));
+    assert!(error.contains("line "), "{error}");
+    assert!(error.contains("Unknown Artifact `missing`"), "{error}");
     declaration["evals"][0]["payload"]["instruction"] = json!("Inspect.");
     declaration["evals"][0]["profile"]["args"] = json!(["{missing}/file"]);
     fixture.write("review/index.artf", &declaration.to_string());
@@ -110,7 +110,7 @@ fn config_check_reports_bad_references_without_opening_runtime_inputs() {
         json_output(&output)["error"]
             .as_str()
             .unwrap()
-            .contains("Unknown Artifact reference {missing}")
+            .contains("Unknown Artifact in `@{path missing}`")
     );
     let output = fixture
         .command()
@@ -119,77 +119,8 @@ fn config_check_reports_bad_references_without_opening_runtime_inputs() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("Unknown Artifact reference"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Unknown Artifact"));
     assert!(!fixture.0.join("state-home").exists());
-}
-
-#[test]
-fn config_check_rejects_renamed_fingerprint_keys_with_the_new_shape() {
-    let shape = r#"was renamed to fingerprint: use fingerprint = { files = ["."], ignore = [] } or [fingerprint.script]."#;
-    for (key, value) in [
-        ("stale_key", json!({"content":{"inputs":["."]}})),
-        (
-            "stale_key",
-            json!({"script":{"command":"./hash.sh","args":[]}}),
-        ),
-        ("stale", json!({"kind":"content"})),
-    ] {
-        let fixture = Fixture::new();
-        let mut declaration = json!({"name":"app"});
-        declaration[key] = value;
-        fixture.write("app/index.artf", &declaration.to_string());
-        let output = fixture
-            .command()
-            .args(["config", "check", "--json"])
-            .record_output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(2));
-        let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-        assert!(error.contains(".artifactize/app.artf"), "{error}");
-        assert!(error.ends_with(&format!(": {key} {shape}")), "{error}");
-        let output = fixture
-            .command()
-            .args(["config", "check"])
-            .record_output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(2));
-        assert!(String::from_utf8_lossy(&output.stderr).contains(&format!("{key} {shape}")));
-    }
-}
-
-#[test]
-fn config_check_rejects_removed_family_declarations_without_opening_instance_lists() {
-    let message = "family was removed in 0.9.0; declare each instance as its own Artifact.";
-    for value in [
-        json!({"instances":"missing.json"}),
-        json!({"instances":{"one":{}}}),
-        json!(false),
-    ] {
-        let fixture = Fixture::new();
-        fixture.write(
-            "app/index.artf",
-            &json!({"name":"app","family":value}).to_string(),
-        );
-        fixture.write("app/nested/index.artf", r#"{"name":"nested"}"#);
-        let output = fixture
-            .command()
-            .args(["config", "check", "--json"])
-            .record_output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(2));
-        let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-        assert!(error.contains(".artifactize/app.artf"), "{error}");
-        assert!(error.ends_with(message), "{error}");
-        let output = fixture
-            .command()
-            .args(["config", "check"])
-            .record_output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(2));
-        assert!(output.stdout.is_empty());
-        assert!(String::from_utf8_lossy(&output.stderr).contains(message));
-        assert!(!fixture.0.join("state-home").exists());
-    }
 }
 
 #[test]
@@ -326,15 +257,16 @@ Inspect {{input}}."""
         config.artifacts["review"].path.local(),
         Some(Path::new("review"))
     );
-    assert_eq!(
-        config.evals[2]
-            .declaration
-            .payload()
-            .as_ref()
-            .unwrap()
-            .instruction,
-        "Check {input}."
-    );
+    // A runtime eval asks nothing, its verdict being its exit code; it lists what it reads in
+    // `deps`.
+    assert!(config.evals[2].declaration.payload().is_none());
+    let deps: Vec<_> = config.evals[2]
+        .declaration
+        .inputs()
+        .iter()
+        .map(|dep| dep.as_str())
+        .collect();
+    assert_eq!(deps, ["input"]);
 
     fixture.write(
         "other/index.artf",
@@ -345,7 +277,7 @@ Inspect {{input}}."""
     fs::create_dir_all(fixture.0.join(".artifactize/collision")).unwrap();
     fs::write(
         fixture.0.join(".artifactize/collision/review.artf"),
-        "path = \"other/\"\n",
+        "artf review = { path = \"other/\" }\n",
     )
     .unwrap();
     let output = fixture
@@ -358,7 +290,7 @@ Inspect {{input}}."""
         json_output(&output)["error"]
             .as_str()
             .unwrap()
-            .contains("Duplicate Artifact name: review")
+            .contains("`review` is already declared as `artf review`")
     );
     let output = fixture
         .command()
@@ -367,14 +299,19 @@ Inspect {{input}}."""
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("Duplicate Artifact name"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("is already declared as"));
+    fs::remove_dir_all(fixture.0.join(".artifactize/collision")).unwrap();
 
-    fixture.write("other/index.artf", r#"{"name":"other","review_policy":{}}"#);
+    fs::write(
+        support::declaration::source_path(fixture.0.join("other/index.artf")),
+        "artf other = {\n  path = \"other/\"\n  review_policy = {}\n}\n",
+    )
+    .unwrap();
     assert!(
         read_workspace_config(&fixture.0)
             .unwrap_err()
             .to_string()
-            .contains("unknown field `review_policy`")
+            .contains("Unknown field `review_policy`")
     );
     support::declaration::remove_file(fixture.0.join("other/index.artf")).unwrap();
     let link = fixture.0.join(".artifactize/other.artf");
@@ -449,7 +386,11 @@ fn config_check_names_the_replacements_for_removed_backends() {
                 .unwrap();
             assert_eq!(output.status.code(), Some(2));
             let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-            assert!(error.contains(".artifactize/app.artf"), "{error}");
+            // A profile is declared once for the project, where its error is located.
+            assert!(
+                error.contains(".artifactize/profiles.artfprofiles"),
+                "{error}"
+            );
             assert!(
                 error.contains(&format!(
                     r#"backend "{backend}" was removed in 0.5.0; use "openai", "anthropic" or "gemini" with an API key, "codex""#
@@ -458,31 +399,4 @@ fn config_check_names_the_replacements_for_removed_backends() {
             );
         }
     }
-}
-
-#[test]
-fn config_check_names_the_removal_of_result_check() {
-    let fixture = Fixture::new();
-    fixture.write(
-        "app/index.artf",
-        &json!({"name":"app","evals":[{
-            "id":"review","title":"Review",
-            "profile":{"kind":"agent","backend":"openai","model":"m"},
-            "payload":{"instruction":"Review."},
-            "result_check":{"command":support::os::python_program(),"args":["check.py"]}
-        }]})
-        .to_string(),
-    );
-    let output = fixture
-        .command()
-        .args(["config", "check", "--json"])
-        .record_output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(2));
-    let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-    assert!(error.contains(".artifactize/app.artf"), "{error}");
-    assert!(
-        error.contains("Eval review: result_check was removed in 0.6.0"),
-        "{error}"
-    );
 }

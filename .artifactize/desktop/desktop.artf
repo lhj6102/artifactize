@@ -1,127 +1,157 @@
-path = "crates/artifactize-desktop/"
-parts = ["desktop-backend", "desktop-design", "desktop-e2e-rules", "desktop-ui", "desktop-ux-features"]
+tool app = {
+  agent act = command(
+      command = "node",
+      args = ["harness/harness.mts", "act"],
+      protocol = "json",
+      session = "app",
+      description = "Act in the app's window: click a control by its number from the latest snapshot, type text (into the numbered control, or the focused one), or press a key such as Enter, Escape, ArrowDown, j or Control+k. Answers with the new snapshot.",
+      input_schema = {
+        additionalProperties = false
+        properties = {
+          action = { enum = ["click", "type", "key"] }
+          element = {
+            description = "Control number from the latest snapshot; required for click."
+            minimum = 1
+            type = "integer"
+          }
+          key = {
+            description = "One key, or modifiers joined with + before one key; required for key."
+            type = "string"
+          }
+          text = { description = "Text to type; required for type.", type = "string" }
+        }
+        required = ["action"]
+        type = "object"
+      },
+    )
+  agent change_declaration = command(
+      command = "node",
+      args = ["harness/harness.mts", "change-declaration"],
+      protocol = "json",
+      session = "app",
+      description = "Change docs/lint's title in the private fixture's actual declaration, without re-verifying. Refresh the current graph to observe the change rather than a saved Run.",
+      input_schema = { additionalProperties = false, properties = {}, type = "object" },
+    )
+  agent cli = command(
+      command = "node",
+      args = ["harness/harness.mts", "cli"],
+      protocol = "json",
+      session = "app",
+      description = "Run the artifactize CLI against the app's repository and state from another process (for example `request list --json`, `verify --all`, `request claim ID`), to change state the window must then show. Answers with exit code, stdout and stderr.",
+      input_schema = {
+        additionalProperties = false
+        properties = { args = { items = { type = "string" }, minItems = 1, type = "array" } }
+        required = ["args"]
+        type = "object"
+      },
+    )
+  agent glob = builtin(op = "glob")
+  agent grep = builtin(op = "grep")
+  agent launch = command(
+      command = "node",
+      args = ["harness/harness.mts", "launch"],
+      protocol = "json",
+      session = "app",
+      description = "Restart the real headless desktop app in one of its actual launch modes: monitor (no arguments: nothing chosen), repo (`--repo`: the fixture's branch selected, its last Run shown), review (`review`: the newest waiting review open) or graph (`graph --repo`: New chat on the fixture branch in fresh state; create its session and select Graph to see the branch's Current). Answers with the new window snapshot; builds nothing.",
+      input_schema = {
+        additionalProperties = false
+        properties = { screen = { enum = ["monitor", "repo", "review", "graph"] } }
+        required = ["screen"]
+        type = "object"
+      },
+    )
+  agent list = builtin(op = "list")
+  agent read = builtin(op = "read")
+  agent snapshot = command(
+      command = "node",
+      args = ["harness/harness.mts", "snapshot"],
+      protocol = "json",
+      session = "app",
+      description = "What the app's window shows now: its focused element, its visible controls each with a number, role, name and state, and its text.",
+    )
+  human app = command(
+      command = "node",
+      args = ["harness/app.mts"],
+      description = "Build the desktop app from this tree and open its branch with your own artifactize state, removing the build output when the window closes.",
+      kind = "launch",
+    )
+  session app = session(start = command(
+      command = "node",
+      args = ["harness/harness.mts", "start"],
+      execution_paths = ["crates/artifactize-desktop/harness", "crates/artifactize-desktop/ui/e2e"],
+    ), stop = command(
+      command = "node",
+      args = ["harness/harness.mts", "stop"],
+      execution_paths = ["crates/artifactize-desktop/harness"],
+    ))
+}
 
-[views.human_tools]
-app = { description = "Build the desktop app from this tree and open its branch with your own artifactize state, removing the build output when the window closes.", kind = "launch", command = "node", args = ["harness/app.mts"] }
+// The app runs headless for the whole review. start builds a candidate into its own
+// session (or snapshots an explicitly prepared one); it never consumes shared Cargo output names.
+artf desktop : app = {
+  parts = [desktop-backend, desktop-design, desktop-e2e-rules, desktop-ui, desktop-ux-features]
+  path = "crates/artifactize-desktop/"
 
-# The app runs headless for the whole review. start builds a candidate into its own
-# session (or snapshots an explicitly prepared one); it never consumes shared Cargo output names.
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
+  // Build the frontend input from desktop-ui and check every Rust target of the whole crate
+  // desktop with engine-core with engine-tools with the workspace engine-cargo-manifest and
+  // engine-cargo-lock, treating every clippy warning as an error.
+  eval clippy : runtime(command = "node", args = ["harness/harness.mts", "clippy"], timeout_ms = 1800000) = {
+    title = "Clippy passes for every Rust target"
+    deps = [desktop-ui, engine-cargo-lock, engine-cargo-manifest, engine-core, engine-tools]
+  }
 
-[views.agent_sessions.app]
-start = { command = "node", args = ["harness/harness.mts", "start"], execution_paths = [
-  "crates/artifactize-desktop/harness",
-  "crates/artifactize-desktop/ui/e2e",
-] }
-stop = { command = "node", args = ["harness/harness.mts", "stop"], execution_paths = ["crates/artifactize-desktop/harness"] }
+  // Check the formatting of the Rust files desktop owns directly: its build script and its
+  // integration tests. The backend's sources are checked by desktop-backend.
+  eval fmt : runtime(
+      command = "rustfmt",
+      args = [
+        "--check",
+        "--edition",
+        "2024",
+        "build.rs",
+        "tests/bindings.rs",
+        "tests/commands.rs",
+        "tests/settings.rs",
+      ],
+      timeout_ms = 60000,
+    ) = {
+    title = "The Rust formatting check passes"
+  }
 
-[views.agent_tools.snapshot]
-session = "app"
-description = "What the app's window shows now: its focused element, its visible controls each with a number, role, name and state, and its text."
-command = "node"
-args = ["harness/harness.mts", "snapshot"]
-protocol = "json"
+  eval follows-test-rules : reviewer = {
+    title = "The desktop automation harness and integration tests follow the test rules"
+    red_at = "P1"
+    instruction = "Read the TEST- rules and M-TAUTOLOGICAL-TESTS of @{artf rules-code-style}. Review the automation harness owned by @{artf desktop} (harness/) and its Rust integration tests (tests/). The tests of @{artf desktop-ui} and @{artf desktop-e2e} have their own reviews: do not duplicate them. Check M-TAUTOLOGICAL-TESTS and every TEST- rule as @{artf rules-code-style} states them. Report only what a rule item states: each issue names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not an issue."
+  }
 
-[views.agent_tools.act]
-session = "app"
-description = "Act in the app's window: click a control by its number from the latest snapshot, type text (into the numbered control, or the focused one), or press a key such as Enter, Escape, ArrowDown, j or Control+k. Answers with the new snapshot."
-command = "node"
-args = ["harness/harness.mts", "act"]
-protocol = "json"
+  // Run eslint over the TypeScript automation harness directly owned by desktop, then type-
+  // check it.
+  eval lint : runtime(command = "pnpm", args = ["lint"], timeout_ms = 600000) = {
+    title = "The desktop-owned TypeScript automation harness lint passes"
+  }
 
-[views.agent_tools.act.input_schema]
-type = "object"
-properties.action = { enum = ["click", "type", "key"] }
-properties.element = { type = "integer", minimum = 1, description = "Control number from the latest snapshot; required for click." }
-properties.text = { type = "string", description = "Text to type; required for type." }
-properties.key = { type = "string", description = "One key, or modifiers joined with + before one key; required for key." }
-required = ["action"]
-additionalProperties = false
+  eval release-excludes-test-build : reviewer = {
+    title = "The release app compiles in none of the E2E test build's WebdriverIO plugins"
+    red_at = "P1"
+    instruction = "Read E2E-TEST-BUILD-ONLY of the end-to-end rules @{artf desktop-e2e-rules}, which names the WebdriverIO plugins (their Rust crates, capability permissions and the frontend import) that only the E2E test build may get. The release app, its default capabilities and its frontend bundle contain none of them. Read how @{artf desktop} assembles its app: Cargo.toml (features and optional dependencies), build.rs, the capability files and tauri*.json; src/ where it registers plugins, in its part @{artf desktop-backend}; and the frontend entry and build configuration in its part @{artf desktop-ui}. Check the release app, built with the default Cargo features and the default frontend build, against that; how the suite selects the test build is judged by desktop-e2e-infra/follows-rules."
+  }
 
-[views.agent_tools.cli]
-session = "app"
-description = "Run the artifactize CLI against the app's repository and state from another process (for example `request list --json`, `verify --all`, `request claim ID`), to change state the window must then show. Answers with exit code, stdout and stderr."
-command = "node"
-args = ["harness/harness.mts", "cli"]
-protocol = "json"
+  // Run the HTML example's Point test in desktop-ui, then build the E2E test app of desktop
+  // from desktop-backend and desktop-ui (the test-only Cargo feature and its frontend build)
+  // and the CLI from engine-cli, engine-core and engine-tools with the workspace engine-cargo-
+  // manifest and engine-cargo-lock into build output this run owns, and run the WebdriverIO
+  // suite desktop-e2e against it on a headless display.
+  eval suite-passes : runtime(command = "pnpm", args = ["-C", "ui", "e2e"], timeout_ms = 1800000) = {
+    title = "The end-to-end suite passes on a headless display"
+    mutex = ["use-computer"]
+    deps = [desktop-backend, desktop-e2e, desktop-ui, engine-cargo-lock, engine-cargo-manifest, engine-cli, engine-core, engine-tools]
+  }
 
-[views.agent_tools.cli.input_schema]
-type = "object"
-properties.args = { type = "array", items = { type = "string" }, minItems = 1 }
-required = ["args"]
-additionalProperties = false
-
-[views.agent_tools.launch]
-session = "app"
-description = "Restart the real headless desktop app in one of its actual launch modes: monitor (no arguments: nothing chosen), repo (`--repo`: the fixture's branch selected, its last Run shown), review (`review`: the newest waiting review open) or graph (`graph --repo`: New chat on the fixture branch in fresh state; create its session and select Graph to see the branch's Current). Answers with the new window snapshot; builds nothing."
-command = "node"
-args = ["harness/harness.mts", "launch"]
-protocol = "json"
-input_schema = { type = "object", properties = { screen = { enum = ["monitor", "repo", "review", "graph"] } }, required = ["screen"], additionalProperties = false }
-
-[views.agent_tools.change_declaration]
-session = "app"
-description = "Change docs/lint's title in the private fixture's actual declaration, without re-verifying. Refresh the current graph to observe the change rather than a saved Run."
-command = "node"
-args = ["harness/harness.mts", "change-declaration"]
-protocol = "json"
-input_schema = { type = "object", properties = {}, additionalProperties = false }
-
-[evals.lint]
-title = "The desktop-owned TypeScript automation harness lint passes"
-profile = { kind = "runtime", command = "pnpm", args = ["lint"], timeout_ms = 600000 }
-payload.instruction = "Run eslint over the TypeScript automation harness directly owned by {desktop}, then type-check it."
-
-[evals.follows-test-rules]
-title = "The desktop automation harness and integration tests follow the test rules"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
-payload.instruction = """
-Read the TEST- rules and M-TAUTOLOGICAL-TESTS of {rules-code-style}. Review the automation harness owned by {desktop} (harness/) and its Rust integration tests (tests/). The tests of {desktop-ui} and {desktop-e2e} have their own reviews: do not duplicate them. Check M-TAUTOLOGICAL-TESTS and every TEST- rule as {rules-code-style} states them. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding."""
-
-[evals.release-excludes-test-build]
-title = "The release app compiles in none of the E2E test build's WebdriverIO plugins"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
-payload.instruction = """
-Read E2E-TEST-BUILD-ONLY of the end-to-end rules {desktop-e2e-rules}, which names the WebdriverIO plugins (their Rust \
-crates, capability permissions and the frontend import) that only the E2E test build may get. The release app, its \
-default capabilities and its frontend bundle contain none of them. Read how {desktop} assembles its app: \
-Cargo.toml (features and optional dependencies), build.rs, the capability files and tauri*.json; src/ where it \
-registers plugins, in its part {desktop-backend}; and the frontend entry and build configuration in its part {desktop-ui}. Check the release app, built with the default \
-Cargo features and the default frontend build, against that; how the suite \
-selects the test build is judged by desktop-e2e-infra/follows-rules."""
-
-[evals.suite-passes]
-title = "The end-to-end suite passes on a headless display"
-mutex = ["use-computer"]
-profile = { kind = "runtime", command = "pnpm", args = ["-C", "ui", "e2e"], timeout_ms = 1800000 }
-
-[evals.suite-passes.payload]
-instruction = """
-Run the HTML example's Point test in {desktop-ui}, then build the E2E test app of {desktop} from {desktop-backend} and {desktop-ui} (the test-only Cargo feature and its frontend build) and the CLI from {engine-cli}, {engine-core} and {engine-tools} with the workspace {engine-cargo-manifest} and {engine-cargo-lock} into build output this run owns, and run the WebdriverIO suite {desktop-e2e} against it on a headless display."""
-
-[evals.fmt]
-title = "The Rust formatting check passes"
-profile = { kind = "runtime", command = "rustfmt", args = ["--check", "--edition", "2024", "build.rs", "tests/bindings.rs", "tests/commands.rs", "tests/settings.rs"], timeout_ms = 60000 }
-
-[evals.fmt.payload]
-instruction = "Check the formatting of the Rust files {desktop} owns directly: its build script and its integration tests. The backend's sources are checked by desktop-backend."
-
-[evals.clippy]
-title = "Clippy passes for every Rust target"
-profile = { kind = "runtime", command = "node", args = ["harness/harness.mts", "clippy"], timeout_ms = 1800000 }
-
-[evals.clippy.payload]
-instruction = "Build the frontend input from {desktop-ui} and check every Rust target of the whole crate {desktop} with {engine-core} with {engine-tools} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}, treating every clippy warning as an error."
-
-[evals.tests]
-title = "The Rust crate tests pass"
-profile = { kind = "runtime", command = "node", args = ["harness/harness.mts", "test"], timeout_ms = 1800000 }
-
-[evals.tests.payload]
-instruction = "Build the frontend input from {desktop-ui} and run the Rust tests of the whole crate {desktop} with {engine-core} with {engine-tools} with {engine-cli} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}."
+  // Build the frontend input from desktop-ui and run the Rust tests of the whole crate desktop
+  // with engine-core with engine-tools with engine-cli with the workspace engine-cargo-manifest
+  // and engine-cargo-lock.
+  eval tests : runtime(command = "node", args = ["harness/harness.mts", "test"], timeout_ms = 1800000) = {
+    title = "The Rust crate tests pass"
+    deps = [desktop-ui, engine-cargo-lock, engine-cargo-manifest, engine-cli, engine-core, engine-tools]
+  }
+}

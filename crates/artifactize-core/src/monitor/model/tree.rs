@@ -1,6 +1,6 @@
 //! The Artifacts and evals tree: one row per eval, Artifact rows rolled up from them.
 use crate::types::{ArtifactName, EvalId};
-use serde_json::Value;
+
 use time::OffsetDateTime;
 
 use super::{
@@ -216,9 +216,9 @@ fn style(view: &EvalView) -> (&'static str, Tone, Weight) {
 
 /// Shown X per row; the rest become `+N`.
 const SHOWN: usize = 2;
-/// A shown text field keeps this many characters of its first line, enough for a short value
-/// or the start of a sentence while two fields still fit on one row.
-const SHOWN_TEXT: usize = 24;
+/// A RED summary keeps this many characters: the issue count, the first priority or exit code
+/// and the start of its reason, still on one row.
+const SHOWN_TEXT: usize = 60;
 
 /// `cli ◐ in progress`, or `a ◐, b ? +1`; an ERROR-failed X asks for a retry.
 fn tokens(states: &States, x: &[crate::types::ArtifactName], glyphs: bool) -> Vec<Segment> {
@@ -260,47 +260,16 @@ fn waits(states: &States, prefix: &str, waits: &Waits) -> Vec<Segment> {
     segments
 }
 
-/// The top-level Result keys behind a RED verdict, such as `violations 3`.
+/// What a RED verdict reports, such as `2 issues: P1 the title is wrong`.
 fn findings(result: Option<&crate::store::ExecutionResult>) -> String {
-    use crate::store::{ExecutionResult, ResultField};
-    let Some(result) = result else {
+    let Some(summary) = result.and_then(crate::store::ExecutionResult::summary) else {
         return String::new();
     };
-    let mut fields = result.owner_fields().clone();
-    if let ExecutionResult::Runtime(runtime) = result {
-        match runtime.exit_code {
-            ResultField::Missing => {}
-            ResultField::Null => {
-                fields.insert("exitCode".into(), Value::Null);
-            }
-            ResultField::Value(code) => {
-                fields.insert("exitCode".into(), Value::from(code));
-            }
-        }
+    let mut short: String = summary.chars().take(SHOWN_TEXT).collect();
+    if short.len() < summary.len() {
+        short.push('…');
     }
-    let fields = fields.iter().filter(|(key, _)| {
-        !matches!(
-            key.as_str(),
-            "verdict" | "stdout" | "stderr" | "truncated" | "durationMs"
-        )
-    });
-    let parts: Vec<_> = fields
-        .take(SHOWN)
-        .map(|(key, value)| match value {
-            Value::Array(items) => format!("{key} {}", items.len()),
-            Value::Object(fields) => format!("{key} {{{}}}", fields.len()),
-            Value::String(text) => {
-                let text = text.lines().next().unwrap_or_default();
-                let mut short: String = text.chars().take(SHOWN_TEXT).collect();
-                if short.len() < text.len() {
-                    short.push('…');
-                }
-                format!("{key} {short}")
-            }
-            value => format!("{key} {value}"),
-        })
-        .collect();
-    parts.join(", ")
+    short
 }
 
 fn short_profile(profile: &crate::config::StoredProfile) -> String {

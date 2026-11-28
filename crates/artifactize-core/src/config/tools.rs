@@ -36,7 +36,7 @@ impl<'de> Deserialize<'de> for AgentTool {
 )]
 pub struct CommandTool {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session: Option<super::ToolOperationName>,
+    pub session: Option<super::ToolFqn>,
     pub description: String,
     /// Shared with every declaration of an equal schema in the same read.
     #[serde(default = "empty_schema")]
@@ -65,7 +65,7 @@ pub struct CommandTool {
 )]
 struct CommandToolInput {
     #[serde(default)]
-    pub session: Option<super::ToolOperationName>,
+    pub session: Option<super::ToolFqn>,
     pub description: String,
     #[serde(default = "empty_schema")]
     pub input_schema: Value,
@@ -91,7 +91,10 @@ impl TryFrom<CommandToolInput> for CommandTool {
                 .args
                 .iter()
                 .map(|arg| {
-                    super::plain::PlainArgument::parse(&arg.to_string(), &input.input_schema)
+                    let template = arg.literal().ok_or(
+                        "A plain tool's args are `{property}` templates; a `@{path …}` slot needs protocol = \"json\".",
+                    )?;
+                    super::plain::PlainArgument::parse(template, &input.input_schema)
                 })
                 .collect::<Result<_, _>>()?
         } else {
@@ -238,6 +241,9 @@ impl<'de> Deserialize<'de> for HumanTool {
 pub struct HumanViewerTool {
     pub kind: ViewerKind,
     pub description: String,
+    /// The plugin whose viewer it opens; its page stays in the plugin, never in a saved
+    /// declaration.
+    pub plugin: super::PluginName,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -256,7 +262,6 @@ pub struct HumanCommandTool {
     pub kind: HumanToolKind,
     #[serde(serialize_with = "crate::platform::serialize_program")]
     pub command: String,
-    #[serde(deserialize_with = "crate::scope::human_arguments")]
     pub args: Vec<crate::scope::Argument>,
     #[serde(
         default,
@@ -285,11 +290,14 @@ impl<'de> Deserialize<'de> for HumanBuiltinTool {
             description: Option<String>,
             #[serde(default, deserialize_with = "present")]
             kind: Option<HumanToolKind>,
-            #[serde(deserialize_with = "crate::scope::human_arguments")]
             args: Vec<crate::scope::Argument>,
         }
         let declaration = Declaration::deserialize(deserializer)?;
-        let args: Vec<String> = declaration.args.iter().map(ToString::to_string).collect();
+        let args: Vec<String> = declaration
+            .args
+            .iter()
+            .map(|arg| arg.literal().map_or_else(|| arg.to_string(), str::to_owned))
+            .collect();
         artifactize_tools::builtin::validate_args(declaration.builtin, Some(&args), true)
             .map_err(D::Error::custom)?;
         let kind = if matches!(declaration.builtin, Builtin::Open | Builtin::Graph) {
@@ -341,19 +349,8 @@ impl HumanTool {
             Self::Viewer(_) => {}
             Self::Command(tool) => {
                 script(&tool.command, &tool.args)?;
-                if tool.command.contains(['{', '}']) {
-                    return Err("Tool command must not contain placeholders.".into());
-                }
-                for argument in &tool.args {
-                    crate::scope::validate_human_argument(argument)
-                        .map_err(|error| error.to_string())?;
-                }
             }
             Self::Builtin(tool) => {
-                for argument in &tool.args {
-                    crate::scope::validate_human_argument(argument)
-                        .map_err(|error| error.to_string())?;
-                }
                 if !matches!(tool.builtin, Builtin::Help | Builtin::Graph)
                     && let crate::scope::Argument::Literal(target) = &tool.args[0]
                     && !(tool.builtin == Builtin::Open
@@ -398,13 +395,10 @@ fn empty_schema() -> Value {
 
 pub(super) fn description(value: &str) -> Result<(), String> {
     text(value, "Tool description")?;
-    if value.encode_utf16().count() > MAX_DESCRIPTION_CHARS
-        || value.replace("{artifactName}", "").contains(['{', '}'])
-    {
-        return Err(
-            "Tool description is limited to 4000 characters and supports only {artifactName}."
-                .into(),
-        );
+    if value.encode_utf16().count() > MAX_DESCRIPTION_CHARS {
+        return Err(format!(
+            "Tool description is limited to {MAX_DESCRIPTION_CHARS} characters."
+        ));
     }
     Ok(())
 }

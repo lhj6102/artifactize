@@ -166,28 +166,12 @@ jobs:
         run: cargo build --release --locked -p artifactize-desktop --target "$TARGET"
       - name: Package
         run: sh .github/scripts/package.sh "$TARGET" "$VERSION"
-      # Retain release archives even if optional channel packaging fails later.
-      - uses: actions/upload-artifact@v4
-        with:
-          name: binaries-${{ matrix.target }}
-          path: dist/*
-          if-no-files-found: error
-      - name: Build the Store upload (including prereleases)
-        if: matrix.target == 'x86_64-pc-windows-msvc'
-        shell: powershell
-        run: |
-          .github/scripts/build-msix.ps1 -Version $env:VERSION -Dist dist -Output channel-dist/store
-      - uses: actions/upload-artifact@v4
-        if: matrix.target == 'x86_64-pc-windows-msvc'
-        with:
-          name: channels-windows
-          path: channel-dist/**
-          if-no-files-found: error
-
-      # Only release-branch/PR/manual builds smoke-test installers, never the release tag path.
-      # The test URL reaches the archives built above, not a published release.
+      # Every build smoke-tests the installers it built, a release tag's included, and keeps only
+      # what passed: a package is uploaded once its smoke passed, so what a release attaches was
+      # installed and run as built. The test URL reaches the archives built above, not a
+      # published release.
       - name: Install with install.sh in Debian and Alpine
-        if: contains(matrix.target, '-linux-musl') && github.ref_type != 'tag'
+        if: contains(matrix.target, '-linux-musl')
         run: |
           sh -n website/landing/install.sh .github/scripts/smoke-install.sh
           if command -v shellcheck >/dev/null; then
@@ -209,7 +193,7 @@ jobs:
                 sh /src/smoke-install.sh /src/install.sh'
           done
       - name: Install with install.sh on macOS
-        if: contains(matrix.target, '-apple-darwin') && github.ref_type != 'tag'
+        if: contains(matrix.target, '-apple-darwin')
         run: |
           sh -n website/landing/install.sh .github/scripts/smoke-install.sh
           home=$(mktemp -d "$RUNNER_TEMP/artifactize-smoke.XXXXXXXX")
@@ -219,16 +203,33 @@ jobs:
           HOME="$home" ARTIFACTIZE_DOWNLOAD_URL="file://$home/serve" \
             ARTIFACTIZE_VERSION="$VERSION" sh .github/scripts/smoke-install.sh website/landing/install.sh
       - name: Install with install.ps1 and preserve previous binaries on launch failure
-        if: matrix.target == 'x86_64-pc-windows-msvc' && github.ref_type != 'tag'
+        if: matrix.target == 'x86_64-pc-windows-msvc'
         shell: powershell
         run: .github/scripts/smoke-install.ps1 -Version $env:VERSION -Dist dist -Installer website/landing/install.ps1
       - name: Install and test the local Homebrew formula
-        if: contains(matrix.target, '-apple-darwin') && github.ref_type != 'tag'
+        if: contains(matrix.target, '-apple-darwin')
         run: sh .github/scripts/smoke-homebrew.sh "$VERSION" "$TARGET" dist
+      # Retain release archives even if optional channel packaging fails later.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+      - name: Build the Store upload (including prereleases)
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: powershell
+        run: |
+          .github/scripts/build-msix.ps1 -Version $env:VERSION -Dist dist -Output channel-dist/store
       - name: Install signed MSIX; check private state and child AppData virtualization
-        if: matrix.target == 'x86_64-pc-windows-msvc' && github.ref_type != 'tag'
+        if: matrix.target == 'x86_64-pc-windows-msvc'
         shell: powershell
         run: .github/scripts/smoke-channels.ps1 -Version $env:VERSION -Dist dist
+      - uses: actions/upload-artifact@v4
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        with:
+          name: channels-windows
+          path: channel-dist/**
+          if-no-files-found: error
 
   # One universal app for both Mac CPUs, built on Apple Silicon (signed and notarized when
   # the secrets exist) and opened on both CPUs. The CLI archives above never wait on it.
@@ -282,18 +283,11 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: sh .github/scripts/build-desktop.sh "$TARGET" "$VERSION" desktop-dist
-      - uses: actions/upload-artifact@v4
-        with:
-          name: desktop-${{ env.TARGET }}
-          path: desktop-dist/*
-          if-no-files-found: error
       - name: Install the dmg and open the app
-        if: github.ref_type != 'tag'
         env:
           DESKTOP_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
         run: sh .github/scripts/smoke-desktop.sh dmg "$VERSION" "desktop-dist/artifactize-desktop-v$VERSION-$TARGET.dmg"
       - name: Install the app with install.sh and the Homebrew cask and open it
-        if: github.ref_type != 'tag'
         env:
           DESKTOP_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
         run: |
@@ -306,11 +300,15 @@ jobs:
           HOME="$home" sh .github/scripts/smoke-desktop.sh installed-mac "$VERSION" "$home/Applications/Artifactize.app"
           sh .github/scripts/smoke-cask.sh "$VERSION" desktop-dist
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ env.TARGET }}
+          path: desktop-dist/*
+          if-no-files-found: error
   # The same dmg on an Intel Mac: the universal app's x86_64 half must open too.
   desktop-macos-intel:
     name: Open desktop universal-apple-darwin on Intel
     needs: desktop-macos
-    if: github.ref_type != 'tag'
     runs-on: macos-15-intel
     timeout-minutes: 30
     continue-on-error: true
@@ -383,23 +381,15 @@ jobs:
       # linuxdeploy is itself an AppImage; runners have no FUSE to mount it.
       - name: Bundle the AppImage and deb
         run: APPIMAGE_EXTRACT_AND_RUN=1 sh .github/scripts/build-desktop.sh "$TARGET" "$VERSION"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: desktop-${{ matrix.target }}
-          path: dist/*
-          if-no-files-found: error
       - name: Run the AppImage and open the app
-        if: github.ref_type != 'tag'
         run: sh .github/scripts/smoke-desktop.sh appimage "$VERSION" "dist/artifactize-desktop-v$VERSION-$TARGET.AppImage"
       - name: Install the deb with its dependencies on Ubuntu 22.04 and open the app
-        if: github.ref_type != 'tag'
         run: |
           docker run --rm -v "$PWD:/src:ro" -w /src -e DEBIAN_FRONTEND=noninteractive ubuntu:22.04 sh -euc '
             apt-get update -qq
             apt-get install -y -qq --no-install-recommends xvfb xdotool >/dev/null
             sh .github/scripts/smoke-desktop.sh deb "$1" "dist/artifactize-desktop-v$1-$2.deb"' sh "$VERSION" "$TARGET"
       - name: Install the app with install.sh and open it from its launcher
-        if: github.ref_type != 'tag'
         run: |
           home=$(mktemp -d "$RUNNER_TEMP/artifactize-install.XXXXXXXX")
           serve="$home/serve/v$VERSION"
@@ -414,3 +404,8 @@ jobs:
           HOME="$home" ARTIFACTIZE_DOWNLOAD_URL="file://$home/serve" ARTIFACTIZE_VERSION="$VERSION" \
             sh website/landing/install.sh
           HOME="$home" sh .github/scripts/smoke-desktop.sh installed-linux "$VERSION" "$home/.local/share/artifactize/desktop"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error

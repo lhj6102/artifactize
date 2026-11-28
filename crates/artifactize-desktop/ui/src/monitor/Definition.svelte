@@ -1,235 +1,88 @@
 <script lang="ts">
-  // An Artifact's definition on a Current, in the Detail where a Run's shows its Path: the file
-  // that defines it; its Path, a field written by Enter and put back by Esc, a missing target
-  // said beside it; its Parts, each removed by its button and one added by name from what the
-  // field suggests; then Comment (its field opens under its node on the graph), Rename and
-  // Delete (their dialogs). Source follows, folded until unfolded: the file's text, typed over
-  // in place, written by Save or Ctrl+S and put back by Revert. Every edit names the text it was
-  // shown; a refusal is said under what it concerns, and what was typed stays.
-  import { untrack } from "svelte";
-  import type { Attachment } from "svelte/attachments";
+  // An Artifact's definition on a Current, where a Run's Detail shows its Path, read from the
+  // code (D-INS-10): Bound, the file and line of the `artf` statement that binds it; Macro, for
+  // one a macro made; Path, as the code resolves it, a missing target said beside it; Parts,
+  // each opening that part's Detail; Tools, the toolsets it composes as written. Source follows,
+  // folded until unfolded (D-INS-11): the binding's code, read-only and numbered as in its
+  // file, and for a macro's Artifact a switch to the declaration the call expands to. Nothing
+  // here is a field or a button that edits: the code changes in its file.
   import type { BranchKey } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
-  import Icon from "../shell/Icon.svelte";
   import Section from "../shell/Section.svelte";
-  import { useCommands } from "../shell/commands.svelte";
-  import { composing } from "../shell/keys";
-  import type { Place } from "./definitions.svelte";
 
-  let { branch, name, active = true }: { branch: BranchKey; name: string; active?: boolean } = $props();
+  let { branch, name, onopen }: { branch: BranchKey; name: string; onopen: (node: string) => void } = $props();
   const app = getAppState();
   const defs = $derived(app.definitionsFor(branch));
-
   const node = $derived(defs.node(name));
-  const file = $derived(node ? (defs.view?.files[node.definition] ?? "") : "");
-  const draft = $derived(defs.drafts.get(name));
-  /** What the Source shows: what was typed, else the file's text. */
-  const source = $derived(draft?.text ?? file);
-  const lines = $derived(source.split("\n").length);
 
-  /** What is typed here: the Path, a part being added, and why the last edit wrote nothing. */
-  const form = $derived(defs.shownForm(name));
-  const { path, adding, chosen, refused } = $derived(form);
+  /** The Source is read once its section is unfolded. */
+  const sourceOpen = $derived(app.sections.open("Source"));
+  const source = $derived(defs.sources.get(name));
+  // The store keeps what was read until the definitions are read again.
+  // EFFECT: reading the Source is IPC the section's unfolding asks for, which no derived value may do.
+  $effect(() => {
+    if (sourceOpen && node) void defs.source(branch, name);
+  });
 
-  /** The line a refused Source names, marked in its margin. */
-  const marked = $derived(refused?.at === "source" ? Number(/line (\d+)/.exec(refused.text)?.[1] ?? 0) : 0);
-
-  const suggested = $derived(adding !== null && form.options?.input === adding ? form.options.parts : []);
-
-  /** Text matching is presentation; only the engine admits a candidate as a new part. */
-  const readParts: Attachment = () => {
-    const [text, owner, whole, at] = [adding, defs, name, branch];
-    const definitions = owner.view;
-    if (text === null || !definitions) return;
-    const typed = text.trim().toLowerCase();
-    const options = definitions.nodes.map((candidate) => candidate.name).filter((candidate) => candidate.toLowerCase().includes(typed));
-    let live = true;
-    const target = untrack(() => owner.form(whole));
-    void (async () => {
-      const parts: string[] = [];
-      for (let index = 0; live && parts.length < 8 && index < options.length; index += 8) {
-        const admitted = await Promise.all(options.slice(index, index + 8).map(async (part) => {
-          try { return (await owner.check(at, { kind: "addPart", whole, part, at: null })).kind === "checked" ? [part] : []; }
-          catch { return []; }
-        }));
-        parts.push(...admitted.flat());
-      }
-      if (live) target.options = { input: text, parts: parts.slice(0, 8) };
-    })();
-    return () => { live = false; };
-  };
-
-  async function edit(at: Place, operation: Parameters<typeof defs.edit>[1]): Promise<boolean> {
-    const typing = defs.form(name);
-    typing.refused = null;
-    const why = await defs.edit(branch, operation, "detail");
-    if (why !== null) typing.refused = { at, text: why };
-    return why === null;
-  }
-
-  function pathKey(event: KeyboardEvent) {
-    if (composing(event)) return;
-    if (alone(event, "Enter") && path !== null) {
-      event.preventDefault();
-      const wanted = path;
-      const typing = defs.form(name);
-      if (wanted === node?.target) typing.path = null;
-      else void edit("path", { kind: "setPath", name, path: wanted }).then((written) => written && (typing.path = null));
-    } else if (alone(event, "Escape") && path !== null) {
-      event.preventDefault();
-      event.stopPropagation();
-      const typing = defs.form(name);
-      typing.path = null;
-      if (typing.refused?.at === "path") typing.refused = null;
-    }
-  }
-
-  function partKey(event: KeyboardEvent) {
-    if (composing(event) || adding === null) return;
-    const typing = defs.form(name);
-    if (alone(event, "ArrowDown") || alone(event, "ArrowUp")) {
-      event.preventDefault();
-      if (suggested.length > 0) typing.chosen = (chosen + (event.key === "ArrowDown" ? 1 : suggested.length - 1)) % suggested.length;
-    } else if (alone(event, "Enter")) {
-      event.preventDefault();
-      addPart(suggested[chosen] ?? adding.trim());
-    } else if (alone(event, "Escape")) {
-      event.preventDefault();
-      event.stopPropagation();
-      typing.adding = null;
-      if (typing.refused?.at === "parts") typing.refused = null;
-    }
-  }
-
-  function addPart(part: string) {
-    if (part) void edit("parts", { kind: "addPart", whole: name, part, at: null }).then((written) => written && (defs.form(name).adding = null));
-  }
-
-  function type(text: string) {
-    if (text === file) defs.drafts.delete(name);
-    else defs.drafts.set(name, { base: draft?.base ?? file, text });
-  }
-
-  async function save() {
-    if (!draft) return;
-    await edit("source", { kind: "saveSource", name, source: draft.text });
-  }
-
-  /** Put back the file's text as it is on disk now. */
-  async function revert() {
-    await defs.load(branch);
-    defs.drafts.delete(name);
-    if (refused?.at === "source") defs.form(name).refused = null;
-  }
-
-  useCommands(() => [{ id: "graph.save-source", group: "Graph", label: "Save Source", keys: "Ctrl+S", run: () => void save(), enabled: () => !!draft && !defs.busy }],
-    () => active && node !== undefined);
-
-  function sourceKey(event: KeyboardEvent) {
-    if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s") {
-      event.preventDefault();
-      event.stopPropagation();
-      void save();
-    }
-  }
-
-  const grow = (field: HTMLElement) => field.focus();
-
-  /** `name` pressed alone in a field: no Ctrl, ⌘ or Alt, no composition. */
-  const alone = (event: KeyboardEvent, name: string) => event.key === name && !event.ctrlKey && !event.metaKey && !event.altKey && !composing(event);
+  /** Authored is shown first; Expanded only for an Artifact a macro made. */
+  let expanded = $state(false);
+  const shown = $derived.by(() => {
+    if (!source || "error" in source) return null;
+    if (expanded && source.expanded !== null) return { text: source.expanded, first: 1 };
+    return { text: source.authored, first: source.line };
+  });
+  const lines = $derived(shown ? shown.text.replace(/\n$/, "").split("\n") : []);
 </script>
 
 {#if node}
   <Section name="Definition">
     <dl class="facts">
-      <dt>File</dt>
-      <dd class="file">{node.definition}</dd>
+      <dt>Bound</dt>
+      <dd class="mono quiet">{node.definition}:{node.line}</dd>
+      {#if node.macroName}
+        <dt>Macro</dt>
+        <dd class="mono">{node.macroName}</dd>
+      {/if}
       <dt>Path</dt>
-      <dd>
-        <div class="path">
-          <input
-            class="field-input"
-            aria-label="Path of {name}"
-            spellcheck="false"
-            autocomplete="off"
-            value={path ?? node.target}
-            oninput={(event) => (defs.form(name).path = event.currentTarget.value)}
-            onkeydown={pathKey}
-          />
-          {#if node.targetMissing}<span class="missing">{node.target} does not exist.</span>{/if}
-        </div>
-        {#if refused?.at === "path"}<p class="refusal" role="alert">{refused.text}</p>{/if}
+      <dd class="path">
+        <span class="mono">{node.target}</span>
+        {#if node.targetMissing}<span class="missing">{node.target} does not exist.</span>{/if}
       </dd>
-      <dt>Parts</dt>
-      <dd>
-        <ul class="parts" aria-label="Parts of {name}">
-          {#each node.parts as part (part)}
-            <li>
-              <span class="part">{part}</span>
-              <button class="remove" aria-label="Remove {part} from the parts of {name}" onclick={() => void edit("parts", { kind: "removePart", whole: name, part })}><Icon name="remove" /></button>
-            </li>
-          {/each}
-        </ul>
-        {#if adding === null}
-          <button class="button small quiet add" onclick={() => Object.assign(defs.form(name), { adding: "", chosen: 0 })}><Icon name="add" />Add</button>
-        {:else}
-          <input
-            class="field-input"
-            aria-label="Add a part to {name}"
-            {@attach readParts}
-            role="combobox"
-            aria-expanded={suggested.length > 0}
-            aria-controls="parts-of-{name}"
-            spellcheck="false"
-            autocomplete="off"
-            value={adding}
-            oninput={(event) => Object.assign(defs.form(name), { adding: event.currentTarget.value, chosen: 0 })}
-            onkeydown={partKey}
-            onblur={() => adding === "" && (defs.form(name).adding = null)}
-            {@attach grow}
-          />
-          {#if suggested.length > 0}
-            <ul class="suggested" id="parts-of-{name}" role="listbox">
-              {#each suggested as other, at (other)}
-                <!-- svelte-ignore a11y_click_events_have_key_events -->
-                <li role="option" aria-selected={at === chosen} onmousedown={(event) => event.preventDefault()} onclick={() => addPart(other)}>{other}</li>
-              {/each}
-            </ul>
-          {/if}
-        {/if}
-        {#if refused?.at === "parts"}<p class="refusal" role="alert">{refused.text}</p>{/if}
-      </dd>
+      {#if node.parts.length > 0}
+        <dt>Parts</dt>
+        <dd>
+          <ul class="parts" aria-label="Parts of {name}">
+            {#each node.parts as part (part)}
+              <li><button class="part" onclick={() => onopen(`a:${part}`)}>{part}</button></li>
+            {/each}
+          </ul>
+        </dd>
+      {/if}
+      {#if node.tools}
+        <dt>Tools</dt>
+        <dd class="mono">{node.tools}</dd>
+      {/if}
     </dl>
-    <div class="actions">
-      <button class="button small quiet" data-comment-button onclick={(event) => defs.openField(name, "button", event.detail === 0)}>Comment</button>
-      <button class="button small quiet" onclick={() => (defs.dialog = { kind: "rename", name })}>Rename</button>
-      <button class="button small quiet" onclick={() => (defs.dialog = { kind: "delete", name })}>Delete</button>
-    </div>
   </Section>
   <Section name="Source">
-    <div class="source">
-      {#if marked > 0}<div class="mark" aria-hidden="true" style:top="calc(6px + {marked - 1} * var(--text-small) * 1.5)"></div>{/if}
-      <ol class="margin" aria-hidden="true">
-        {#each { length: lines } as _, at (at)}<li class:marked={at + 1 === marked}>{at + 1}</li>{/each}
-      </ol>
-      <textarea
-        class="text bare-field"
-        aria-label="Source of {name}"
-        spellcheck="false"
-        autocomplete="off"
-        wrap="off"
-        rows={lines}
-        value={source}
-        oninput={(event) => type(event.currentTarget.value)}
-        onkeydown={sourceKey}
-      ></textarea>
-    </div>
-    {#if refused?.at === "source"}<p class="refusal" role="alert">{refused.text}</p>{/if}
-    {#if draft}
-      <div class="actions">
-        <button class="button small primary" disabled={defs.busy} onclick={() => void save()}>Save</button>
-        <button class="button small" onclick={() => void revert()}>Revert</button>
+    {#if source && "error" in source}
+      <p class="refusal">{source.error}</p>
+    {:else if shown}
+      {#if source?.expanded !== null}
+        <div class="views" role="tablist" aria-label="Source views">
+          <button class="view" role="tab" aria-selected={!expanded} onclick={() => (expanded = false)}>Authored</button>
+          <span class="bar" aria-hidden="true">|</span>
+          <button class="view" role="tab" aria-selected={expanded} onclick={() => (expanded = true)}>Expanded</button>
+        </div>
+      {/if}
+      <div class="source" aria-label="Source of {name}" role="region">
+        <ol class="margin" aria-hidden="true">
+          {#each lines as _, at (at)}<li>{shown.first + at}</li>{/each}
+        </ol>
+        <pre class="text">{lines.join("\n")}</pre>
       </div>
+    {:else}
+      <p class="quiet">Loading…</p>
     {/if}
   </Section>
 {:else if defs.error}
@@ -252,12 +105,24 @@
   dd {
     margin: 0;
     min-width: 0;
-  }
-  .file {
-    font: var(--text-small) var(--mono);
-    color: var(--ink-2);
     overflow-wrap: anywhere;
     user-select: text;
+  }
+  .mono {
+    font: var(--text-small) var(--mono);
+  }
+  .quiet {
+    color: var(--ink-2);
+  }
+  .path {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--gap);
+  }
+  .missing {
+    color: var(--red);
+    font-size: var(--text-small);
   }
   .parts {
     margin: 0;
@@ -265,75 +130,26 @@
     list-style: none;
   }
   .parts li {
+    min-height: var(--row-dense);
     display: flex;
     align-items: center;
-    gap: 6px;
-    min-height: var(--row-dense);
   }
-  .remove {
-    display: grid;
-    place-items: center;
-    width: var(--control);
-    height: var(--control);
-    padding: 0;
+  .part {
+    margin: 0 -4px;
+    padding: 0 4px;
     border: 0;
     border-radius: var(--radius-control);
     background: none;
-    color: var(--ink-2);
+    color: var(--ink);
+    font: inherit;
     cursor: pointer;
   }
-  .remove:hover {
-    color: var(--ink);
+  .part:hover {
     background: var(--surface-group);
   }
-  .add {
-    margin-top: 2px;
-  }
-  .suggested {
-    margin: 2px 0 0;
-    padding: 2px 0;
-    list-style: none;
-    border: 1px solid var(--line-panel);
-    border-radius: var(--radius-control);
-    background: var(--surface-raised);
-    font: var(--text-small) var(--mono);
-  }
-  .suggested li {
-    color: var(--ink-2);
-    padding: 2px 8px;
-    min-height: var(--row-dense);
-    cursor: pointer;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .suggested li:not([aria-selected="true"]):hover {
-    background: var(--surface-group);
-  }
-  .suggested li[aria-selected="true"] {
-    background: var(--selection);
-    color: var(--ink);
-  }
-  .actions {
-    display: flex;
-    gap: var(--gap);
-    padding: 6px 0 0;
-  }
-  .path {
-    display: flex;
-    align-items: center;
-    gap: var(--gap);
-  }
-  .path input {
-    min-width: 0;
-    flex: 1 1 50%;
-  }
-  .missing {
-    min-width: 0;
-    flex: 0 1 50%;
-    overflow-wrap: anywhere;
-    color: var(--red);
-    font-size: var(--text-small);
+  .part:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
   }
   .refusal {
     margin: 4px 0 0;
@@ -341,10 +157,39 @@
     font-size: var(--text-small);
     overflow-wrap: anywhere;
   }
-  /* The file's text in monospace on a field's surface, its line numbers in faint ink; it scrolls
+  .views {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 0;
+  }
+  .view {
+    margin: 0 -4px;
+    padding: 0 4px 2px;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .view:not([aria-selected="true"]):hover {
+    color: var(--ink);
+    background: var(--surface-group);
+  }
+  .view[aria-selected="true"] {
+    color: var(--ink);
+    box-shadow: inset 0 -2px 0 var(--current-mark);
+  }
+  .view:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .bar {
+    color: var(--ink-3);
+  }
+  /* The code in monospace on a field's surface, its line numbers in faint ink; it scrolls
      sideways in its own box rather than wrap, so each number stays with its line. */
   .source {
-    position: relative;
     display: flex;
     margin: 4px 0 0;
     border: 1px solid var(--line-input);
@@ -363,42 +208,15 @@
     min-width: 28px;
     user-select: none;
   }
-  /* A refused line: the selection's background across its number and its text. */
-  .mark {
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: calc(var(--text-small) * 1.5);
-    background: var(--selection);
-    pointer-events: none;
-  }
-  .margin,
-  .text {
-    position: relative;
-  }
   .text {
     flex: 1;
     min-width: 0;
     margin: 0;
     padding: 6px 8px 6px 0;
-    border: 0;
-    background: none;
     color: var(--ink);
     font: inherit;
-    line-height: inherit;
-    resize: none;
     white-space: pre;
     overflow-x: auto;
-    overflow-y: hidden;
-  }
-  .text:focus-visible {
-    outline: none;
-  }
-  .source:has(.text:focus) {
-    box-shadow: inset 0 0 0 1px var(--current-mark);
-  }
-  .source:has(.text:focus-visible) {
-    outline: 2px solid var(--focus);
-    outline-offset: 2px;
+    user-select: text;
   }
 </style>

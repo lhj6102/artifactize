@@ -1,15 +1,25 @@
 //! Resolved Artifacts, their Evals, and the workspace model shared by callers.
 
 use super::{
-    ArtifactKind, ArtifactName, ChildPrefix, EvalDeclaration, EvalId, Fingerprint, LogicalPath,
-    ProfileVariantName, Site, Target, Views,
+    ArtifactKind, ArtifactName, ChildPrefix, ConfigError, EvalDeclaration, EvalId, Fingerprint,
+    LogicalPath, Profile, ProfileName, Site, Target, Views,
     site::{declaration_of, folder_of},
 };
 use serde::Serialize;
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
+    sync::Arc,
 };
+
+/// Where an Artifact is bound: the line of its `artf` statement and the macro it calls.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Binding {
+    pub line: usize,
+    #[serde(rename = "macro", skip_serializing_if = "Option::is_none")]
+    pub macro_name: Option<String>,
+}
 
 /// Nested folder paths with their Artifacts as tool-side IDs. Discovery validated both, so a
 /// failure here is a bug.
@@ -46,8 +56,11 @@ pub struct Artifact {
     pub name: ArtifactName,
     pub tags: Vec<String>,
     pub views: Views,
-    pub type_name: Option<super::ArtifactType>,
-    pub(crate) plugin: Option<std::sync::Arc<super::plugins::Plugin>>,
+    /// The tool expression as written (`files & html`) and the toolsets it composes.
+    pub tools: Option<String>,
+    pub toolsets: Vec<String>,
+    /// Absent only for Artifacts read from saved Runs.
+    pub binding: Option<Binding>,
     pub basis: Option<bool>,
     pub fingerprint: Option<Fingerprint>,
 }
@@ -72,8 +85,12 @@ impl serde::Serialize for Artifact {
         map.serialize_entry("name", &self.name)?;
         map.serialize_entry("tags", &self.tags)?;
         map.serialize_entry("views", &self.views)?;
-        if let Some(name) = &self.type_name {
-            map.serialize_entry("type", name)?;
+        if let Some(tools) = &self.tools {
+            map.serialize_entry("tools", tools)?;
+            map.serialize_entry("toolsets", &self.toolsets)?;
+        }
+        if let Some(binding) = &self.binding {
+            map.serialize_entry("binding", binding)?;
         }
         map.serialize_entry("basis", &self.basis)?;
         map.serialize_entry("fingerprint", &self.fingerprint)?;
@@ -84,6 +101,12 @@ impl serde::Serialize for Artifact {
 impl Artifact {
     pub fn kind(&self) -> ArtifactKind {
         self.path.kind()
+    }
+    /// Its `path` as written: a folder ends in `/`, a Live Artifact is an address.
+    pub fn written_path(&self) -> String {
+        self.authored_path
+            .clone()
+            .unwrap_or_else(|| self.path.to_string())
     }
     pub fn select(&self) -> &[LogicalPath] {
         self.path.select()
@@ -148,12 +171,6 @@ pub struct Eval {
     pub references: BTreeMap<crate::config::ReferenceName, ArtifactName>,
     pub deps: Vec<ArtifactName>,
     pub declaration: EvalDeclaration,
-    #[serde(skip)]
-    pub(crate) instruction_references: Vec<crate::scope::InstructionReference>,
-    /// The `profileVariants` entry selected for this execution, if any: an execution option,
-    /// recorded with results but never part of the saved declaration.
-    #[serde(skip)]
-    pub variant: Option<ProfileVariantName>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -171,9 +188,48 @@ pub struct RepoConfig {
     pub artifacts: BTreeMap<ArtifactName, Artifact>,
     pub evals: Vec<Eval>,
     pub relations: Vec<crate::scope::Relation>,
+    /// The project's profiles, each in the branch the environment selects.
+    pub profiles: BTreeMap<ProfileName, Profile>,
+    /// The code the declarations were read from; absent for configurations saved with Runs.
+    pub(crate) program: Option<Arc<super::lang::Program>>,
+    /// The plugins whose toolsets it may compose, with their viewers.
+    pub(crate) plugins: super::plugins::Catalog,
 }
 
 impl RepoConfig {
+    /// An error at the declaration of `artifact` that `keys` names (`["evals", id,
+    /// "instruction"]`, `["parts"]`, …), with the call site when a macro made it.
+    pub(crate) fn error_at(
+        &self,
+        artifact: &ArtifactName,
+        keys: &[&str],
+        message: impl Into<String>,
+    ) -> ConfigError {
+        let message = message.into();
+        let Some(program) = &self.program else {
+            let definition = self
+                .artifacts
+                .get(artifact)
+                .map(Artifact::declaration_path)
+                .unwrap_or_default();
+            return ConfigError::new(self.root.join(definition), message);
+        };
+        let lowered = program
+            .artifacts
+            .iter()
+            .find(|lowered| lowered.name == artifact.as_str());
+        let Some(lowered) = lowered else {
+            return ConfigError::new(&self.root, message);
+        };
+        super::discovery::located(
+            &self.root,
+            program,
+            lowered,
+            super::lang::span_of(lowered, keys),
+            message,
+        )
+    }
+
     /// Every Artifact `name` is made of, directly or through its parts, each once.
     pub fn descendants<'a>(&'a self, name: &'a ArtifactName) -> Vec<&'a ArtifactName> {
         let mut seen = BTreeSet::new();

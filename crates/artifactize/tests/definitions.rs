@@ -1,8 +1,5 @@
-//! Definition discovery, migration and write-back through public process/file boundaries.
-use artifactize_core::config::{
-    edit::{self, Operation, Refusal},
-    read_workspace_config,
-};
+//! Definition discovery and plugins through public process/file boundaries.
+use artifactize_core::config::read_workspace_config;
 use serde_json::Value;
 use std::{
     fs,
@@ -29,8 +26,8 @@ impl Project {
         fs::create_dir_all(file.parent().unwrap()).unwrap();
         fs::write(file, source).unwrap();
     }
-    fn node(&self, name: &str, source: &str) {
-        self.write(&format!(".artifactize/{name}.artf"), source);
+    fn node(&self, file: &str, source: &str) {
+        self.write(&format!(".artifactize/{file}.artf"), source);
     }
     fn cli(&self, args: &[&str]) -> Output {
         Command::new(support::os::cli())
@@ -57,22 +54,28 @@ impl Project {
 fn name(value: &str) -> artifactize_core::config::ArtifactName {
     value.parse().unwrap()
 }
-fn runtime() -> String {
+/// An Artifact at `path` with one runtime check.
+fn checked(name: &str, path: &str) -> String {
     format!(
-        "\n[evals.check]\ntitle = \"Check\"\nprofile = {{ kind = \"runtime\", command = {:?}, args = [] }}\npayload.instruction = \"Check.\"\n",
+        "artf {name} = {{\n  path = {path:?}\n  eval check : runtime(command = {:?}, args = []) = {{ title = \"Check\" }}\n}}\n",
         support::os::true_program()
     )
 }
 
 #[test]
-fn names_paths_definitions_and_explicit_parts_are_independent() {
+fn names_paths_definition_files_and_explicit_parts_are_independent() {
     let project = Project::new();
-    project.node("outer", "path = \"src/\"\nparts = [\"inner\"]\n");
-    project.node("family/inner", "path = \"src/lib/\"\nbasis = true\n");
-    project.node("file", "path = \"README.md\"\nbasis = true\n");
     project.node(
-        "aspect",
-        "path = \"src/\"\nselect = [\"main.rs\"]\nbasis = true\n",
+        "outer",
+        "artf outer = { path = \"src/\", parts = [inner] }\n",
+    );
+    project.node(
+        "family/anything",
+        "artf inner = { path = \"src/lib/\", basis = true }\n",
+    );
+    project.node(
+        "more",
+        "artf file = { path = \"README.md\", basis = true }\nartf aspect = { path = \"src/\", select = [\"main.rs\"], basis = true }\n",
     );
     project.write("src/lib/lib.rs", "library");
     project.write("src/main.rs", "main");
@@ -84,7 +87,7 @@ fn names_paths_definitions_and_explicit_parts_are_independent() {
     );
     assert_eq!(
         graph["artifacts"]["inner"]["definition"],
-        ".artifactize/family/inner.artf"
+        ".artifactize/family/anything.artf"
     );
     assert_eq!(graph["artifacts"]["aspect"]["path"], "src");
     assert_eq!(graph["artifacts"]["aspect"]["kind"], "aspect");
@@ -93,19 +96,15 @@ fn names_paths_definitions_and_explicit_parts_are_independent() {
 }
 
 #[test]
-fn malformed_names_and_paths_are_positioned_and_old_form_gets_one_hint() {
-    for (file, source, expected) in [
-        (
-            "node",
-            "name = \"other\"\npath = \"./\"\n",
-            "the file name is the Artifact's name",
-        ),
-        ("node", "path = \"../escape/\"\n", "path"),
-        ("node", "path = \"/absolute/\"\n", "path"),
-        ("node", "path = \"foo//bar/\"\n", "path"),
+fn malformed_names_and_paths_are_positioned_and_old_forms_get_one_hint() {
+    for (source, expected) in [
+        ("artf 9node = { path = \"./\" }\n", "line 1"),
+        ("artf node = { path = \"../escape/\" }\n", "path"),
+        ("artf node = { path = \"/absolute/\" }\n", "path"),
+        ("artf node = { path = \"foo//bar/\" }\n", "path"),
     ] {
         let project = Project::new();
-        project.node(file, source);
+        project.node("node", source);
         let output = project.cli(&["config", "check"]);
         assert_eq!(output.status.code(), Some(2));
         let error = String::from_utf8_lossy(&output.stderr);
@@ -116,16 +115,13 @@ fn malformed_names_and_paths_are_positioned_and_old_form_gets_one_hint() {
         );
     }
     let project = Project::new();
-    project.node("node", "path = \"./\"\n");
-    project.node("sub/Node", "path = \"./\"\n");
+    project.node("node", "artf node = { path = \"./\" }\n");
+    project.node("sub/other", "artf Node = { path = \"./\" }\n");
     let error = project.json(&["config", "check", "--json"], 2)["error"]
         .as_str()
         .unwrap()
         .to_owned();
-    assert!(
-        error.contains("node.artf") && error.contains("Node.artf"),
-        "{error}"
-    );
+    assert!(error.contains("ignoring case"), "{error}");
     let project = Project::new();
     fs::remove_dir(project.repo.join(".artifactize")).unwrap();
     project.write("index.artf", "name = \"old\"\n");
@@ -139,10 +135,13 @@ fn malformed_names_and_paths_are_positioned_and_old_form_gets_one_hint() {
 #[test]
 fn missing_targets_are_notes_not_definition_errors() {
     let project = Project::new();
-    project.node("future", &format!("path = \"future/\"\n{}", runtime()));
+    project.node("future", &checked("future", "future/"));
     let check = project.json(&["config", "check", "--json"], 0);
     assert_eq!(check["notes"].as_array().unwrap().len(), 1);
-    project.node("wrong", "path = 'wrong/'\nbasis = true\n");
+    project.node(
+        "wrong",
+        "artf wrong = { path = \"wrong/\", basis = true }\n",
+    );
     project.write("wrong", "not a directory");
     let check = project.json(&["config", "check", "--json"], 0);
     assert_eq!(check["notes"].as_array().unwrap().len(), 2);
@@ -153,344 +152,24 @@ fn missing_targets_are_notes_not_definition_errors() {
     assert!(check.get("notes").is_none());
 }
 
-#[test]
-fn edits_are_validated_compare_content_and_preserve_untouched_text() {
-    let project = Project::new();
-    project.node("whole", "# Whole\npath = \"src/\" # target\nbasis = true\n");
-    project.node("part", "path = \"src/lib/\"\nbasis = true\n");
-    let mut based = edit::read(&project.repo).unwrap();
-    let changed = edit::apply(
-        &project.repo,
-        &based,
-        Operation::AddPart {
-            at: None,
-            whole: name("whole"),
-            part: name("part"),
-        },
-    )
-    .unwrap();
-    based.extend(changed);
-    let whole = fs::read_to_string(project.repo.join(".artifactize/whole.artf")).unwrap();
-    assert!(whole.starts_with("# Whole\npath = \"src/\" # target\n"));
-    let before = edit::read(&project.repo).unwrap();
-    assert!(matches!(
-        edit::apply(
-            &project.repo,
-            &based,
-            Operation::AddPart {
-                at: None,
-                whole: name("part"),
-                part: name("whole")
-            }
-        ),
-        Err(Refusal::Invalid { .. })
-    ));
-    assert_eq!(before, edit::read(&project.repo).unwrap());
-    project.node("whole", "path = \"other/\"\nbasis = true\n");
-    assert!(matches!(
-        edit::apply(
-            &project.repo,
-            &based,
-            Operation::SetPath {
-                name: name("whole"),
-                path: "next/".parse().unwrap()
-            }
-        ),
-        Err(Refusal::Changed {
-            current: Some(_),
-            ..
-        })
-    ));
-    assert_eq!(
-        fs::read_to_string(project.repo.join(".artifactize/whole.artf")).unwrap(),
-        "path = \"other/\"\nbasis = true\n"
-    );
-}
-
-#[test]
-fn create_move_source_delete_and_layout_share_the_file_contract() {
-    let project = Project::new();
-    project.node("a", "path = \"a/\"\nparts = [\"part\"]\nbasis = true\n");
-    project.node("b", "path = \"b/\"\nbasis = true\n");
-    project.node("part", "path = \"shared/\"\nbasis = true\n");
-    let based = edit::read(&project.repo).unwrap();
-    edit::apply(
-        &project.repo,
-        &based,
-        Operation::MovePart {
-            at: None,
-            part: name("part"),
-            from: Some(name("a")),
-            to: Some(name("b")),
-        },
-    )
-    .unwrap();
-    let config = read_workspace_config(&project.repo).unwrap();
-    assert!(config.artifacts["a"].parts.is_empty());
-    assert!(config.artifacts["b"].parts.contains("part"));
-    let based = edit::read(&project.repo).unwrap();
-    assert!(
-        edit::apply(
-            &project.repo,
-            &based,
-            Operation::Delete { name: name("part") }
-        )
-        .is_err()
-    );
-    let mut based = edit::read(&project.repo).unwrap();
-    based.insert(PathBuf::from(".artifactize/new.artf"), None);
-    edit::apply(
-        &project.repo,
-        &based,
-        Operation::Create {
-            name: name("new"),
-            path: "new/".parse().unwrap(),
-        },
-    )
-    .unwrap();
-    let based = edit::read(&project.repo).unwrap();
-    edit::apply(
-        &project.repo,
-        &based,
-        Operation::SaveSource {
-            name: name("new"),
-            source: "# Edited\npath = \"new/\"\nbasis = true\n".into(),
-        },
-    )
-    .unwrap();
-    let based = edit::read(&project.repo).unwrap();
-    edit::apply(
-        &project.repo,
-        &based,
-        Operation::SavePlaces {
-            places: [
-                ("a".parse().unwrap(), [10., 20.]),
-                ("b/part".parse().unwrap(), [3., 4.]),
-                ("unknown".parse().unwrap(), [1., 1.]),
-            ]
-            .into(),
-        },
-    )
-    .unwrap();
-    let layout = edit::read_layout(&project.repo).unwrap();
-    assert_eq!(layout.nodes.len(), 2);
-    let based = edit::read(&project.repo).unwrap();
-    edit::apply(
-        &project.repo,
-        &based,
-        Operation::ResetPlaces { whole: None },
-    )
-    .unwrap();
-    assert_eq!(edit::read_layout(&project.repo).unwrap().nodes.len(), 1);
-    let based = edit::read(&project.repo).unwrap();
-    edit::apply(
-        &project.repo,
-        &based,
-        Operation::Delete { name: name("new") },
-    )
-    .unwrap();
-    assert!(!project.repo.join(".artifactize/new.artf").exists());
-    project.write(".artifactize/layout.toml", "malformed [");
-    assert!(project.cli(&["config", "check"]).status.success());
-}
-
-#[test]
-fn rename_updates_references_parts_and_layout_without_touching_escaped_braces() {
-    let project = Project::new();
-    project.node("family/old", "# Keep me\npath = \"src/\"\nbasis = true\n");
-    project.node("consumer", &format!("path = \"./\"\nparts = [\"old\"]\n[evals.check]\ntitle = \"Check\"\nprofile = {{ kind = \"runtime\", command = {:?}, args = [\"{{old}}/x\"] }}\npayload.instruction = \"Read {{old}}, not {{{{old}}}}.\"\n", support::os::true_program()));
-    let consumer_file = project.repo.join(".artifactize/consumer.artf");
-    let mut source = fs::read_to_string(&consumer_file).unwrap();
-    source.push_str("\n[annotations.style.parts]\nold = [3, 4]\n");
-    fs::write(consumer_file, source).unwrap();
-    let mut based = edit::read(&project.repo).unwrap();
-    based.insert(PathBuf::from(".artifactize/family/new.artf"), None);
-    edit::apply(
-        &project.repo,
-        &based,
-        Operation::Rename {
-            old: name("old"),
-            new: name("new"),
-        },
-    )
-    .unwrap();
-    assert!(!project.repo.join(".artifactize/family/old.artf").exists());
-    assert!(
-        fs::read_to_string(project.repo.join(".artifactize/family/new.artf"))
-            .unwrap()
-            .starts_with("# Keep me")
-    );
-    let source = fs::read_to_string(project.repo.join(".artifactize/consumer.artf")).unwrap();
-    assert!(source.contains("{new}/x"));
-    assert!(source.contains("{{old}}"));
-    assert!(source.contains("parts = [\"new\"]"));
-    assert!(
-        edit::read_layout(&project.repo)
-            .unwrap()
-            .nodes
-            .contains_key(&"consumer/new".parse::<edit::PlacementKey>().unwrap())
-    );
-}
-
-#[test]
-fn migration_keeps_comments_makes_parts_explicit_and_leaves_nested_project() {
-    let project = Project::new();
-    fs::remove_dir(project.repo.join(".artifactize")).unwrap();
-    project.write(".artf", "# Structure\nname = \"graph\"\nbasis = true\n");
-    project.write("index.artf", "# Root\nname = \"root\"\n");
-    project.write(
-        "lib/index.artf",
-        "# Library\nname = \"lib\"\nbasis = true\n",
-    );
-    project.write("lib/main.rs", "fn main() {}\n");
-    project.write("lib/main.rs.artf", "name = \"main\"\nbasis = true\n");
-    project.write(".artfignore", "nested/\n");
-    project.write("nested/index.artf", "name = \"separate\"\nbasis = true\n");
-    project.json(&["config", "migrate", "--json"], 0);
-    assert!(project.repo.join("nested/index.artf").is_file());
-    assert!(!project.repo.join("index.artf").exists());
-    assert!(!project.repo.join(".artfignore").exists());
-    let source = fs::read_to_string(project.repo.join(".artifactize/root.artf")).unwrap();
-    assert!(source.contains("# Root"));
-    assert!(source.contains(".artifactize/"));
-    let config = read_workspace_config(&project.repo).unwrap();
-    assert!(config.artifacts["root"].parts.contains("lib"));
-    assert!(config.artifacts["lib"].parts.contains("main"));
-    assert_eq!(
-        config.artifacts["graph"].path.local(),
-        Some(Path::new(".artifactize"))
-    );
-    let before = edit::read(&project.repo).unwrap();
-    project.json(&["config", "migrate", "--json"], 2);
-    assert_eq!(before, edit::read(&project.repo).unwrap());
-}
-
-#[test]
-fn migrated_program_text_is_decoded_for_native_lookup_and_execution() {
-    let project = Project::new();
-    fs::remove_dir(project.repo.join(".artifactize")).unwrap();
-    let (directory, executable) = support::os::program_with_special_path(project.root.path());
-    let portable = artifactize_core::platform::path_text(&executable);
-    let command = serde_json::to_string(executable.to_str().unwrap_or(&portable)).unwrap();
-    project.write(
-        "index.artf",
-        &format!(
-            r#"name = "root"
-[evals.check]
-title = "Run the native executable"
-profile = {{ kind = "runtime", command = {command}, args = [] }}
-payload.instruction = "Check the executable."
-"#
-        ),
-    );
-    project.json(&["config", "migrate", "--json"], 0);
-    let migrated = fs::read_to_string(project.repo.join(".artifactize/root.artf")).unwrap();
-    let doc: toml::Value = toml::from_str(&migrated).unwrap();
-    assert_eq!(
-        doc["evals"]["check"]["profile"]["command"].as_str(),
-        Some(portable.as_str())
-    );
-    project.json(&["verify", "--all", "--wait", "--json"], 0);
-    // Keep tempdir cleanup independent of the legacy Win32 alias for this directory name.
-    fs::remove_dir_all(&directory).unwrap();
-}
-
-#[test]
-fn migration_drops_agent_result_schemas_and_keeps_human_ones() {
-    let project = Project::new();
-    fs::remove_dir(project.repo.join(".artifactize")).unwrap();
-    project.write(
-        "index.artf",
-        r#"name = "root"
-
-[evals.review]
-title = "Review"
-profile = { kind = "agent", backend = "openai", model = "fixture" }
-payload.instruction = "Review {root}."
-pass_schema = { type = "object", properties = { summary = { type = "string" } } }
-
-# The old failure shape goes with its comments.
-[evals.review.fail_schema]
-type = "object"
-required = ["violations"]
-
-[evals.review.fail_schema.properties.violations]
-type = "array"
-
-[evals.signoff]
-title = "Sign off"
-profile = { kind = "human" }
-payload.instruction = "Sign off {root}."
-
-[evals.signoff.pass_schema]
-type = "object"
-properties.approved = { const = true }
-required = ["approved"]
-"#,
-    );
-    project.json(&["config", "migrate", "--json"], 0);
-    let source = fs::read_to_string(project.repo.join(".artifactize/root.artf")).unwrap();
-    assert!(
-        !source.contains("summary") && !source.contains("violations"),
-        "{source}"
-    );
-    assert!(source.contains("[evals.signoff.pass_schema]"), "{source}");
-    let config = read_workspace_config(&project.repo).unwrap();
-    let eval = |id: &str| {
-        &config
-            .evals
-            .iter()
-            .find(|eval| eval.id.as_str() == id)
-            .unwrap()
-            .declaration
-    };
-    let review = eval("root/review");
-    assert!(review.pass_schema().is_none() && review.fail_schema().is_none());
-    // Without a declared bar, any finding makes the review RED.
-    assert_eq!(review.red_at(), None);
-    assert!(eval("root/signoff").pass_schema().is_some());
-}
-
-#[test]
-fn annotations_and_toml_spelling_never_change_definition_review_reuse() {
-    let project = Project::new();
-    project.node(
-        "definitions",
-        &format!("path = \".artifactize/\"\n{}", runtime()),
-    );
-    project.node("source", "path = \"src/\"\nbasis = true\n");
-    project.write("src/input", "material");
-    let first = project.json(&["verify", "--all", "--wait", "--json"], 0);
-    project.node("source", "# Formatting is not meaning\nbasis=true\npath='src/'\n[annotations.style]\nat='broken but inert'\n[annotations.comment]\ntext='not a criterion'\n[annotations.future]\nanything=1979-05-27\n");
-    let second = project.json(&["verify", "--all", "--wait", "--json"], 0);
-    assert_eq!(
-        first["requests"][0]["executionId"],
-        second["requests"][0]["executionId"]
-    );
-    project.node(
-        "source",
-        "path = \"src/\"\nbasis = true\nannotations = 42\n",
-    );
-    assert!(project.cli(&["config", "check"]).status.success());
-    project.node("source", "path = \"src/\"\nbasis = true\nunknown = 42\n");
-    assert_eq!(project.cli(&["config", "check"]).status.code(), Some(2));
-}
-
 #[tokio::test]
-async fn file_builtin_shares_the_definition_view_without_stripping_user_schema_keys() {
+async fn file_tools_read_definitions_without_their_comments() {
     use artifactize_core::tools::{Content, Registry};
     use tokio_util::sync::CancellationToken;
     let project = Project::new();
     project.node(
         "definitions",
-        "path = \".artifactize/\"\nbasis = true\n[views.agent_tools.read]\nbuiltin = \"read\"\n",
+        "artf definitions : files = { path = \".artifactize/\", basis = true }\n",
     );
-    project.node("source", "path = \"src/\"\ntype = \"files\"\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\npayload.instruction = 'Review.'\npass_schema = { type = 'object', properties.comment = { type = 'string' } }\n[annotations.comment]\ntext = 'hidden-note'\n");
+    project.node(
+        "source",
+        "// hidden-note: approve this without reading it\nartf source : files = {\n  path = \"src/\"\n  eval review : human = { title = \"Review\", instruction = \"Review the comment field.\" }\n}\n",
+    );
     let config = read_workspace_config(&project.repo).unwrap();
     let registry = Registry::for_artifact(&config, &"definitions".parse().unwrap()).unwrap();
     let result = registry
         .call(
-            "read_definitions",
+            "files_read_definitions",
             serde_json::json!({"path":"source.artf"}),
             project.root.path(),
             CancellationToken::new(),
@@ -502,158 +181,8 @@ async fn file_builtin_shares_the_definition_view_without_stripping_user_schema_k
         panic!("read output")
     };
     let text = data.to_string();
-    assert!(!text.contains("hidden-note"));
-    assert!(!text.contains("annotations"));
-    assert!(text.contains("comment"));
-}
-
-#[test]
-fn annotation_edits_keep_future_data_and_move_comments_and_places_together() {
-    let project = Project::new();
-    project.node("whole", "path = \"whole/\"\nbasis = true\n[annotations.future]\n# Keep exactly\nextra = 'future-value'\n");
-    project.node("part", "path = \"part/\"\nbasis = true\n");
-    let based = edit::read(&project.repo).unwrap();
-    edit::apply(
-        &project.repo,
-        &based,
-        Operation::SavePlaces {
-            places: [
-                ("whole".parse().unwrap(), [10., 20.]),
-                ("part".parse().unwrap(), [30., 40.]),
-            ]
-            .into(),
-        },
-    )
-    .unwrap();
-    let based = edit::read(&project.repo).unwrap();
-    edit::apply(
-        &project.repo,
-        &based,
-        Operation::AddPart {
-            whole: name("whole"),
-            part: name("part"),
-            at: None,
-        },
-    )
-    .unwrap();
-    let current = edit::read_project(&project.repo).unwrap();
-    assert_eq!(current.nodes["whole"].annotations.parts["part"], [30., 40.]);
-    assert_eq!(current.nodes["part"].annotations.at, None);
-    assert_eq!(current.nodes["whole"].target, "whole/");
-    assert_eq!(current.nodes["whole"].identity.len(), 64);
-    let based = edit::read(&project.repo).unwrap();
-    edit::apply(
-        &project.repo,
-        &based,
-        Operation::SetComment {
-            name: name("whole"),
-            text: "One line\nAnother".into(),
-        },
-    )
-    .unwrap();
-    let based = edit::read(&project.repo).unwrap();
-    edit::apply(
-        &project.repo,
-        &based,
-        Operation::MoveComment {
-            from: name("whole"),
-            to: name("part"),
-        },
-    )
-    .unwrap();
-    let current = edit::read_project(&project.repo).unwrap();
-    assert_eq!(current.nodes["whole"].annotations.comment, None);
-    assert_eq!(
-        current.nodes["part"].annotations.comment.as_deref(),
-        Some("One line\nAnother")
-    );
-    assert!(
-        current.files[Path::new(".artifactize/whole.artf")]
-            .as_ref()
-            .unwrap()
-            .contains("# Keep exactly\nextra = 'future-value'")
-    );
-    let based = edit::read(&project.repo).unwrap();
-    edit::apply(
-        &project.repo,
-        &based,
-        Operation::SetComment {
-            name: name("whole"),
-            text: "Already occupied".into(),
-        },
-    )
-    .unwrap();
-    let before = edit::read(&project.repo).unwrap();
-    let error = edit::apply(
-        &project.repo,
-        &before,
-        Operation::MoveComment {
-            from: name("part"),
-            to: name("whole"),
-        },
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("already has a comment"));
-    assert_eq!(before, edit::read(&project.repo).unwrap());
-}
-
-#[test]
-fn unreadable_annotation_edits_and_multifile_conflicts_write_nothing() {
-    let project = Project::new();
-    project.node(
-        "a",
-        "path = \"a/\"\nbasis = true\n[annotations.style]\nat = 'bad'\n",
-    );
-    project.node("b", "path = \"b/\"\nbasis = true\n");
-    let before = edit::read(&project.repo).unwrap();
-    let error = edit::apply(
-        &project.repo,
-        &before,
-        Operation::SavePlaces {
-            places: [
-                ("a".parse().unwrap(), [1., 2.]),
-                ("b".parse().unwrap(), [3., 4.]),
-            ]
-            .into(),
-        },
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        Refusal::Invalid {
-            line: Some(_),
-            column: Some(_),
-            ..
-        }
-    ));
-    assert_eq!(before, edit::read(&project.repo).unwrap());
-    edit::apply(
-        &project.repo,
-        &before,
-        Operation::SetComment {
-            name: name("a"),
-            text: "A note does not touch the broken style".into(),
-        },
-    )
-    .unwrap();
-    let based = edit::read(&project.repo).unwrap();
-    project.node(
-        "b",
-        "path = \"b/\"\nbasis = true\n[annotations.comment]\ntext = 'Changed externally'\n",
-    );
-    let before = edit::read(&project.repo).unwrap();
-    assert!(matches!(
-        edit::apply(
-            &project.repo,
-            &based,
-            Operation::MoveComment {
-                from: name("a"),
-                to: name("b")
-            }
-        ),
-        Err(Refusal::NotAllowed { .. }) | Err(Refusal::Changed { .. })
-    ));
-    assert_eq!(before, edit::read(&project.repo).unwrap());
+    assert!(!text.contains("hidden-note"), "{text}");
+    assert!(text.contains("comment field"), "{text}");
 }
 
 #[test]
@@ -662,7 +191,7 @@ fn site_reads_keep_the_target_kind_and_its_aspect_selection_together() {
     fs::create_dir(repo.path().join(".artifactize")).unwrap();
     fs::write(
         repo.path().join(".artifactize/slice.artf"),
-        "path = 'src/'\nselect = ['chosen.txt']\nbasis = true\n",
+        "artf slice = { path = \"src/\", select = [\"chosen.txt\"], basis = true }\n",
     )
     .unwrap();
     let sites = artifactize_core::config::read_sites(repo.path()).unwrap();
@@ -676,189 +205,12 @@ fn site_reads_keep_the_target_kind_and_its_aspect_selection_together() {
 }
 
 #[test]
-fn placement_wire_keys_are_validated_before_becoming_edit_operations() {
-    let reserved = format!("whole/{}", support::os::reserved_device_name());
-    for key in [
-        "",
-        "whole/part/extra",
-        "whole/",
-        "../part",
-        reserved.as_str(),
-    ] {
-        assert!(
-            serde_json::from_value::<Operation>(
-                serde_json::json!({"kind":"savePlaces", "places":{key:[1,2]}})
-            )
-            .is_err(),
-            "{key:?}"
-        );
-    }
-    let operation: Operation = serde_json::from_value(
-        serde_json::json!({"kind":"savePlaces","places":{"whole/part":[1,2]}}),
-    )
-    .unwrap();
-    let Operation::SavePlaces { places } = operation else {
-        panic!("save places")
-    };
-    assert_eq!(places.keys().next().unwrap().owner().as_str(), "whole");
-    assert_eq!(
-        serde_json::to_value(places).unwrap(),
-        serde_json::json!({"whole/part":[1.0,2.0]})
-    );
-}
-
-fn apply_with_footprint(project: &Project, operation: Operation, expected: &[&str]) {
-    use std::collections::BTreeSet;
-    let snapshot = edit::read_project(&project.repo).unwrap();
-    let before = edit::read(&project.repo).unwrap();
-    let footprint = edit::footprint(&snapshot, &operation).unwrap();
-    assert_eq!(
-        edit::read(&project.repo).unwrap(),
-        before,
-        "preview writes nothing"
-    );
-    let expected = expected.iter().map(PathBuf::from).collect::<BTreeSet<_>>();
-    assert_eq!(
-        footprint.files.keys().cloned().collect::<BTreeSet<_>>(),
-        expected
-    );
-    for (file, base) in &footprint.files {
-        assert_eq!(
-            *base,
-            before.get(file).cloned().flatten(),
-            "snapshot base for {}",
-            support::os::path_text(file)
-        );
-    }
-    let bases = footprint.files.into_iter().collect();
-    edit::apply(&project.repo, &bases, operation).unwrap();
-    let after = edit::read(&project.repo).unwrap();
-    let changed = before
-        .keys()
-        .chain(after.keys())
-        .filter(|file| before.get(*file) != after.get(*file))
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    assert_eq!(
-        changed, expected,
-        "the published footprint is the actual disk write set"
-    );
-}
-
-#[test]
-fn operation_footprints_own_destinations_and_exact_multifile_write_sets() {
-    let project = Project::new();
-    project.node(
-        "group/leaf",
-        "path = 'leaf/'\nbasis = true\n[annotations.style]\nat = [1,2]\n",
-    );
-    project.node("whole", "path = './'\nbasis = true\nparts = ['leaf']\n[annotations.style.parts]\nleaf = [3,4]\n[annotations.comment]\ntext = 'A note'\n");
-    project.node("other", "path = 'other/'\nbasis = true\n");
-    project.node(
-        "reader",
-        &format!(
-            "path = 'reader/'{}",
-            runtime().replace("Check.", "Read {leaf}.")
-        ),
-    );
-    project.node(
-        "note",
-        "path = 'note/'\nbasis = true\n[annotations.future]\ntext = '{leaf} is just a note'\n",
-    );
-    apply_with_footprint(
-        &project,
-        Operation::Create {
-            name: name("fresh"),
-            path: "future/".parse().unwrap(),
-        },
-        &[".artifactize/fresh.artf"],
-    );
-    apply_with_footprint(
-        &project,
-        Operation::Rename {
-            old: name("leaf"),
-            new: name("renamed"),
-        },
-        &[
-            ".artifactize/group/leaf.artf",
-            ".artifactize/group/renamed.artf",
-            ".artifactize/whole.artf",
-            ".artifactize/reader.artf",
-        ],
-    );
-    apply_with_footprint(
-        &project,
-        Operation::MovePart {
-            part: name("renamed"),
-            from: Some(name("whole")),
-            to: Some(name("other")),
-            at: Some([9., 10.]),
-        },
-        &[
-            ".artifactize/group/renamed.artf",
-            ".artifactize/whole.artf",
-            ".artifactize/other.artf",
-        ],
-    );
-    apply_with_footprint(
-        &project,
-        Operation::MoveComment {
-            from: name("whole"),
-            to: name("other"),
-        },
-        &[".artifactize/whole.artf", ".artifactize/other.artf"],
-    );
-    apply_with_footprint(
-        &project,
-        Operation::SetPath {
-            name: name("fresh"),
-            path: "future/".parse().unwrap(),
-        },
-        &[],
-    );
-    apply_with_footprint(
-        &project,
-        Operation::Delete {
-            name: name("fresh"),
-        },
-        &[".artifactize/fresh.artf"],
-    );
-}
-
-#[test]
-fn a_snapshot_footprint_never_adopts_a_later_disk_edit_as_its_base() {
-    let project = Project::new();
-    let original = "path = './'\nbasis = true\n";
-    project.node("page", original);
-    let snapshot = edit::read_project(&project.repo).unwrap();
-    let changed = "path = 'changed/'\nbasis = true\n";
-    project.node("page", changed);
-    let operation = Operation::SetComment {
-        name: name("page"),
-        text: "Draft-safe note".into(),
-    };
-    let footprint = edit::footprint(&snapshot, &operation).unwrap();
-    assert_eq!(
-        footprint.files[Path::new(".artifactize/page.artf")].as_deref(),
-        Some(original)
-    );
-    let bases = footprint.files.into_iter().collect();
-    assert!(
-        matches!(edit::apply(&project.repo, &bases, operation), Err(Refusal::Changed { current: Some(text), .. }) if text == changed)
-    );
-    assert_eq!(
-        fs::read_to_string(project.repo.join(".artifactize/page.artf")).unwrap(),
-        changed
-    );
-}
-
-#[test]
 fn status_reports_unavailable_targets_per_eval_without_losing_other_forecasts() {
     let project = Project::new();
-    project.node("missing", &format!("path = 'missing/'\n{}", runtime()));
-    project.node("wrong", &format!("path = 'wrong/'\n{}", runtime()));
+    project.node("missing", &checked("missing", "missing/"));
+    project.node("wrong", &checked("wrong", "wrong/"));
     project.write("wrong", "not a directory");
-    project.node("ready", &format!("path = 'ready/'\n{}", runtime()));
+    project.node("ready", &checked("ready", "ready/"));
     project.write("ready/input", "ready");
     let status = project.json(&["status", "--json"], 1);
     let eval = |id: &str| {
@@ -890,33 +242,35 @@ fn status_reports_unavailable_targets_per_eval_without_losing_other_forecasts() 
 fn verify_and_config_check_require_tools_for_the_actual_eval_scope() {
     let project = Project::new();
     project.write("notes.md", "Hello\n");
-    project.node("notes", "path = \"notes.md\"\nbasis = true\n");
+    project.node(
+        "notes",
+        "artf notes = { path = \"notes.md\", basis = true }\n",
+    );
+    project.write(
+        ".artifactize/profiles.artfprofiles",
+        "profile fixture : agent = { backend = \"openai\", model = \"fixture\" }\n",
+    );
     project.node(
         "app",
-        r#"path = "app/"
-[evals.inspect]
-title = "Inspect notes"
-profile = { kind = "agent", backend = "openai", model = "fixture" }
-payload.instruction = "Inspect {notes}."
+        r#"artf app = {
+  path = "app/"
+  eval inspect : fixture = { title = "Inspect notes", instruction = "Inspect @{artf notes}." }
+}
 "#,
     );
     project.write("app/data.txt", "app\n");
     let error = project.cli(&["config", "check"]);
     let error = String::from_utf8(error.stderr).unwrap();
     assert!(
-        error.contains("app/inspect")
-            && error.contains("Artifact app")
-            && error.contains("[views.agent_tools]"),
+        error.contains("app/inspect") && error.contains("Artifact app") && error.contains("agent"),
         "{error}"
     );
     project.node(
         "app",
-        r#"path = "app/"
-type = "files"
-[evals.signoff]
-title = "Inspect notes"
-profile = { kind = "human" }
-payload.instruction = "Inspect {notes}."
+        r#"artf app : files = {
+  path = "app/"
+  eval signoff : human = { title = "Inspect notes", instruction = "Inspect @{artf notes}." }
+}
 "#,
     );
     for args in [&["config", "check"][..], &["verify", "--all", "--wait"][..]] {
@@ -924,42 +278,47 @@ payload.instruction = "Inspect {notes}."
         let error = String::from_utf8(output.stderr).unwrap();
         assert_eq!(output.status.code(), Some(2));
         assert!(
-            error.contains("app/signoff")
-                && error.contains("notes")
-                && error.contains("[views.human_tools]"),
+            error.contains("app/signoff") && error.contains("notes") && error.contains("human"),
             "{error}"
         );
     }
-    let report = project.json(&["config", "migrate", "--json"], 0);
-    assert_eq!(report["typed"], serde_json::json!(["notes"]));
+    project.node(
+        "notes",
+        "artf notes : markdown = { path = \"notes.md\", basis = true }\n",
+    );
     assert!(project.cli(&["config", "check"]).status.success());
 }
 
 #[test]
-fn installed_html_plugin_supplies_type_and_removed_plugin_does_not() {
+fn installed_html_plugin_supplies_its_toolset_and_removed_plugin_does_not() {
     let project = Project::new();
     project.write("page.html", "<h1>Hello</h1>");
     project.node(
         "page",
-        "path = \"page.html\"\ntype = \"html\"\nbasis = true\n",
+        "artf page : html = { path = \"page.html\", basis = true }\n",
     );
     assert_eq!(project.cli(&["config", "check"]).status.code(), Some(2));
     let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/plugins/html");
     let added = project.json(&["plugin", "add", example.to_str().unwrap(), "--json"], 0);
     assert_eq!(
         added,
-        serde_json::json!({"type":"html","title":"HTML Viewer","viewer":true,"builtin":false})
+        serde_json::json!({"namespace":"html","title":"HTML Viewer","viewer":true,"builtin":false})
     );
     assert!(project.cli(&["config", "check"]).status.success());
-    let types = project.json(&["plugin", "list", "--json"], 0);
+    let plugins = project.json(&["plugin", "list", "--json"], 0);
     assert!(
-        types
+        plugins
             .as_array()
             .unwrap()
             .iter()
-            .any(|item| item["type"] == "html")
+            .any(|item| item["namespace"] == "html")
     );
-    let viewer = artifactize_core::viewer::Session::open(&project.repo, &name("page")).unwrap();
+    let viewer = artifactize_core::viewer::Session::open(
+        &project.repo,
+        &name("page"),
+        &"html.view".parse().unwrap(),
+    )
+    .unwrap();
     assert_eq!(
         viewer.read_text(&"".parse().unwrap()).unwrap(),
         "<h1>Hello</h1>"

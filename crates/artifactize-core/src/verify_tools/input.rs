@@ -78,8 +78,8 @@ fn plugin_path<'de, D: serde::Deserializer<'de>>(input: D) -> Result<PathBuf, D:
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct PluginRemove {
-    #[serde(rename = "type")]
-    pub name: crate::config::ArtifactType,
+    #[serde(rename = "namespace")]
+    pub name: crate::config::PluginName,
 }
 
 fn decode<T: DeserializeOwned>(arguments: Map<String, Value>) -> Result<T, ArgumentsError> {

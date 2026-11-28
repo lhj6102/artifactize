@@ -44,7 +44,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "eval-summary",
-    title: "an eval's tab shows its Summary: its status with what running it took and spent, its instruction and its result, its findings as numbered items each led by its priority",
+    title: "an eval's tab shows its Summary: its status with what running it took and spent, its instruction and its result, its issues as numbered items each led by its priority",
     journeys: ["J-DETAIL-SUMMARY"],
     prepare: async (own) => {
       const fixture = await createReviewed(own);
@@ -59,7 +59,7 @@ export const scenarios: Scenario[] = [
       assert.ok(summary.status.includes(REVIEW_MODEL) && /48(\.\d)?k/.test(summary.status), `what it took and spent, its model and tokens: ${summary.status}`);
       assert.equal(summary.instruction, "Review the receipt.");
       const result = await app.detail.section("Result");
-      assert.ok(/findings\s*P2\s*The receipt reads right; its date could be clearer\./.test(result), `its result's findings, each by its priority: ${result}`);
+      assert.ok(/issues\s*P2\s*The receipt reads right; its date could be clearer\./.test(result), `its result's issues, each by its priority: ${result}`);
       // Its Agent log shows the saved transcript.
       await app.detail.view("Agent log", (text) => text.includes(REVIEW_FINDING), "the Agent log shows the transcript");
     },
@@ -108,7 +108,7 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(detail.tabs.map((tab) => [tab.name, tab.selected]), [["docs", false], ["lint", true]], "the Artifact's chip, then the eval's, chosen");
       const summary = await app.detail.summaryUntil((shown) => shown.status !== "", "the eval's Summary");
       assert.match(summary.status, /^GREEN/, "its status");
-      assert.equal(summary.instruction, "Check docs.", "its instruction");
+      assert.equal(summary.instruction, "", "a runtime eval asks nothing: its verdict is its exit code");
       await app.graph.clickBackground();
       await app.detail.closed();
     },
@@ -302,7 +302,7 @@ export const scenarios: Scenario[] = [
       await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "the scan ended");
       // The stage header: the view tabs, then the graph's tools and the Current's, naming nothing.
       const header = await app.graph.header();
-      for (const tool of ["Conversation", "Graph", "Find", "Zoom in", "Fit", "New Artifact", "Refresh"]) assert.ok(header.includes(tool), `${tool} in the stage header: ${header}`);
+      for (const tool of ["Conversation", "Graph", "Find", "Zoom in", "Fit", "Refresh"]) assert.ok(header.includes(tool), `${tool} in the stage header: ${header}`);
       assert.doesNotMatch(header, /New chat|master|Scanned/, `the stage header names and rates nothing: ${header}`);
       // The chat floats over the graph's bottom, centred, with no reply card before a message.
       const float = await app.chat.floating();
@@ -472,9 +472,9 @@ export const scenarios: Scenario[] = [
       await app.graph.open("a:release", "Artifact release");
       // The worktree changed since the shown Run: the tool reads it as it is now.
       writeText(nativePath(fixture.repo, "release", "notes.md"), "# Release notes\n- Changed since the Run.\n");
-      await app.detail.runTool("notes");
+      await app.detail.runTool("release-tools.notes");
       await app.detail.toolLogUntil((rows) => rows.at(-1) === "■ exit 0", "notes ran to its end");
-      assert.deepEqual(await app.detail.toolLog(), ["▶ HH:MM:SS · notes · release", "# Release notes", "- Changed since the Run.", "■ exit 0"]);
+      assert.deepEqual(await app.detail.toolLog(), ["▶ HH:MM:SS · release-tools.notes · release", "# Release notes", "- Changed since the Run.", "■ exit 0"]);
       assert.equal(request(fixture).claim, null, "no claim");
       assert.equal(request(fixture).status, "DEFERRED", "and no review's evidence");
     },

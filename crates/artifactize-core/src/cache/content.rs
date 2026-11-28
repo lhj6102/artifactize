@@ -425,7 +425,7 @@ fn hash_file(mut file: File, path: &LogicalTarget, state: &mut State) -> Result<
                     .into(),
             );
         }
-        digest.update(artifactize_tools::artf::definition(&bytes));
+        digest.update(artifactize_tools::artf::fingerprinted(&bytes));
         state.files.insert(
             path.clone(),
             crate::types::Sha256Bytes::from_digest(digest.finalize().into()),

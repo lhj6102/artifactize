@@ -21,26 +21,30 @@ Run `hello` to greet the team.
 EOF
 ```
 
-이제 두 Artifact를 선언합니다. `spec`은 검증하지 않고 입력으로만 쓰며(`basis = true`), `guide`에는 Runtime eval 두 개를 선언합니다. 첫 번째 eval은 제목 형식을 확인하고, 두 번째 eval은 `{spec}`이 요구하는 `hello`가 본문에 들어 있는지 확인합니다.
+이제 두 Artifact를 선언합니다. `spec`은 검증하지 않고 입력으로만 쓰며(`basis = true`), `guide`에는 Runtime eval 두 개를 선언합니다. 첫 번째 eval은 제목 형식을 확인하고, 두 번째 eval은 `spec`이 요구하는 `hello`가 본문에 들어 있는지 확인합니다. 그래서 두 번째 eval의 `deps`에 `spec`을 적습니다.
 
 ```sh
-cat > .artifactize/spec.artf <<'EOF'
-path = "spec.md"
-basis = true
-EOF
+cat > .artifactize/project.artf <<'EOF'
+// The spec: an input accepted as it is.
+artf spec = {
+  path = "spec.md"
+  basis = true
+}
 
-cat > .artifactize/guide.artf <<'EOF'
-path = "guide.md"
+artf guide = {
+  path = "guide.md"
 
-[evals.heading]
-title = "The guide includes a top-level heading"
-profile = { kind = "runtime", command = "grep", args = ["-q", "^# ", "{guide}"] }
-payload.instruction = "Check that {guide} includes a top-level Markdown heading."
+  // grep의 종료 코드가 판정입니다. 가이드에 최상위 Markdown 제목이 있으면 0입니다.
+  eval heading : runtime(command = "grep", args = ["-q", "^# ", "@{path self}"]) = {
+    title = "The guide includes a top-level heading"
+  }
 
-[evals.mentions-hello]
-title = "The guide mentions the command required by the spec"
-profile = { kind = "runtime", command = "grep", args = ["-q", "hello", "{guide}"] }
-payload.instruction = "Check that {guide} mentions the greeting required by {spec}."
+  // spec이 요구하는 인사말. `deps`로 명령이 읽는 spec을 입력으로 적습니다.
+  eval mentions-hello : runtime(command = "grep", args = ["-q", "hello", "@{path self}"]) = {
+    title = "The guide mentions the command required by the spec"
+    deps = [spec]
+  }
+}
 EOF
 ```
 
@@ -79,7 +83,7 @@ printf '\nKeep greetings short.\n' >> spec.md
 artifactize status
 ```
 
-`status`는 `guide/heading`에는 **재사용(`reuse`)**, `guide/mentions-hello`에는 **실행(`execute`)**을 표시합니다. Artifactize는 `{guide}`만 읽는 `guide/heading`의 이전 결과를 재사용하고, 바뀐 `{spec}`을 참조하는 `guide/mentions-hello`만 다시 실행합니다.
+`status`는 `guide/heading`에는 **재사용(`reuse`)**, `guide/mentions-hello`에는 **실행(`execute`)**을 표시합니다. Artifactize는 guide만 읽는 `guide/heading`의 이전 결과를 재사용하고, 입력인 `spec`의 fingerprint가 바뀐 `guide/mentions-hello`만 다시 실행합니다.
 
 ```sh
 artifactize verify --all --wait
@@ -93,9 +97,9 @@ artifactize verify --all --wait
 
 | 예제 | 다루는 기능 |
 |---|---|
-| [`examples/runtime-relations`](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) | 상위 Artifact와 `parts` 구성(`intro`, `usage`로 이루어진 `guide`), 지시문과 인자의 `{artifact}` 참조, `basis = true`, 그리고 선행 eval이 `RED`일 때 하위 eval이 막히는(`BLOCKED`) 동작. |
-| [`examples/posts`](https://github.com/lhj6102/artifactize/tree/main/examples/posts) | 여러 파일 Artifact가 하나의 공용 스타일 검사기(`{house-style}`)를 참조해 파일별로 결과를 재사용하는 구조와 `tags`. |
-| [`examples/agent-tools`](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools) | 내장 도구(`read`, `grep`, `view_image`, `section`)와 사용자 지정 `json` 도구를 사용해 우선순위별 지적 사항을 보고하는 Agent eval, 그리고 `open`·`read` 도구와 스키마로 검증하는 결과 필드를 쓰는 Human 승인. |
+| [`examples/runtime-relations`](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) | 상위 Artifact와 `parts` 구성(`intro`, `usage`로 이루어진 `guide`), 인자의 `@{path …}` 참조, `basis = true`, 그리고 선행 eval이 `RED`일 때 하위 eval이 막히는(`BLOCKED`) 동작. |
+| [`examples/posts`](https://github.com/lhj6102/artifactize/tree/main/examples/posts) | `post!` 매크로로 만든 파일 Artifact 세 개가 공용 스타일 검사기 Artifact(`house-style`)를 함께 쓰면서 파일별로 결과를 재사용하는 구조와 `tags`. |
+| [`examples/agent-tools`](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools) | 내장 도구(`read`, `grep`, `view_image`, `section`)와 사용자 지정 `json` 도구를 toolset으로 조합해 우선순위별 issue를 보고하는 Agent eval, 그리고 `open`·`read` 도구를 쓰는 Human 승인. |
 | [`examples/live`](https://github.com/lhj6102/artifactize/tree/main/examples/live) | 외부 서비스 URI(`path = "https://..."`)를 `verify`할 때마다 읽기 전용 HTTP 명령으로 확인하는 Live Artifact. |
 
 ## 다음 단계 {#next-steps}

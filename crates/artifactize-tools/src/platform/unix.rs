@@ -5,6 +5,24 @@ use std::{io, os::unix::fs::PermissionsExt, path::Path};
 mod desktop;
 pub(crate) use desktop::open_desktop;
 
+/// Resolves when the terminal hangs up (`SIGHUP`) or the process is asked to terminate
+/// (`SIGTERM`); a signal whose handler cannot be installed is never awaited.
+pub(crate) async fn hung_up() {
+    use tokio::signal::unix::{SignalKind, signal};
+    async fn delivered(kind: SignalKind) {
+        match signal(kind) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(_) => std::future::pending::<()>().await,
+        }
+    }
+    tokio::select! {
+        () = delivered(SignalKind::hangup()) => {}
+        () = delivered(SignalKind::terminate()) => {}
+    }
+}
+
 /// Unix names programs exactly; extensions carry no meaning for lookup.
 pub(crate) const USES_PATHEXT: bool = false;
 

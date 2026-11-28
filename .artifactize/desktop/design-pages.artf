@@ -1,0 +1,40 @@
+// The design's screen pages, each one HTML page of crates/artifactize-desktop/design/ with the
+// form every screen page shares.
+
+// The design's mechanical checker: an input of the design's evals and of
+// desktop-ui/tokens-match-design. Its page mode is the form every screen page shares: the page
+// links tokens.css, mock.css and design.css, declares its screen, every callout has its note
+// and every note its callout, its D- rule ids are unique and each has its text, and no colour
+// literal appears in it.
+artf desktop-design-check = { path = "crates/artifactize-desktop/design/check.mjs", basis = true }
+
+// A screen page, `screen.html`, checked against the page form of the checker.
+artf! design-page(screen) : files = {
+  path = "crates/artifactize-desktop/design/@{param screen}.html"
+
+  // Check the page against the page form of the checker, which every screen page shares.
+  eval well-formed : runtime(
+    command = "node",
+    args = ["@{path desktop-design-check}", "page", "@{param screen}.html"],
+    timeout_ms = 30000,
+  ) = {
+    title = "The page has the form every screen page shares"
+  }
+}
+
+// Chat: a session with Artifactize's own agent.
+artf desktop-design-chat = design-page!(screen = "chat")
+// Current: a branch's worktree as it is now.
+artf desktop-design-current = design-page!(screen = "current")
+// Detail: the inspector of the selected Artifact.
+artf desktop-design-detail = design-page!(screen = "detail")
+// Verify: the monitor with a Run shown.
+artf desktop-design-monitor = design-page!(screen = "monitor")
+// Overlays: the palette, Help, dialogs and the find field.
+artf desktop-design-overlays = design-page!(screen = "overlays")
+// Review: a Human review in the Main area.
+artf desktop-design-review = design-page!(screen = "review")
+// Settings: a modal over the screen.
+artf desktop-design-settings = design-page!(screen = "settings")
+// Viewers: Artifact Viewer windows and the pet overlay.
+artf desktop-design-viewers = design-page!(screen = "viewers")

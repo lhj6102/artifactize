@@ -1,83 +1,75 @@
-fingerprint = { files = ["src"] }
-path = "website/docs/en/"
-type = "files"
+artf docs-en : files = {
+  fingerprint = { files = ["src"] }
+  path = "website/docs/en/"
 
-[evals.matches-engine]
-title = "The documentation accurately covers the core workflow, tools, and CLI without dumping internal bounds"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
+  eval follows-rules : reviewer = {
+    title = "The documentation is structured for developers, concise, non-repetitive, and within budget"
+    red_at = "P1"
+    instruction = """
+      Review the mdBook documentation @{artf docs-en} in src/, starting from src/SUMMARY.md. These are this Artifact's self-evaluation criteria:
+      - D-ASSUME-DEVELOPER: The reader is a software developer who already knows Git, terminals, PATH, environment variables, JSON, TOML, regular expressions, and HTTP/SSH. A sentence that defines these general developer tools (such as explaining what Git, PATH, JSON or TOML is) fails this criterion. Define only Artifactize-specific terms (Artifact, eval, fingerprint, reuse key, Run, part, basis, aspect).
+      - D-CONCEPT-ORDER: Getting Started teaches one clean first-run path (install -> create a minimal project or run an example -> verify -> see reuse) before advanced lifecycle details. Explaining PROVISIONAL, YELLOW idle-grace tuning, speculate, cycle peers, or historical version upgrade notes in Getting Started fails this criterion.
+      - D-ONE-HOME: Avoid multi-paragraph duplication across guides: each detailed workflow or mechanism has one canonical section that explains it in full, while other prose pages give only a brief summary and link there. Concise summary rows in Reference tables (src/reference/) and short overview bullets are expected and do not violate this criterion.
+      - D-NO-BOUND-DUMPS: Prose that dumps internal parser ceilings, character/byte caps, directory traversal entry limits, or verbatim error message strings outside a concise reference table fails this criterion.
+      - D-READER: The reader uses artifactize to declare a project, run verify, sign off, set up a team store or CI, or write tool Artifacts. A paragraph that explains internal implementation mechanics (process groups, signals, journals, transactions, recovery, locking) or the Rust library API violates this criterion.
+      - D-BUDGET: Every page in Getting Started, Core Concepts, and Guides stays at or under 180 lines (Reference pages at or under 320 lines), and src/SUMMARY.md lists at most 15 pages in total.
 
-[evals.matches-engine.payload]
-instruction = """
-Review {docs-en} against {engine-core}, {engine-tools} and {engine-cli}, starting from src/SUMMARY.md.
-Check two things:
-1. No contradiction: every declaration key, command, flag, default, exit code and workflow behavior stated in {docs-en} agrees with the implementation.
-2. Core user tasks are covered: installing, declaring Artifacts and evals (.artf) with parts and references, running verify and status, fingerprints and reuse, built-in and custom tools (including tool sessions and artifactize-tools), team review store and CI, and the CLI command reference.
+      Read every page.
+    """
+  }
 
-IMPORTANT — What must NOT be required:
-- Do NOT require internal validation bounds (such as maximum string or byte lengths, integer ceilings, file or directory entry traversal caps, schema byte limits, character set grammars, or Unicode surrogate counting), exact error message strings, or edge-case refusal/fallback conditions. Omitting those bounds and edge cases is NEVER a mismatch.
-- Do NOT require legacy upgrade notes for historical versions (such as 0.5, 0.9, 0.11, or 0.16); only `config migrate` for moving declarations into `.artifactize/` belongs in the docs.
-- How artifactize implements behavior internally (process groups, signals, SQLite journals, transactions, recovery, locking) and the Rust library API are not user-facing. Documentation of them is a mismatch whose fix is to remove it.
+  eval matches-agent-workflow : reviewer = {
+    title = "The documentation accurately covers the agent plugin, skills, and MCP server"
+    red_at = "P1"
+    instruction = """
+      Review @{artf docs-en} against @{artf agent-plugin}, @{artf agent-onramp}, @{artf agent-claude-marketplace}, @{artf agent-codex-marketplace}, @{artf agent-hey-arti}, @{artf agent-focus-then-sweep} and @{artf engine-mcp}, starting from src/SUMMARY.md.
+      Check two things:
+      1. No contradiction: every plugin installation command (including `claude plugin install` and `codex plugin add` as verified by @{artf agent-onramp}, and `/plugin marketplace update artifactize` / `codex plugin marketplace upgrade artifactize`), skill invocation, workflow plan, and MCP server registration or tool name/argument stated in @{artf docs-en} agrees with the implementation and skills.
+      2. Core user tasks are covered: installing the plugin in Claude Code and Codex, working with Hey Arti to shape or audit a project, iterating with Focus then sweep (Plans A, B, C and working toward YELLOW), and registering and calling the MCP stdio server's verification and inspection tools.
 
-Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools exposed by {engine-core}, {engine-tools} and {engine-cli} to inspect them. Tool paths are Artifact-relative.
-Each statement in {docs-en} that contradicts the implementation, each core user task above that is not covered, and each internal implementation detail is a finding. Fix the docs, not the code."""
+      IMPORTANT — What must NOT be required:
+      - Do NOT require internal byte/character caps, cursor implementation details, or every edge-case error condition. Omitting those bounds and edge cases is NEVER a mismatch.
+      - How artifactize implements MCP or skills internally is not user-facing; documenting it is a mismatch whose fix is to remove it.
 
-[evals.matches-interfaces]
-title = "The documentation accurately covers the desktop app"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
+      Use the file tools for documentation, and the tools exposed by the referenced Artifacts to inspect them. Tool paths are Artifact-relative.
+      Each statement in @{artf docs-en} that contradicts the implementation, and each core user task above that is not covered, is an issue. Fix the docs, not the code.
+    """
+  }
 
-[evals.matches-interfaces.payload]
-instruction = """
-Review {docs-en} against {desktop}, its parts {desktop-backend} and {desktop-ui}, starting from src/SUMMARY.md.
-Check two things:
-1. No contradiction: every launch mode, flag, pane, view (Run, Current, Detail, Human review, Settings), search syntax, and keyboard/mouse control stated in {docs-en} agrees with the implementation.
-2. Core user tasks are covered: opening and navigating the desktop app (branches, Runs, Current, editing definitions and positions, Detail, waiting Human reviews, Settings).
+  eval matches-engine : reviewer = {
+    title = "The documentation accurately covers the core workflow, tools, and CLI without dumping internal bounds"
+    red_at = "P1"
+    instruction = """
+      Review @{artf docs-en} against @{artf engine-core}, @{artf engine-tools} and @{artf engine-cli}, starting from src/SUMMARY.md.
+      Check two things:
+      1. No contradiction: every declaration key, command, flag, default, exit code and workflow behavior stated in @{artf docs-en} agrees with the implementation.
+      2. Core user tasks are covered: installing, declaring Artifacts and evals (.artf) with parts and references, running verify and status, fingerprints and reuse, built-in and custom tools (including tool sessions and artifactize-tools), team review store and CI, and the CLI command reference.
 
-IMPORTANT — What must NOT be required:
-- Do NOT require internal rendering or layout constants, pixel sizes, exact error strings, or every edge-case refusal condition. Omitting minor edge cases or internal bounds is NEVER a mismatch.
-- How artifactize implements behavior internally and the Rust/Svelte internals are not user-facing; documenting them is a mismatch whose fix is to remove it.
+      IMPORTANT — What must NOT be required:
+      - Do NOT require internal validation bounds (such as maximum string or byte lengths, integer ceilings, file or directory entry traversal caps, schema byte limits, character set grammars, or Unicode surrogate counting), exact error message strings, or edge-case refusal/fallback conditions. Omitting those bounds and edge cases is NEVER a mismatch.
+      - Do NOT require legacy upgrade notes for historical versions (such as 0.5, 0.9, 0.11, or 0.16); only `config migrate` for moving declarations into `.artifactize/` belongs in the docs.
+      - How artifactize implements behavior internally (process groups, signals, SQLite journals, transactions, recovery, locking) and the Rust library API are not user-facing. Documentation of them is a mismatch whose fix is to remove it.
 
-Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools exposed by {desktop}, {desktop-backend} and {desktop-ui} to inspect them. Tool paths are Artifact-relative.
-Each statement in {docs-en} that contradicts the implementation, and each core user task above that is not covered, is a finding. Fix the docs, not the code."""
+      Use the file tools for documentation, and the tools exposed by @{artf engine-core}, @{artf engine-tools} and @{artf engine-cli} to inspect them. Tool paths are Artifact-relative.
+      Each statement in @{artf docs-en} that contradicts the implementation, each core user task above that is not covered, and each internal implementation detail is an issue. Fix the docs, not the code.
+    """
+  }
 
-[evals.matches-agent-workflow]
-title = "The documentation accurately covers the agent plugin, skills, and MCP server"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
+  eval matches-interfaces : reviewer = {
+    title = "The documentation accurately covers the desktop app"
+    red_at = "P1"
+    instruction = """
+      Review @{artf docs-en} against @{artf desktop}, its parts @{artf desktop-backend} and @{artf desktop-ui}, starting from src/SUMMARY.md.
+      Check two things:
+      1. No contradiction: every launch mode, flag, pane, view (Run, Current, Detail, Human review, Settings), search syntax, and keyboard/mouse control stated in @{artf docs-en} agrees with the implementation.
+      2. Core user tasks are covered: opening and navigating the desktop app (branches, Runs, Current, editing definitions and positions, Detail, waiting Human reviews, Settings).
 
-[evals.matches-agent-workflow.payload]
-instruction = """
-Review {docs-en} against {agent-plugin}, {agent-onramp}, {agent-claude-marketplace}, {agent-codex-marketplace}, {agent-hey-arti}, {agent-focus-then-sweep} and {engine-mcp}, starting from src/SUMMARY.md.
-Check two things:
-1. No contradiction: every plugin installation command (including `claude plugin install` and `codex plugin add` as verified by {agent-onramp}, and `/plugin marketplace update artifactize` / `codex plugin marketplace upgrade artifactize`), skill invocation, workflow plan, and MCP server registration or tool name/argument stated in {docs-en} agrees with the implementation and skills.
-2. Core user tasks are covered: installing the plugin in Claude Code and Codex, working with Hey Arti to shape or audit a project, iterating with Focus then sweep (Plans A, B, C and working toward YELLOW), and registering and calling the MCP stdio server's verification and inspection tools.
+      IMPORTANT — What must NOT be required:
+      - Do NOT require internal rendering or layout constants, pixel sizes, exact error strings, or every edge-case refusal condition. Omitting minor edge cases or internal bounds is NEVER a mismatch.
+      - How artifactize implements behavior internally and the Rust/Svelte internals are not user-facing; documenting them is a mismatch whose fix is to remove it.
 
-IMPORTANT — What must NOT be required:
-- Do NOT require internal byte/character caps, cursor implementation details, or every edge-case error condition. Omitting those bounds and edge cases is NEVER a mismatch.
-- How artifactize implements MCP or skills internally is not user-facing; documenting it is a mismatch whose fix is to remove it.
-
-Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools exposed by the referenced Artifacts to inspect them. Tool paths are Artifact-relative.
-Each statement in {docs-en} that contradicts the implementation, and each core user task above that is not covered, is a finding. Fix the docs, not the code."""
-
-[evals.follows-rules]
-title = "The documentation is structured for developers, concise, non-repetitive, and within budget"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
-
-[evals.follows-rules.profile_variants]
-sol-medium = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-sol-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-
-[evals.follows-rules.payload]
-instruction = """
-Review the mdBook documentation {docs-en} in src/, starting from src/SUMMARY.md. These are this Artifact's self-evaluation criteria:
-- D-ASSUME-DEVELOPER: The reader is a software developer who already knows Git, terminals, PATH, environment variables, JSON, TOML, regular expressions, and HTTP/SSH. A sentence that defines these general developer tools (such as explaining what Git, PATH, JSON or TOML is) fails this criterion. Define only Artifactize-specific terms (Artifact, eval, fingerprint, reuse key, Run, part, basis, aspect).
-- D-CONCEPT-ORDER: Getting Started teaches one clean first-run path (install -> create a minimal project or run an example -> verify -> see reuse) before advanced lifecycle details. Explaining PROVISIONAL, YELLOW idle-grace tuning, speculate, cycle peers, or historical version upgrade notes in Getting Started fails this criterion.
-- D-ONE-HOME: Avoid multi-paragraph duplication across guides: each detailed workflow or mechanism has one canonical section that explains it in full, while other prose pages give only a brief summary and link there. Concise summary rows in Reference tables (src/reference/) and short overview bullets are expected and do not violate this criterion.
-- D-NO-BOUND-DUMPS: Prose that dumps internal parser ceilings, character/byte caps, directory traversal entry limits, or verbatim error message strings outside a concise reference table fails this criterion.
-- D-READER: The reader uses artifactize to declare a project, run verify, sign off, set up a team store or CI, or write tool Artifacts. A paragraph that explains internal implementation mechanics (process groups, signals, journals, transactions, recovery, locking) or the Rust library API violates this criterion.
-- D-BUDGET: Every page in Getting Started, Core Concepts, and Guides stays at or under 180 lines (Reference pages at or under 320 lines), and src/SUMMARY.md lists at most 15 pages in total.
-
-Read every page."""
+      Use the file tools for documentation, and the tools exposed by @{artf desktop}, @{artf desktop-backend} and @{artf desktop-ui} to inspect them. Tool paths are Artifact-relative.
+      Each statement in @{artf docs-en} that contradicts the implementation, and each core user task above that is not covered, is an issue. Fix the docs, not the code.
+    """
+  }
+}

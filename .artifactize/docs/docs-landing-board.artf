@@ -1,40 +1,39 @@
-path = "website/landing/board/"
-type = "files"
-# The development board at artifactize.dev/board/: reads GitHub's public API in the browser.
+// The development board at artifactize.dev/board/: reads GitHub's public API in the browser.
+artf docs-landing-board : files = {
+  path = "website/landing/board/"
 
-[evals.reads-the-record]
-title = "The board reads the record the development skills write"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
+  eval follows-rules : reviewer = {
+    title = "The board's text is plain for a first-time visitor"
+    red_at = "P1"
+    instruction = """
+      Read @{artf rules-writer-introduction}. Read index.html of @{artf docs-landing-board} and the visible text that main.js
+      writes into it. Check the page's visible text against W-INTRO-FIRST-READER,
+      W-INTRO-PLAIN-LANGUAGE and W-INTRO-NO-RAMBLING; the other W- items are for the landing
+      page's introduction and do not apply here. Because the board is for first-time visitors
+      observing the repository's live GitHub activity, its brief definitions of commit/branch/pull
+      request, its `main-green`/`GREEN`/`YELLOW` status labels, its `verify run-...` and `CI ...`
+      shorthand in activity lines and tooltips, and its short note on GitHub's public API request
+      limits are helpful visitor context and are not violations.
+    """
+  }
 
-[evals.reads-the-record.payload]
-instruction = """
-Read index.html, model.js and main.js of {docs-landing-board}, and dev-master/SKILL.md,
-dev-worker/SKILL.md and release-master/SKILL.md of {dev-skills}. Check that:
-- the board parses exactly the pull request note the skills tell agents to write: its
-  marker, every field name, the value forms (Run IDs, outcomes, commit SHAs, times) and
-  where dev-master adds `green:` lines; a note the skills describe is never dropped, and a
-  malformed note never breaks the page;
-- what the board derives agrees with the skills' branch model: `main`, the `main-green`
-  tag, pull requests into `main`, releases cut from `main-green` on `release/*` branches
-  with `v*` tags (and optional QA back-merge pull requests into `main`), the roles
-  dev-master, dev-worker and release-master, verify outcomes and CI;
-- the page's description of the flow and the roles says the same as the skills;
-- it uses only GitHub's public REST API without credentials, and stays usable when GitHub
-  fails or its rate limit is used up."""
-
-[evals.follows-rules]
-title = "The board's text is plain for a first-time visitor"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
-
-[evals.follows-rules.payload]
-instruction = """
-Read {rules-writer-introduction}. Read index.html of {docs-landing-board} and the visible text that main.js
-writes into it. Check the page's visible text against W-INTRO-FIRST-READER,
-W-INTRO-PLAIN-LANGUAGE and W-INTRO-NO-RAMBLING; the other W- items are for the landing
-page's introduction and do not apply here. Because the board is for first-time visitors
-observing the repository's live GitHub activity, its brief definitions of commit/branch/pull
-request, its `main-green`/`GREEN`/`YELLOW` status labels, its `verify run-...` and `CI ...`
-shorthand in activity lines and tooltips, and its short note on GitHub's public API request
-limits are helpful visitor context and are not violations."""
+  eval reads-the-record : reviewer = {
+    title = "The board reads the record the development skills write"
+    red_at = "P1"
+    instruction = """
+      Read index.html, model.js and main.js of @{artf docs-landing-board}, and dev-master/SKILL.md,
+      dev-worker/SKILL.md and release-master/SKILL.md of @{artf dev-skills}. Check that:
+      - the board parses exactly the pull request note the skills tell agents to write: its
+        marker, every field name, the value forms (Run IDs, outcomes, commit SHAs, times) and
+        where dev-master adds `green:` lines; a note the skills describe is never dropped, and a
+        malformed note never breaks the page;
+      - what the board derives agrees with the skills' branch model: `main`, the `main-green`
+        tag, pull requests into `main`, releases cut from `main-green` on `release/*` branches
+        with `v*` tags (and optional QA back-merge pull requests into `main`), the roles
+        dev-master, dev-worker and release-master, verify outcomes and CI;
+      - the page's description of the flow and the roles says the same as the skills;
+      - it uses only GitHub's public REST API without credentials, and stays usable when GitHub
+        fails or its rate limit is used up.
+    """
+  }
+}

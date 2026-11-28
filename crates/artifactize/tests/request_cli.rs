@@ -16,8 +16,8 @@ use owned_run::RunChild as Child;
 mod support;
 use support::runs::RecordOutput;
 
-// The fields-file input boundary; the oversized fixture is one byte beyond it.
-const FIELDS_BYTES: usize = 256_000;
+// The issues-file input boundary; the oversized fixture is one byte beyond it.
+const ISSUES_BYTES: usize = 256_000;
 
 struct Fixture {
     root: owned_run::Root,
@@ -271,15 +271,20 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
     assert_eq!(show["claim"]["reviewer"], "alice");
     for args in [
         vec!["request", "claim", id, "--reviewer", "bob"],
-        vec!["request", "tool", id, "inspect_child", "--reviewer", "bob"],
+        vec![
+            "request",
+            "tool",
+            id,
+            "child-tools_inspect_child",
+            "--reviewer",
+            "bob",
+        ],
         vec![
             "request",
             "submit",
             id,
             "--verdict",
             "GREEN",
-            "--fields",
-            r#"{"approved":true}"#,
             "--reviewer",
             "bob",
         ],
@@ -293,24 +298,48 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
     }
     let tool = fixture
         .command()
-        .args(["request", "tool", id, "inspect_child"])
+        .args(["request", "tool", id, "child-tools_inspect_child"])
         .record_output()
         .unwrap();
     assert!(tool.status.success());
     assert!(String::from_utf8_lossy(&tool.stdout).contains("review-v1"));
     let launch = fixture
         .command()
-        .args(["request", "tool", id, "open_child"])
+        .args(["request", "tool", id, "child-tools_open_child"])
         .record_output()
         .unwrap();
     assert!(launch.status.success());
     assert!(String::from_utf8_lossy(&launch.stdout).contains("launched"));
-    for (fields, expected) in [
-        ("{}", "approved"),
-        ("[]", "Human fields must be a JSON object."),
-        ("invalid", "expected value"),
-        (r#"{"verdict":"RED","approved":true}"#, "Use --verdict"),
+    // GREEN takes no issue and RED needs one; a refusal never echoes the review.
+    for (args, expected) in [
+        (
+            &["--verdict", "GREEN", "--issue", "Needs work"][..],
+            "GREEN takes no issues",
+        ),
+        (&["--verdict", "RED"][..], "RED needs at least one issue"),
+        (
+            &["--verdict", "RED", "--issue", " "][..],
+            "An issue needs text",
+        ),
     ] {
+        let error = fixture.json(&[&["request", "submit", id][..], args].concat(), 2);
+        let message = error["error"].as_str().unwrap();
+        assert!(message.contains(expected), "{message}");
+        assert!(!message.contains("Needs work"), "{message}");
+        assert_eq!(
+            fixture.json(&["request", "show", id], 0)["status"],
+            "DEFERRED"
+        );
+    }
+    let issues = fixture.root.path().join("issues.json");
+    for (contents, expected) in [
+        (" ".repeat(ISSUES_BYTES + 1), "exceed"),
+        (
+            r#"{"issues":[]}"#.to_owned(),
+            "Issues must be a JSON array of strings.",
+        ),
+    ] {
+        fs::write(support::declaration::source_path(&issues), contents).unwrap();
         let error = fixture.json(
             &[
                 "request",
@@ -318,59 +347,32 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
                 id,
                 "--verdict",
                 "GREEN",
-                "--fields",
-                fields,
+                "--issues-file",
+                issues.to_str().unwrap(),
             ],
             2,
         );
         let message = error["error"].as_str().unwrap();
         assert!(message.contains(expected), "{message}");
-        assert!(!message.contains(fields), "{message}");
-        assert_eq!(
-            fixture.json(&["request", "show", id], 0)["status"],
-            "DEFERRED"
-        );
     }
-    let fields = fixture.root.path().join("fields.json");
-    fs::write(
-        support::declaration::source_path(&fields),
-        " ".repeat(FIELDS_BYTES + 1),
-    )
-    .unwrap();
-    fixture.json(
-        &[
-            "request",
-            "submit",
-            id,
-            "--verdict",
-            "GREEN",
-            "--fields-file",
-            fields.to_str().unwrap(),
-        ],
-        2,
-    );
-    fs::write(
-        support::declaration::source_path(&fields),
-        r#"{"approved":true}"#,
-    )
-    .unwrap();
+    fs::write(support::declaration::source_path(&issues), "[]").unwrap();
     let error = fixture.json(
         &[
             "request",
             "submit",
             id,
             "--verdict",
-            "GREEN",
-            "--fields",
-            r#"{"approved":true}"#,
-            "--fields-file",
-            fields.to_str().unwrap(),
+            "RED",
+            "--issue",
+            "Needs work",
+            "--issues-file",
+            issues.to_str().unwrap(),
         ],
         2,
     );
     let message = error["error"].as_str().unwrap();
     assert!(
-        message.contains("--fields ") && message.contains("--fields-file"),
+        message.contains("--issue ") && message.contains("--issues-file"),
         "{message}"
     );
     let submitted = fixture.json(
@@ -380,8 +382,8 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
             id,
             "--verdict",
             "GREEN",
-            "--fields-file",
-            fields.to_str().unwrap(),
+            "--issues-file",
+            issues.to_str().unwrap(),
         ],
         0,
     );
@@ -390,18 +392,7 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
     assert!(submitted["summary"].get("toolCalls").is_none());
     assert_eq!(submitted["summary"]["executorStarts"], 0);
     assert!(submitted["summary"]["wallMs"].is_u64());
-    fixture.json(
-        &[
-            "request",
-            "submit",
-            id,
-            "--verdict",
-            "GREEN",
-            "--fields",
-            r#"{"approved":true}"#,
-        ],
-        2,
-    );
+    fixture.json(&["request", "submit", id, "--verdict", "GREEN"], 2);
     let completed = fixture.json(&["verify", "--wait", "--all"], 0);
     assert_ne!(completed["id"], run["id"]);
     assert_eq!(completed["summary"]["executorStarts"], 1);
@@ -460,8 +451,8 @@ fn unclaim_releases_the_claimants_lock_for_another_reviewer() {
             "bob",
             "--verdict",
             "RED",
-            "--fields",
-            r#"{"reason":"Needs work"}"#,
+            "--issue",
+            "Needs work",
         ],
         0,
     );
@@ -526,8 +517,6 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
             "custom",
             "--verdict",
             "GREEN",
-            "--fields",
-            r#"{"approved":true}"#,
         ],
         0,
     );
@@ -590,18 +579,7 @@ fn submission_leaves_human_claim_and_submission_available() {
     let waiting = fixture.waiting();
     let id = waiting["id"].as_str().unwrap();
     fixture.json(&["request", "claim", id], 0);
-    fixture.json(
-        &[
-            "request",
-            "submit",
-            id,
-            "--verdict",
-            "GREEN",
-            "--fields",
-            r#"{"approved":true}"#,
-        ],
-        0,
-    );
+    fixture.json(&["request", "submit", id, "--verdict", "GREEN"], 0);
     assert_eq!(fixture.json(&["request", "show", id], 0)["status"], "GREEN");
     for args in [
         vec!["verify", "--all", "--timeout-ms", "0"],
@@ -631,8 +609,8 @@ fn wait_observes_red_and_fingerprint_errors_and_explicit_cancellation_stops_clea
             id,
             "--verdict",
             "RED",
-            "--fields",
-            r#"{"reason":"Needs work"}"#,
+            "--issue",
+            "Needs work",
         ],
         0,
     );
@@ -662,18 +640,7 @@ fn wait_observes_red_and_fingerprint_errors_and_explicit_cancellation_stops_clea
         "changed\n",
     )
     .unwrap();
-    fixture.json(
-        &[
-            "request",
-            "submit",
-            id,
-            "--verdict",
-            "GREEN",
-            "--fields",
-            r#"{"approved":true}"#,
-        ],
-        2,
-    );
+    fixture.json(&["request", "submit", id, "--verdict", "GREEN"], 2);
     let run = finish(child, 2);
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(run["status"], "ERROR");

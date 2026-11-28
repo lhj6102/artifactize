@@ -16,8 +16,8 @@ use crate::{
 };
 
 mod budgets;
-mod findings;
 mod follow_up;
+mod issues;
 mod repair;
 mod tool_sessions;
 
@@ -269,7 +269,7 @@ fn final_openai() -> MockHttpResponse {
         "exact-model",
         "completed",
         vec![message(
-            "{\"findings\":[{\"priority\":\"P2\",\"reason\":\"minor\"}]}",
+            "{\"issues\":[{\"priority\":\"P2\",\"reason\":\"minor\"}]}",
         )],
         json!({
             "input_tokens":10,
@@ -298,14 +298,14 @@ fn anthropic_text(text: &str) -> MockHttpResponse {
 
 fn anthropic_response(tools: bool, stop: &str) -> MockHttpResponse {
     let content = if tools {
-        json!({"type":"tool_use","id":"call_1","name":"inspect_a","input":{}})
+        json!({"type":"tool_use","id":"call_1","name":"a-tools_inspect_a","input":{}})
     } else {
         json!({"type":"text","text":""})
     };
     let delta = if tools {
         json!({"type":"input_json_delta","partial_json":"{\"path\":\"file.txt\"}"})
     } else {
-        json!({"type":"text_delta","text":"{\"findings\":[{\"priority\":\"P0\",\"reason\":\"broken\"}]}"})
+        json!({"type":"text_delta","text":"{\"issues\":[{\"priority\":\"P0\",\"reason\":\"broken\"}]}"})
     };
     sse(vec![
         json!({
@@ -347,7 +347,10 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
             openai_response(
                 "exact-model",
                 "completed",
-                vec![call("c1", "inspect_a"), call("c2", "inspect_a")],
+                vec![
+                    call("c1", "a-tools_inspect_a"),
+                    call("c2", "a-tools_inspect_a"),
+                ],
                 Value::Null,
             ),
             final_openai(),
@@ -355,7 +358,7 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
         .await;
     assert_eq!(
         review.result.unwrap().into_json(),
-        json!({"verdict":"GREEN","findings":[{"priority":"P2","reason":"minor"}]})
+        json!({"verdict":"GREEN","issues":[{"priority":"P2","reason":"minor"}]})
     );
     let calls = fixture.calls();
     assert_eq!(calls.len(), 2);
@@ -391,7 +394,7 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
     assert_eq!(body["text"]["format"]["strict"], true);
     assert_eq!(body["text"]["format"]["schema"]["type"], "object");
     assert!(body["text"]["format"]["schema"].get("anyOf").is_none());
-    assert_eq!(body["tools"][0]["name"], "inspect_a");
+    assert_eq!(body["tools"][0]["name"], "a-tools_inspect_a");
     assert_eq!(body["tools"][0]["parameters"]["required"], json!(["path"]));
     assert!(
         body.to_string()
@@ -400,7 +403,7 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
     // The evaluator gets only its identity, target, instruction and Artifacts as user input.
     assert_eq!(
         body["input"][0]["content"][0]["text"],
-        "Eval: Review (a/review)\nTarget Artifact: a\nInstruction: Check a\nArtifacts:\n[{\"name\":\"a\",\"role\":\"target\",\"tools\":[\"inspect_a\"]}]"
+        "Eval: Review (a/review)\nTarget Artifact: a\nInstruction: Check a\nArtifacts:\n[{\"name\":\"a\",\"role\":\"target\",\"tools\":[\"a-tools_inspect_a\"]}]"
     );
     assert!(!body.to_string().contains("unchanged"));
     assert!(!body.to_string().contains("import json"));
@@ -414,7 +417,8 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
             .payload()
             .unwrap()
             .instruction,
-        "Check {a}"
+        "Check a",
+        "an instruction's slot is rendered as the Artifact's name"
     );
     let next: Value = serde_json::from_slice(&requests[1].body).unwrap();
     assert!(next.to_string().contains("tool evidence"));
@@ -451,7 +455,7 @@ async fn anthropic_exact_effort_multiblock_results_and_reported_cache_usage() {
     assert_eq!(body["output_config"]["effort"], "high");
     assert_eq!(body["output_config"]["format"]["type"], "json_schema");
     assert_eq!(body["max_tokens"], 16_384);
-    assert_eq!(body["tools"][0]["name"], "inspect_a");
+    assert_eq!(body["tools"][0]["name"], "a-tools_inspect_a");
     assert_eq!(
         body["tools"][0]["input_schema"]["properties"]["path"],
         json!({"type":"string"})
@@ -477,20 +481,23 @@ async fn incomplete_wrong_model_and_duplicate_calls_fail_before_tools() {
             "exact-model",
             "incomplete",
             vec![message(
-                "{\"findings\":[{\"priority\":\"P2\",\"reason\":\"minor\"}]}",
+                "{\"issues\":[{\"priority\":\"P2\",\"reason\":\"minor\"}]}",
             )],
             Value::Null,
         ),
         openai_response(
             "other-model",
             "completed",
-            vec![call("c1", "inspect_a")],
+            vec![call("c1", "a-tools_inspect_a")],
             Value::Null,
         ),
         openai_response(
             "exact-model",
             "completed",
-            vec![call("same", "inspect_a"), call("same", "inspect_a")],
+            vec![
+                call("same", "a-tools_inspect_a"),
+                call("same", "a-tools_inspect_a"),
+            ],
             Value::Null,
         ),
     ] {
@@ -617,7 +624,7 @@ async fn output_that_breaks_off_sends_the_same_turn_again_at_any_turn() {
             openai_response(
                 "exact-model",
                 "completed",
-                vec![call("c1", "inspect_a")],
+                vec![call("c1", "a-tools_inspect_a")],
                 Value::Null,
             ),
             MockHttpResponse::error(StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
@@ -627,7 +634,7 @@ async fn output_that_breaks_off_sends_the_same_turn_again_at_any_turn() {
     // A failed turn after tool calls replays the whole conversation, so it retries too.
     assert_eq!(
         review.result.unwrap().into_json(),
-        json!({"verdict":"GREEN","findings":[{"priority":"P2","reason":"minor"}]})
+        json!({"verdict":"GREEN","issues":[{"priority":"P2","reason":"minor"}]})
     );
     assert_eq!(fixture.calls().len(), 1);
     assert_eq!(http.requests().len(), 3);
@@ -775,7 +782,7 @@ async fn registry_image_blocks_reach_both_provider_wires() {
                 openai_response(
                     "exact-model",
                     "completed",
-                    vec![call("c1", "inspect_a")],
+                    vec![call("c1", "a-tools_inspect_a")],
                     Value::Null,
                 ),
                 final_openai(),
@@ -858,14 +865,38 @@ async fn instruction_names_artifacts_and_lists_each_once_without_paths() {
     let (review, http) = fixture.run(vec![final_openai()]).await;
     assert_eq!(
         review.result.unwrap().into_json(),
-        json!({"verdict":"GREEN","findings":[{"priority":"P2","reason":"minor"}]})
+        json!({"verdict":"GREEN","issues":[{"priority":"P2","reason":"minor"}]})
     );
     let body: Value = serde_json::from_slice(&http.requests()[0].body).unwrap();
     assert_eq!(
         body["input"][0]["content"][0]["text"],
         "Eval: Review (a/review)\nTarget Artifact: a\nInstruction: Check a against b, then a again; b decides\nArtifacts:\n\
-         [{\"name\":\"a\",\"role\":\"target\",\"tools\":[\"inspect_a\"]},\n \
-         {\"name\":\"b\",\"role\":\"input\",\"tools\":[\"read_b\"]}]"
+         [{\"name\":\"a\",\"role\":\"target\",\"tools\":[\"a-tools_inspect_a\"]},\n \
+         {\"name\":\"b\",\"role\":\"input\",\"tools\":[\"b-tools_read_b\"]}]"
     );
     assert!(!body.to_string().contains("input.txt"));
+}
+
+#[test]
+fn a_review_deadline_comes_from_the_profile_then_the_variable_then_thirty_minutes() {
+    let minute = std::time::Duration::from_secs(60);
+    assert_eq!(resolve_timeout(None, None).unwrap(), 30 * minute);
+    assert_eq!(
+        resolve_timeout(None, Some("90000".into())).unwrap(),
+        std::time::Duration::from_millis(90_000)
+    );
+    // A profile's own timeout_ms is what that review asked for, whatever the variable says.
+    assert_eq!(
+        resolve_timeout(Some(minute), Some("90000".into())).unwrap(),
+        minute
+    );
+    for invalid in ["0", "ten minutes", "-5", ""] {
+        let failure = resolve_timeout(None, Some(invalid.into())).unwrap_err();
+        assert_eq!(failure.code, error::Code::AgentError);
+        assert!(
+            failure.message.contains(TIMEOUT_VARIABLE),
+            "{}",
+            failure.message
+        );
+    }
 }

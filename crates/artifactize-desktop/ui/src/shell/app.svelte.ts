@@ -41,13 +41,13 @@ export class AppState {
   readonly browse = new Browse(this.ipc);
   /** The Current of the branch shown in Chat's Graph. */
   readonly current: Current = new Current(this.ipc, (branch) => void this.prepareDefinitions(branch).load(branch));
-  /** The shown branch's definitions, which its Current edits. */
+  /** The shown branch's definitions, read from its code. */
   #definitions = $state.raw<Record<string, Definitions>>({});
   prepareDefinitions(branch: BranchKey): Definitions {
     const key = keyOf(branch);
     const existing = this.#definitions[key];
     if (existing) return existing;
-    const owner = new Definitions(this.ipc, (each) => void this.current.scan(each, true));
+    const owner = new Definitions(this.ipc);
     this.#definitions = { ...this.#definitions, [key]: owner };
     return owner;
   }
@@ -85,7 +85,7 @@ export class AppState {
     turns: async () => {
       try {
         const sessions = await call(this.ipc.chatList(null, null));
-        return sessions.filter((session) => session.running).map((session) => session.title || "New chat");
+        return sessions.filter((session) => session.activity !== "idle").map((session) => session.title || "New chat");
       } catch {
         // Unread, no turn is named; the claims are still asked about.
         return [];

@@ -1,5 +1,5 @@
-basis = true
-path = "requirements/"
-
-[views.agent_tools]
-read = { builtin = "read", description = "Read lines of requirements.md in {artifactName}." }
+// The requirements the specification answers: the IDs the coverage report looks for.
+artf requirements : files = {
+  path = "requirements/"
+  basis = true
+}

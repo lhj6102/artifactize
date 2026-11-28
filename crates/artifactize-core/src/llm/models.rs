@@ -191,7 +191,7 @@ pub async fn list(
     repo: Option<&Path>,
 ) -> Result<Listing, String> {
     if backend.as_str() == "antigravity" {
-        let models = crate::auth::antigravity::models().await?;
+        let models = crate::auth::antigravity::models(repo).await?;
         return Ok(Listing { backend, models });
     }
     let route =

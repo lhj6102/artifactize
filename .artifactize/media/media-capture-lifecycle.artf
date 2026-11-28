@@ -1,5 +1,6 @@
-# The capture lifecycle the screenshots' and demos' scripts share: an input of their evals,
-# which judge it with the scripts (records-scenes, records-demos).
-basis = true
-path = "assets/capture/lifecycle.mts"
-type = "files"
+// The capture lifecycle the screenshots' and demos' scripts share: an input of their evals,
+// which judge it with the scripts (records-scenes, records-demos).
+artf media-capture-lifecycle : files = {
+  basis = true
+  path = "assets/capture/lifecycle.mts"
+}

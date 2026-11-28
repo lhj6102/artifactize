@@ -2,11 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    agent::verdict::{ValidatedResult, check_result},
     cache,
     config::{Eval, RepoConfig, read_workspace_config},
     remote::Session,
@@ -15,11 +14,11 @@ use crate::{
     tools::human::{CommandLine, Registry, ToolResult},
 };
 
-/// Bound owner fields and serialized Human results consistently across CLI, editor
-/// and submission so untrusted JSON cannot grow the review audit without limit.
+/// Bound a person's issues and serialized Human results consistently across CLI, desktop
+/// and submission so untrusted text cannot grow the review audit without limit.
 pub const MAX_RESULT_BYTES: usize = 256_000;
 /// Read one sentinel byte beyond the bound to detect oversized files without loading them.
-pub const FIELDS_READ_BYTES: u64 = MAX_RESULT_BYTES as u64 + 1;
+pub const ISSUES_READ_BYTES: u64 = MAX_RESULT_BYTES as u64 + 1;
 
 pub fn default_reviewer() -> Result<crate::types::ReviewerId, String> {
     crate::platform::user_name()
@@ -152,13 +151,31 @@ fn commands_for(
         .collect())
 }
 
-/// A Human answer parsed at the caller's input boundary. The request's owner schema is
-/// checked against these fields only once the saved request has been loaded.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// A person's answer, checked once at the caller's input boundary: GREEN approves the Artifact
+/// as it stands and lists no issue; RED lists at least one issue to change.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Submission {
     verdict: crate::runtime::Verdict,
-    #[serde(flatten)]
-    fields: Map<String, Value>,
+    issues: Vec<String>,
+}
+
+/// The refusal for GREEN with issues: approval lists none.
+pub const GREEN_WITH_ISSUES: &str = "GREEN takes no issues: remove them, or submit RED with them.";
+/// The refusal for RED without an issue.
+pub const RED_WITHOUT_ISSUE: &str = "RED needs at least one issue.";
+
+impl<'de> serde::Deserialize<'de> for Submission {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            verdict: crate::runtime::Verdict,
+            #[serde(default)]
+            issues: Vec<String>,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.verdict, wire.issues).map_err(serde::de::Error::custom)
+    }
 }
 
 impl TryFrom<Value> for Submission {
@@ -170,34 +187,57 @@ impl TryFrom<Value> for Submission {
 }
 
 impl Submission {
-    pub fn new(
-        verdict: crate::runtime::Verdict,
-        fields: Map<String, Value>,
-    ) -> Result<Self, String> {
-        if fields.contains_key("verdict") {
-            return Err("Owner fields must not contain a verdict.".into());
+    pub fn new(verdict: crate::runtime::Verdict, issues: Vec<String>) -> Result<Self, String> {
+        let issues: Vec<String> = issues
+            .into_iter()
+            .map(|issue| issue.trim().to_owned())
+            .collect();
+        if issues.iter().any(String::is_empty) {
+            return Err("An issue needs text.".into());
         }
-        Ok(Self { verdict, fields })
+        match verdict {
+            crate::runtime::Verdict::Green if !issues.is_empty() => {
+                return Err(GREEN_WITH_ISSUES.into());
+            }
+            crate::runtime::Verdict::Red if issues.is_empty() => {
+                return Err(RED_WITHOUT_ISSUE.into());
+            }
+            crate::runtime::Verdict::Green | crate::runtime::Verdict::Red => {}
+        }
+        let submission = Self { verdict, issues };
+        if serde_json::to_vec(&submission.to_json())
+            .expect("a submission is JSON")
+            .len()
+            > MAX_RESULT_BYTES
+        {
+            return Err(format!("Human result exceeds {MAX_RESULT_BYTES} bytes."));
+        }
+        Ok(submission)
     }
 
     pub fn verdict(&self) -> crate::runtime::Verdict {
         self.verdict
     }
 
+    pub fn issues(&self) -> &[String] {
+        &self.issues
+    }
+
     pub fn to_json(&self) -> Value {
         serde_json::to_value(self).expect("Human submission is JSON")
     }
 
-    fn validate(&self, eval: &crate::config::EvalDeclaration) -> Result<ValidatedResult, String> {
-        let value = self.to_json();
-        if serde_json::to_vec(&value).map_err(|e| e.to_string())?.len() > MAX_RESULT_BYTES {
-            return Err(format!("Human result exceeds {MAX_RESULT_BYTES} bytes."));
-        }
-        check_result(eval, &value)?;
-        Ok(ValidatedResult {
+    fn result(&self) -> store::ExecutionResult {
+        store::ExecutionResult::Human {
             verdict: self.verdict,
-            fields: self.fields.clone(),
-        })
+            issues: self
+                .issues
+                .iter()
+                .map(|reason| store::HumanIssue {
+                    reason: reason.clone(),
+                })
+                .collect(),
+        }
     }
 }
 
@@ -236,17 +276,11 @@ async fn submit_answer(
 ) -> Result<Request, String> {
     let (mut request, _) = receipts.human_request(request, reviewer).await?;
     let config = reconnect(receipts, &request).await?;
-    let eval = config
-        .evals
-        .iter()
-        .find(|eval| eval.id == request.eval_id)
-        .expect("reconnected eval");
     let (answer, expected) = match answer {
-        SubmittedAnswer::Explicit(submission) => (submission.validate(&eval.declaration)?, None),
-        SubmittedAnswer::PreparedExplicit(submission) => (
-            submission.validate(&eval.declaration)?,
-            Some(crate::review::Draft::default()),
-        ),
+        SubmittedAnswer::Explicit(submission) => (submission.result(), None),
+        SubmittedAnswer::PreparedExplicit(submission) => {
+            (submission.result(), Some(crate::review::Draft::default()))
+        }
         other => {
             let draft = match other {
                 SubmittedAnswer::SavedDraft => receipts
@@ -258,14 +292,11 @@ async fn submit_answer(
                     unreachable!()
                 }
             };
-            (
-                draft.submission(&request)?.validate(&eval.declaration)?,
-                Some(draft),
-            )
+            (draft.submission()?.result(), Some(draft))
         }
     };
     recheck(receipts, &mut request, reviewer, &config, cancellation).await?;
-    request.state = crate::store::RequestState::completed(answer.into(), crate::broker::now());
+    request.state = crate::store::RequestState::completed(answer, crate::broker::now());
     receipts
         .settle_human_if_draft(&request, reviewer, expected)
         .await
@@ -307,7 +338,7 @@ pub(crate) async fn publish_explicit_without_draft(
 }
 
 /// Submit the saved answer, refusing to settle if another surface changes its verdict or
-/// form while its inputs are checked. Notes are read at settlement in either case.
+/// issues while its inputs are checked. Notes are read at settlement in either case.
 pub(crate) async fn publish_saved_draft(
     state: &Path,
     request: &crate::types::RequestId,

@@ -61,7 +61,6 @@
   --i-move: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 9.5H2.5a.75.75 0 0 1-.75-.75v-5.5a.75.75 0 0 1 .75-.75h2.25l1 1.25h3.75a.75.75 0 0 1 .75.75v1.5'/%3E%3Cpath d='M6.25 8.25h4.25M8.75 6.5l1.75 1.75L8.75 10'/%3E%3C/svg%3E");
   --i-folder-closed: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 3.25a.75.75 0 0 1 .75-.75h2.25l1 1.25h3.75a.75.75 0 0 1 .75.75v4.75a.75.75 0 0 1-.75.75h-7a.75.75 0 0 1-.75-.75z'/%3E%3Cpath d='M1.75 5.25h8.5'/%3E%3C/svg%3E");
   --i-folder-open: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 9.25V3.25a.75.75 0 0 1 .75-.75h2.25l1 1.25h3.25a.75.75 0 0 1 .75.75v1.25'/%3E%3Cpath d='M1.75 9.5l1.6-3.75h7.4l-1.6 3.75z'/%3E%3C/svg%3E");
-  --i-reset: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.75 4.25A3.75 3.75 0 1 1 2.25 6.5'/%3E%3Cpath d='M2.5 1.75v2.5H5'/%3E%3C/svg%3E");
 }
 .m-icon,
 .m-light {
@@ -99,7 +98,6 @@
 .i-fit { --icon-src: var(--i-fit); }
 .i-find { --icon-src: var(--i-find); }
 .i-pane { --icon-src: var(--i-pane); }
-.i-reset { --icon-src: var(--i-reset); }
 .i-chat { --icon-src: var(--i-chat); }
 .i-verify { --icon-src: var(--i-verify); }
 .i-review { --icon-src: var(--i-review); }
@@ -1204,16 +1202,6 @@
 .m-field .m-name {
   color: var(--label);
 }
-.m-required {
-  color: var(--red);
-  margin-left: 2px;
-}
-/* The Result's form: fields one under another, by kind. */
-.m-form {
-  display: grid;
-  gap: 10px;
-  margin-top: 10px;
-}
 /* A choice: a one-line field showing the chosen option, the unfold icon at its right. */
 .m-input.m-select {
   justify-content: space-between;
@@ -1222,7 +1210,7 @@
 .m-input.m-select > .m-icon {
   color: var(--ink-2);
 }
-/* True/false: its values side by side as round options, the chosen one filled. */
+/* Round options: values side by side, the chosen one marked. */
 .m-radios {
   display: flex;
   gap: 16px;
@@ -1245,58 +1233,6 @@
 }
 .m-radio.on::before {
   background: radial-gradient(circle, var(--current-mark) 0 2.5px, var(--surface-input) 3px);
-}
-/* A list of text: numbered items, each a field with the remove icon at its right. */
-.m-items {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  counter-reset: item;
-}
-.m-items li {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) 22px;
-  align-items: start;
-  gap: 6px;
-}
-.m-items li::before {
-  counter-increment: item;
-  content: counter(item) ".";
-  padding-top: 6px;
-  color: var(--ink-2);
-  font-size: var(--text-small);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-.m-items li > .m-icon,
-.m-group-head > .m-icon {
-  justify-self: center;
-  margin-top: 5px;
-  color: var(--ink-2);
-}
-/* A list of groups: each group inside a faint group line, headed by its name and number. */
-.m-group {
-  display: grid;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--line-group);
-  border-radius: var(--radius-control);
-}
-.m-group-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--ink-2);
-  font-size: var(--text-small);
-}
-.m-group-head > .m-icon {
-  margin-top: 0;
-}
-.m-button.m-add {
-  justify-self: start;
-  width: max-content;
 }
 /* Running work in a review's action row: its icon, its seconds and Cancel. */
 .m-busy {
@@ -1642,25 +1578,8 @@
 .m-whole.target.selected {
   box-shadow: 0 0 0 1px var(--accent), 0 0 0 3px var(--surface-app), 0 0 0 4px var(--current-mark);
 }
-/* A Definition's parts: one dense row each, the name and its remove button. */
-.m-parts {
-  display: grid;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.m-parts li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: var(--row-dense);
-}
-.m-parts li .m-name {
-  flex: none;
-}
-/* The Source: the file's text in a field one step below the panel, its line numbers in secondary
-   ink; the line an error names carries the selection background. */
+/* The Source: the code that binds an Artifact, read-only in a field one step below the panel,
+   its line numbers in secondary ink. */
 .m-source {
   margin: 0;
   padding: 6px 0;
@@ -1684,56 +1603,6 @@
   margin-right: 8px;
   color: var(--ink-2);
   text-align: right;
-}
-.m-source span.marked {
-  background: var(--selection);
-}
-.m-refusal {
-  margin: 4px 0 0;
-  color: var(--red);
-  font-size: var(--text-small);
-}
-.m-edit-actions {
-  display: flex;
-  gap: var(--gap);
-  margin-top: 6px;
-}
-/* An Artifact's comment: text alone under its node (or under a whole's title row), in the
-   quieter ink, wrapped at the width of what it is under and cut after three lines. Dragged, the
-   text alone follows the pointer, lifted by a faint shadow on its letters, never on a card; the
-   open field is a field of the panel's kind. */
-.m-comment {
-  position: absolute;
-  width: 168px;
-  margin: 0;
-  color: var(--ink-2);
-  font-size: var(--text-small);
-  line-height: 1.4;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-}
-.m-comment.lifted {
-  text-shadow: 0 1px 4px var(--scrim);
-}
-.m-comment-field {
-  position: absolute;
-  box-sizing: border-box;
-  width: 168px;
-  min-height: 44px;
-  padding: 4px 6px;
-  border: 1px solid var(--line-input);
-  border-radius: var(--radius-control);
-  background: var(--surface-input);
-  color: var(--ink);
-  font-size: var(--text-small);
-  line-height: 1.4;
-  white-space: pre-wrap;
-  outline: 1px solid var(--current-mark);
-  outline-offset: -1px;
 }
 
 /* A reference's way back or onward: a link chip, its icon and words in the accent inside a

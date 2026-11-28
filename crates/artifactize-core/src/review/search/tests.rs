@@ -30,7 +30,7 @@ fn free_text_matches_any_listed_column_case_insensitively() {
     assert!(!matches("carol", &entry));
     // Tags, kinds and statuses are not listed columns; only their keys reach them.
     assert!(!matches("style", &entry));
-    assert!(!matches("waiting", &entry));
+    assert!(!matches("\"waiting\"", &entry));
 }
 
 #[test]
@@ -60,7 +60,8 @@ fn keys_restrict_a_term_to_one_field_and_terms_and_together() {
 #[test]
 fn kinds_and_statuses_match_exactly_and_qualifiers_follow_claims() {
     let entry = entry();
-    assert!(!matches(DEFAULT, &entry));
+    // A claimed request still waits for a person, its claimant: `waiting` lists it.
+    assert!(matches(DEFAULT, &entry));
     assert!(matches(
         DEFAULT,
         &Entry {

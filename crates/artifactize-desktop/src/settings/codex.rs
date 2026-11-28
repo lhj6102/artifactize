@@ -64,7 +64,10 @@ pub enum CodexStatus {
     /// artifactize's own sign-in.
     Stored { expiry: Expiry },
     /// A read-only Codex auth file from ARTIFACTIZE_CODEX_AUTH_FILE; never written here.
-    File { path: String, expiry: FileExpiry },
+    File {
+        path: crate::browse::PathKey,
+        expiry: FileExpiry,
+    },
     /// Tokens cannot be stored where this state lives, and why.
     Refused { reason: String },
 }
@@ -86,7 +89,7 @@ fn read_codex(app: &App) -> Result<CodexStatus, Failure> {
             },
         },
         codex::Status::File { path, expiry } => CodexStatus::File {
-            path: artifactize_tools::files::path_text(&path),
+            path: crate::browse::PathKey::new(&path),
             expiry: match expiry {
                 codex::FileExpiry::Usable { expires_at } => FileExpiry::Usable {
                     expires_at: expires_at.map(Into::into),

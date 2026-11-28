@@ -181,16 +181,20 @@ impl Connections {
     }
 
     fn assert_terminated(&mut self) {
-        // The launcher's own stop is observed by the exit sockets alone, with no clock: a
-        // process that outlived it keeps its socket open and the test runner's limit applies.
-        let exits = [("parent", &mut self.parent), ("child", &mut self.child)]
-            .map(|(role, stream)| (role, read_exit(stream)));
-        for (role, exit) in exits {
+        // The launcher's own stop is observed by the exit sockets. A process that outlived it
+        // keeps its socket open; the watchdog then releases it, so the test fails here and the
+        // tree's drop still cleans up, rather than the read blocking until the runner's limit.
+        let observed = self.wait_for_exit();
+        for (role, exit) in observed.exits {
             assert!(
                 exit.is_ok(),
                 "the help {role} outlived tree cleanup: {exit:?}"
             );
         }
+        assert!(
+            !observed.rescued,
+            "the help tree outlived its cleanup until the watchdog released it"
+        );
     }
 
     fn wait_for_exit(&mut self) -> ObservedExit {

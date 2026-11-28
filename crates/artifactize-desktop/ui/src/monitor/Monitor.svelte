@@ -392,4 +392,9 @@
     height: 100%;
     min-height: 0;
   }
+  /* The status line keeps the canvas's top 32px (D-MAIN-2): a loading or unreadable Run's line
+   * stands under it, so the notice and the line never cover each other. */
+  .pending .empty {
+    padding-top: 32px;
+  }
 </style>

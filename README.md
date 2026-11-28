@@ -15,21 +15,28 @@ Test runners check code and review bots check pull requests in isolation. Artifa
 
 ## At a glance
 
-Declare each Artifact and its checks in `.artifactize/<name>.artf`, then run `artifactize verify`:
+Declare each Artifact and its checks in the small `.artf` language under `.artifactize/`, and how its Agent evals run in an `.artfprofiles` file, then run `artifactize verify`:
 
-```toml
-# .artifactize/api.artf
-path = "crates/api/"
+```rust
+// .artifactize/profiles.artfprofiles
+profile reviewer : agent = { backend = "codex", model = "gpt-6.2-sol", reasoning = "high" }
+```
 
-[evals.tests]
-title = "API tests pass"
-profile = { kind = "runtime", command = "cargo", args = ["test", "--locked"] }
-payload.instruction = "Run the test suite of {api}."
+```rust
+// .artifactize/api.artf
+artf api : files = {
+  path = "crates/api/"
 
-[evals.matches-spec]
-title = "API implementation matches the specification"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high" }
-payload.instruction = "Review {api} against {spec}. Submit GREEN only when every route matches."
+  // Run the API's test suite.
+  eval tests : runtime(command = "cargo", args = ["test", "--locked"]) = {
+    title = "API tests pass"
+  }
+
+  eval matches-spec : reviewer = {
+    title = "API implementation matches the specification"
+    instruction = "Review @{artf self} against @{artf spec}. Each route that does not match is an issue."
+  }
+}
 ```
 
 ```sh
@@ -86,7 +93,7 @@ In your project directory, ask Arti (in Codex, write `$artifactize:hey-arti`):
 /artifactize:hey-arti Explain Artifactize and tell me how we could apply it to this project
 ```
 
-Arti reads your repository, asks what matters to your team, and proposes Artifacts and checks. After you agree, it writes the `.artifactize/<name>.artf` declarations and runs your first `verify`. To try Artifactize without an AI account, follow the [5-minute quick start](https://artifactize.dev/docs/getting-started/guide.html).
+Arti reads your repository, asks what matters to your team, and proposes Artifacts and checks. After you agree, it writes the `.artf` declarations under `.artifactize/` and runs your first `verify`. To try Artifactize without an AI account, follow the [5-minute quick start](https://artifactize.dev/docs/getting-started/guide.html).
 
 ## How it works
 
@@ -98,16 +105,16 @@ Arti reads your repository, asks what matters to your team, and proposes Artifac
 
 <p align="center">
   <img src="assets/others/graph-example.en.png" width="800"
-       alt="Example Artifact Graph: PROBLEM.md, SPEC.md, code/ and docs/ are declared by .artf files in .artifactize/, connected by command checks, AI agent reviews and a human sign-off.">
+       alt="Example Artifact Graph: PROBLEM.md, SPEC.md, code/ and docs/ are declared as Artifacts in .artf code under .artifactize/, connected by command checks, AI agent reviews and a human sign-off.">
 </p>
 
 | Feature | What it does |
 |---|---|
-| **Artifact Graph** | Declare each file, folder, or live URI in `.artifactize/<name>.artf` with `path`, `parts`, and `{input}` references so dependencies are explicit. |
+| **Artifact Graph** | Declare each file, folder, or live URI with an `artf` statement under `.artifactize/`, with `path`, `parts`, and the inputs its evals name (`@{artf spec}`), so dependencies are explicit; macros write what repeats once. |
 | **Three kinds of checks** | Combine `runtime` commands (tests, linters), `agent` reviews (LLM judgment with read-only tools), and `human` sign-offs in one workflow. |
 | **Input-based reuse** | Content fingerprints (`artifactsum` by default) track what each check reads; unchanged inputs reuse earlier verdicts across branches, teammates, and CI. |
 | **Durable Runs** | `artifactize verify` runs in the background while agents fix failing checks, and requests human sign-offs only after automated checks pass. |
-| **Desktop app** | Work with the built-in agent in **Chat**, track Runs and edit declarations in **Verify**, and claim or complete Human reviews in **Review**. |
+| **Desktop app** | Work with the built-in agent in **Chat**, track Runs in **Verify** and read declarations as code on a Current, and claim or complete Human reviews in **Review**. |
 | **Artifact viewers** | Give an Artifact a type to reuse its review tools. Open files, Markdown, or scoped Artifactize declarations in a dedicated viewer. Use Point in supported viewers to add a location to your review. |
 
 ## Learn more

@@ -339,5 +339,9 @@ pub struct Send {
     pub files_changed: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<crate::types::ToolName>>,
+    /// The engine a Chat turn runs on, as [`crate::chat::ChatTarget::engine_label`] names it: the
+    /// next turn hands off from it when the picker chose another.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<String>,
 }
 pub use super::outcome::{Answer, End};

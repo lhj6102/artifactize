@@ -122,8 +122,35 @@ export class Chat {
     await holds(this.browser, async () => !(await this.browser.$(menu).isDisplayed()) && (await this.selected()).includes(name), `${name} selected and its model menu closed`);
   }
 
-  /** Read the Trust workspace modal's agent, scope, executable and SHA-256 facts, then confirm it. */
-  async trustWorkspace(): Promise<{ agent: string; scope: string; executable: string; sha256: string; text: string }> {
+  /** The permission card titled `title` in the conversation: its status and its option buttons. */
+  async permission(title: string): Promise<{ status: string; options: string[] } | null> {
+    return this.browser.execute((name) => {
+      const card = [...document.querySelectorAll<HTMLElement>('main[aria-label="Chat"] .permission')]
+        .find((each) => each.getAttribute("aria-label") === `Permission request: ${name}`);
+      if (!card) return null;
+      return {
+        status: card.querySelector(".perm-status")?.textContent?.trim() ?? "",
+        options: [...card.querySelectorAll(".perm-actions button > span:first-child")].map((each) => each.textContent?.trim() ?? ""),
+      };
+    }, title);
+  }
+
+  /** Wait until the permission card titled `title` satisfies `holds`. */
+  async permissionUntil(title: string, holds: (card: { status: string; options: string[] }) => boolean, what: string): Promise<{ status: string; options: string[] }> {
+    return until(this.browser, () => this.permission(title), (card): card is { status: string; options: string[] } => card !== null && holds(card), what) as Promise<{ status: string; options: string[] }>;
+  }
+
+  /** Click the option `name` on the permission card titled `title`. */
+  async choosePermission(title: string, name: string): Promise<void> {
+    const card = this.browser.$(`main[aria-label="Chat"] .permission[aria-label="Permission request: ${title}"]`);
+    const option = card.$(".perm-actions").$(`button*=${name}`);
+    await option.waitForEnabled({ timeoutMsg: `${name} on ${title} is enabled` });
+    await option.click();
+  }
+
+  /** Read the Trust workspace modal's agent, scope, executable and SHA-256 facts, run `meanwhile`
+   * while it still stands unanswered, then confirm it. */
+  async trustWorkspace(meanwhile: () => Promise<void> = async () => {}): Promise<{ agent: string; scope: string; executable: string; sha256: string; text: string }> {
     const selector = '[role="dialog"].trust-workspace';
     const dialog = this.browser.$(selector);
     await dialog.waitForDisplayed({ timeoutMsg: "Trust workspace dialog opened" });
@@ -141,6 +168,7 @@ export class Chat {
         text: root?.innerText.replace(/\s+/g, " ").trim() ?? "",
       };
     }, selector);
+    await meanwhile();
     const confirm = dialog.$("button=Trust and continue");
     await confirm.waitForEnabled({ timeoutMsg: "Trust and continue is enabled" });
     await confirm.click();

@@ -10,18 +10,6 @@ import { BLOCKING, type Point } from "./graph";
 import { NODE } from "./layout";
 import { BOX, partsCount } from "./parts";
 
-/** A comment's gap under its node, its inset inside a box, its line height and its lines, as
- * its element draws it. */
-const [COMMENT_GAP, COMMENT_INSET, COMMENT_LEADING, COMMENT_LINES] = [4, 10, 1.4, 3];
-
-/** The comment's place in the drawn view, whether painted or opened for editing. */
-export function commentRect(rect: Rect, whole: boolean, zoom: number): Rect {
-  const inset = whole ? COMMENT_INSET * zoom : 0;
-  const below = whole ? Math.min(BOX.header * zoom, rect.height) : rect.height;
-  return { x: rect.x + inset, y: rect.y + below + COMMENT_GAP * zoom, width: rect.width - 2 * inset, height: rect.height };
-}
-
-
 /** The side of one cell of the index, in graph coordinates: a few Artifacts across. */
 const CELL = 1024;
 /** Cells per row of the index's keys: more than any layout's columns of cells. */
@@ -166,8 +154,6 @@ export type Paint = {
   boxes: boolean;
   opened: ReadonlySet<string>;
   minimized: ReadonlyMap<string, number>;
-  /** Each Artifact's comment by name, painted under its node or a box's title row. */
-  comments?: ReadonlyMap<string, string>;
 };
 
 /** The graph's edges by the numbers of their ends in a scene, with their lights. */
@@ -208,36 +194,6 @@ function cut(context: CanvasRenderingContext2D, text: string, width: number): st
     else over = middle;
   }
   return `${text.slice(0, fits)}…`;
-}
-
-/** `text` in at most `most` lines of `width` with `context`'s font, wrapped at spaces and its
- * own line breaks, the last one cut with an ellipsis when more is left, as a comment's element
- * clamps it. */
-function wrap(context: CanvasRenderingContext2D, text: string, width: number, most: number): string[] {
-  const found: string[] = [];
-  for (const paragraph of text.split("\n")) {
-    let line = "";
-    for (const word of paragraph.split(" ")) {
-      const next = line ? `${line} ${word}` : word;
-      if (line && context.measureText(next).width > width) {
-        found.push(line);
-        line = word;
-      } else line = next;
-      // A word wider than the line, unbroken text such as Korean included, breaks inside it.
-      while (context.measureText(line).width > width && line.length > 1) {
-        let fits = 1;
-        while (fits < line.length && context.measureText(line.slice(0, fits + 1)).width <= width) fits += 1;
-        found.push(line.slice(0, fits));
-        line = line.slice(fits);
-      }
-    }
-    found.push(line);
-  }
-  if (found.length <= most) return found;
-  const kept = found.slice(0, most);
-  kept[most - 1] = cut(context, `${kept[most - 1]} ${found[most]}`, width);
-  if (!kept[most - 1].endsWith("…")) kept[most - 1] = cut(context, `${kept[most - 1]}…`, width);
-  return kept;
 }
 
 function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
@@ -312,8 +268,6 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   const ports = new Path2D();
   const marks: { light: Light; x: number; y: number }[] = [];
   const names: { x: number; y: number; width: number; text: string; count: string; tally: string; whole: boolean }[] = [];
-  /** Each comment in view: under a node, or inside a box under its title row. */
-  const notes: { x: number; y: number; width: number; text: string }[] = [];
   const add = (into: Map<Light, Path2D>, light: Light) => {
     let path = into.get(light);
     if (!path) into.set(light, (path = new Path2D()));
@@ -352,10 +306,6 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     const tally = node?.tally ? `${node.tally.passed}/${node.tally.of}` : "";
     const count = folded === undefined ? "" : partsCount(folded);
     if (node) names.push({ x: x + start, y: y + row / 2, width: w - start - end, text: node.name, count, tally, whole });
-    const comment = node ? what.comments?.get(node.name) : undefined;
-    if (comment) {
-      notes.push({ ...commentRect({ x, y, width: w, height: h }, whole, zoom), text: comment });
-    }
     // Wherever names are painted, so are the ports, however small.
     if (inward[number] || outward[number]) {
       const [middle, half] = [y + h / 2, port / 2];
@@ -458,14 +408,6 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
       context.fillText(cut(context, name.count, room), name.x, lines[1]);
     }
     context.restore();
-  }
-  // Comments in the quieter ink at the small size, at most three lines.
-  const small = pixels("--text-small");
-  context.font = `400 ${small * zoom}px ${face}`;
-  context.fillStyle = token("--ink-2");
-  context.textBaseline = "top";
-  for (const note of notes) {
-    wrap(context, note.text, note.width, COMMENT_LINES).forEach((line, at) => context.fillText(line, note.x, note.y + at * small * COMMENT_LEADING * zoom));
   }
 }
 

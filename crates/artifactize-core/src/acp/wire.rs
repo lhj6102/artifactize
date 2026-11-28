@@ -6,7 +6,10 @@
 
 use std::{
     path::Path,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
@@ -64,6 +67,10 @@ pub const MAX_PENDING_PERMISSIONS: usize = 16;
 pub const PERMISSION_DETAIL_BYTES: usize = 16 * 1024;
 /// Bounded FIFO channel capacity between the stdout reader task and the turn/connection owner.
 pub const UPDATE_CHANNEL_CAPACITY: usize = 256;
+/// Maximum buffered config/mode updates accumulated while awaiting an ACP control response.
+const MAX_CONFIG_UPDATES: usize = 64;
+/// Bounded deadline for writing a JSON-RPC frame to the child's stdin pipe.
+const STDIN_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Some Antigravity CLI versions print this line before returning an auth error.
 pub const AUTH_LINK_MARKER: &str = "Open the following link to authenticate the ACP server:";
 
@@ -91,14 +98,11 @@ pub struct AgentCapabilities {
     pub load_session: bool,
     pub logout_supported: bool,
     pub system_prompt_append: bool,
-    pub mcp_http: bool,
-    pub mcp_sse: bool,
 }
 
 /// Typed result of `initialize`.
 #[derive(Debug, Clone)]
 pub struct Initialized {
-    pub protocol_version: u32,
     pub capabilities: AgentCapabilities,
 }
 
@@ -207,6 +211,7 @@ pub enum WireFrame {
     PermissionRequest(IncomingPermission),
     UnknownServerRequest {
         id: RpcId,
+        #[cfg(test)]
         method: String,
     },
     Response {
@@ -224,6 +229,22 @@ pub enum WireFrame {
     ProtocolError(String),
 }
 
+/// Lock-free signals shared between the stdout reader task and [`Connection`] so quiescence and
+/// queued prompt-completion detection never miss buffered or redactor-held frames.
+#[derive(Default)]
+struct ReaderSignals {
+    /// Monotonically incremented for every non-whitespace stdout line read from the child,
+    /// including late thought chunks held inside the reader's redaction window.
+    rx_lines: AtomicU64,
+    /// True whenever the reader's thought redactor holds unemitted trailing bytes.
+    thought_pending: AtomicBool,
+    /// Active `session/prompt` request ID (0 when no prompt is active).
+    active_prompt_id: AtomicU64,
+    /// Set to true as soon as the stdout reader observes the active prompt's `Response`/`Error`,
+    /// or `Eof`/`SignedOut`/`ProtocolError`, so permission delivery never overtakes prompt end.
+    prompt_end_queued: AtomicBool,
+}
+
 /// Owned ACP JSON-RPC 2.0 stdio client with strict FIFO stdout reader barrier.
 pub struct Connection {
     id: u64,
@@ -232,10 +253,16 @@ pub struct Connection {
     redactor: StreamRedactor,
     write: ChildStdin,
     frames: mpsc::Receiver<WireFrame>,
+    buffered_frames: std::collections::VecDeque<WireFrame>,
     reader_task: JoinHandle<()>,
+    signals: Arc<ReaderSignals>,
+    parked_rx_lines: Option<u64>,
     next_request_id: u64,
     replaying: Option<LoadPhase>,
     capabilities: Option<AgentCapabilities>,
+    /// Option and mode changes the agent reported while a configuration request waited for its
+    /// answer, for [`Self::apply_config_options`] to take into account.
+    config_updates: Vec<(String, SessionEvent)>,
 }
 
 impl Connection {
@@ -249,23 +276,189 @@ impl Connection {
     ) -> Self {
         let id = NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = mpsc::channel(UPDATE_CHANNEL_CAPACITY);
-        let reader_task = tokio::spawn(stdout_reader_loop(stdout, tx, hide_always_options));
+        let redactor = StreamRedactor::new(known_secrets);
+        let signals = Arc::new(ReaderSignals::default());
+        let reader_task = tokio::spawn(stdout_reader_loop(
+            stdout,
+            tx,
+            hide_always_options,
+            redactor.clone(),
+            signals.clone(),
+        ));
         Self {
             id,
             agent_name: agent_name.into(),
             auth_hint: auth_hint.into(),
-            redactor: StreamRedactor::new(known_secrets),
+            redactor,
             write: stdin,
             frames: rx,
+            buffered_frames: std::collections::VecDeque::new(),
             reader_task,
+            signals,
+            parked_rx_lines: None,
             next_request_id: 0,
             replaying: None,
             capabilities: None,
+            config_updates: Vec::new(),
         }
     }
 
-    pub fn connection_id(&self) -> u64 {
-        self.id
+    /// Snapshot the stdout reader's received-line counter when parking a warm child so any later
+    /// line — even a partial thought chunk held in the reader's redaction window — disqualifies
+    /// warm reuse (`C-ONE-TURN-OWNERSHIP`).
+    pub fn mark_quiescent(&mut self) {
+        self.parked_rx_lines = Some(self.signals.rx_lines.load(Ordering::SeqCst));
+    }
+
+    /// Whether the parked child has stayed completely silent since the previous turn ended:
+    /// reader task alive, no queued or buffered unsolicited frames/requests, no pending bytes in
+    /// the reader's redaction window, no new stdout lines since parking, and channel open.
+    pub fn is_quiescent(&self) -> bool {
+        !self.reader_task.is_finished()
+            && self.buffered_frames.is_empty()
+            && self.frames.is_empty()
+            && !self.frames.is_closed()
+            && !self.signals.thought_pending.load(Ordering::SeqCst)
+            && self
+                .parked_rx_lines
+                .is_none_or(|seen| self.signals.rx_lines.load(Ordering::SeqCst) == seen)
+    }
+
+    /// Whether a prompt-ending frame (`Response`/`Error` for the active `session/prompt`, or
+    /// `Eof`/`SignedOut`/`ProtocolError`) has already been read by the stdout reader task and is
+    /// waiting in the FIFO queue (`C-ONE-TURN-OWNERSHIP`).
+    pub fn is_prompt_end_queued(&self) -> bool {
+        self.signals.prompt_end_queued.load(Ordering::SeqCst)
+    }
+
+    /// Clear active prompt tracking once the turn loop exits.
+    pub fn clear_active_prompt(&mut self) {
+        self.signals.active_prompt_id.store(0, Ordering::SeqCst);
+        self.signals
+            .prompt_end_queued
+            .store(false, Ordering::SeqCst);
+    }
+
+    /// Drain any config/mode updates already queued on stdout for `session_id` before approving
+    /// configuration or sending `session/prompt` (`C-NO-SILENT-REGRESSION`).
+    /// Any pre-prompt `session/request_permission` is immediately cancelled on the wire and never
+    /// buffered into `buffered_frames`, so a stale permission from an earlier turn can never be
+    /// accepted under the new turn's `Owner.token` (`C-ONE-TURN-OWNERSHIP`). Unknown server
+    /// requests are answered with `-32601`. Remaining non-config frames are preserved in FIFO
+    /// order in `buffered_frames`, strictly bounded by `UPDATE_CHANNEL_CAPACITY`
+    /// (`C-ACP-EDGE-ISOLATION`).
+    pub(crate) async fn drain_pending_config_updates(
+        &mut self,
+        session_id: &str,
+        live: &mut Vec<ConfigOption>,
+    ) -> Result<(), Problem> {
+        let mut kept = std::collections::VecDeque::new();
+        while let Some(frame) = self.buffered_frames.pop_front() {
+            if let Some(other) = self
+                .apply_or_keep_config_frame(session_id, live, frame)
+                .await?
+            {
+                kept.push_back(other);
+            }
+        }
+        let mut drained_all = false;
+        for _ in 0..UPDATE_CHANNEL_CAPACITY {
+            match self.frames.try_recv() {
+                Ok(frame) => {
+                    if let Some(other) = self
+                        .apply_or_keep_config_frame(session_id, live, frame)
+                        .await?
+                    {
+                        if kept.len() >= UPDATE_CHANNEL_CAPACITY {
+                            self.buffered_frames = kept;
+                            return Err(Problem::Failed(format!(
+                                "{} flooded ACP output before starting the turn.",
+                                self.agent_name
+                            )));
+                        }
+                        kept.push_back(other);
+                    }
+                }
+                Err(mpsc::error::TryRecvError::Empty) => {
+                    drained_all = true;
+                    break;
+                }
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    self.buffered_frames = kept;
+                    return Err(Problem::Failed(format!(
+                        "{} exited before starting the ACP turn.",
+                        self.agent_name
+                    )));
+                }
+            }
+        }
+        self.buffered_frames = kept;
+        if !drained_all {
+            match self.frames.try_recv() {
+                Err(mpsc::error::TryRecvError::Empty) => {}
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    return Err(Problem::Failed(format!(
+                        "{} exited before starting the ACP turn.",
+                        self.agent_name
+                    )));
+                }
+                Ok(_) => {
+                    return Err(Problem::Failed(format!(
+                        "{} flooded ACP output before starting the turn.",
+                        self.agent_name
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn apply_or_keep_config_frame(
+        &mut self,
+        session_id: &str,
+        live: &mut Vec<ConfigOption>,
+        frame: WireFrame,
+    ) -> Result<Option<WireFrame>, Problem> {
+        match frame {
+            WireFrame::Update {
+                session_id: update_sid,
+                event: SessionEvent::ConfigOptionsUpdated { options },
+            } if update_sid == session_id => {
+                *live = options;
+                Ok(None)
+            }
+            WireFrame::Update {
+                session_id: update_sid,
+                event: SessionEvent::ModeChanged { mode_id },
+            } if update_sid == session_id => {
+                if let Some(mode) = live
+                    .iter_mut()
+                    .find(|opt| opt.category == ConfigCategory::Mode)
+                {
+                    mode.current_value = mode_id;
+                }
+                Ok(None)
+            }
+            WireFrame::PermissionRequest(req) => {
+                // Never carry a pre-prompt permission request into the new turn's prompt loop.
+                self.send_permission_cancelled(req.rpc_id).await?;
+                Ok(None)
+            }
+            WireFrame::UnknownServerRequest { id, .. } => {
+                self.send_method_not_found(id).await?;
+                Ok(None)
+            }
+            WireFrame::SignedOut => Err(Problem::SignedOut {
+                agent: self.agent_name.clone(),
+                hint: self.auth_hint.clone(),
+            }),
+            WireFrame::Eof => Err(Problem::Failed(format!(
+                "{} exited before starting the ACP turn.",
+                self.agent_name
+            ))),
+            WireFrame::ProtocolError(msg) => Err(Problem::Failed(self.redactor.redact_all(&msg))),
+            other => Ok(Some(other)),
+        }
     }
 
     pub fn capabilities(&self) -> Option<&AgentCapabilities> {
@@ -292,14 +485,9 @@ impl Connection {
                 .system_prompt
                 .append
                 || result.agent_capabilities.meta.system_prompt.append,
-            mcp_http: result.agent_capabilities.mcp_capabilities.http,
-            mcp_sse: result.agent_capabilities.mcp_capabilities.sse,
         };
         self.capabilities = Some(capabilities.clone());
-        Ok(Initialized {
-            protocol_version: result.protocol_version,
-            capabilities,
-        })
+        Ok(Initialized { capabilities })
     }
 
     pub async fn session_new(
@@ -446,15 +634,15 @@ impl Connection {
         &mut self,
         session_id: &str,
         model_id: &str,
-    ) -> Result<(), Problem> {
-        let _: Value = self
+    ) -> Result<Option<String>, Problem> {
+        let result: Value = self
             .request_with_timeout(
                 "session/set_model",
                 json!({ "sessionId": session_id, "modelId": model_id }),
                 CONFIG_TIMEOUT,
             )
             .await?;
-        Ok(())
+        Ok(extract_confirmed_legacy_model(&result))
     }
 
     pub async fn set_legacy_mode(
@@ -482,16 +670,17 @@ impl Connection {
                         session_id: update_sid,
                         event,
                     } if update_sid == session_id => match event {
-                        SessionEvent::ModeChanged { mode_id } => {
-                            observed_mode = Some(mode_id);
+                        SessionEvent::ModeChanged { ref mode_id } => {
+                            observed_mode = (!mode_id.is_empty()).then(|| mode_id.clone());
+                            self.record_config_update(update_sid, event);
                         }
-                        SessionEvent::ConfigOptionsUpdated { options } => {
-                            if let Some(opt) = options
+                        // The newest list says which mode is current, or that none is.
+                        SessionEvent::ConfigOptionsUpdated { ref options } => {
+                            observed_mode = options
                                 .iter()
                                 .find(|opt| opt.category == ConfigCategory::Mode)
-                            {
-                                observed_mode = Some(opt.current_value.clone());
-                            }
+                                .map(|opt| opt.current_value.clone());
+                            self.record_config_update(update_sid, event);
                         }
                         _ => {}
                     },
@@ -548,26 +737,32 @@ impl Connection {
         requested: &[ConfigSelection],
     ) -> Result<AppliedConfig, Problem> {
         let mut live = session.config_options.clone();
+        self.config_updates.clear();
+        self.drain_pending_config_updates(&session.session_id, &mut live)
+            .await?;
         let mut notices = Vec::new();
-        let mut ordered: Vec<(u8, &ConfigSelection)> = requested
+        // Each selection's category as first read: a mode stays a mode even if a later refresh
+        // drops the option that named it.
+        // Whether the kind is known at all: saved with the selection or read off a live option.
+        let mut ordered: Vec<(u8, ConfigCategory, bool, &ConfigSelection)> = requested
             .iter()
             .map(|sel| {
-                let category = sel
-                    .category
-                    .or_else(|| {
-                        live.iter()
-                            .find(|opt| opt.id == sel.id)
-                            .map(|opt| opt.category)
-                    })
-                    .unwrap_or_else(|| infer_category(&sel.id, None));
-                (category.apply_rank(), sel)
+                let known = sel.category.or_else(|| {
+                    live.iter()
+                        .find(|opt| opt.id == sel.id)
+                        .map(|opt| opt.category)
+                });
+                let category = known.unwrap_or_else(|| infer_category(&sel.id, None));
+                (category.apply_rank(), category, known.is_some(), sel)
             })
             .collect();
-        ordered.sort_by_key(|(rank, _)| *rank);
+        ordered.sort_by_key(|(rank, _, _, _)| *rank);
 
         let mut effective = Vec::new();
-        for (_, selection) in ordered {
-            let inferred_cat = selection
+        // The modes asked for, by option ID: a later setter can replace the whole list.
+        let mut modes = Vec::new();
+        for (_, first_category, known, selection) in ordered {
+            let refreshed = selection
                 .category
                 .or_else(|| {
                     live.iter()
@@ -575,13 +770,24 @@ impl Connection {
                         .map(|opt| opt.category)
                 })
                 .unwrap_or_else(|| infer_category(&selection.id, None));
+            let inferred_cat = if first_category == ConfigCategory::Mode {
+                ConfigCategory::Mode
+            } else {
+                refreshed
+            };
 
+            // Match the exact selected option ID first. Only non-Mode options may fall back to
+            // matching by category (e.g. a migrated legacy `model` / `thought_level` selection);
+            // a Mode selection never silently substitutes another Mode option (`C-NO-SILENT-REGRESSION`).
             let Some(current_opt) = live
                 .iter()
-                .find(|opt| {
-                    opt.id == selection.id
-                        || (selection.category.is_some()
-                            && Some(opt.category) == selection.category)
+                .find(|opt| opt.id == selection.id)
+                .or_else(|| {
+                    (inferred_cat != ConfigCategory::Mode)
+                        .then_some(selection.category)
+                        .flatten()
+                        .filter(|cat| *cat != ConfigCategory::Other)
+                        .and_then(|cat| live.iter().find(|opt| opt.category == cat))
                 })
                 .cloned()
             else {
@@ -591,6 +797,14 @@ impl Connection {
                         actual: None,
                     });
                 }
+                // Neither saved nor advertised with a kind, it could have been the mode the
+                // person chose; the turn stops rather than run under the agent default.
+                if !known {
+                    return Err(Problem::Failed(format!(
+                        "{} no longer offers the saved option {:?}, which could have been its mode; choose the agent's options again.",
+                        self.agent_name, selection.id
+                    )));
+                }
                 notices.push(format!(
                     "Saved option {:?} is no longer advertised by {}; using the agent default.",
                     selection.id, self.agent_name
@@ -598,8 +812,30 @@ impl Connection {
                 continue;
             };
 
-            let is_mode = current_opt.category == ConfigCategory::Mode
-                || inferred_cat == ConfigCategory::Mode;
+            // A mode is satisfied only by an option the agent calls a mode; another option with
+            // the same ID never stands in for it. Likewise, a legacy saved selection with no
+            // recorded category (whose ID is not unambiguously model/thought_level) could have
+            // been saved as a mode: refuse to let the agent reclassify it as non-mode.
+            if inferred_cat == ConfigCategory::Mode && current_opt.category != ConfigCategory::Mode
+            {
+                return Err(Problem::ModeMismatch {
+                    requested: selection.value.clone(),
+                    actual: None,
+                });
+            }
+            if selection.category.is_none()
+                && current_opt.category != ConfigCategory::Mode
+                && !matches!(
+                    infer_category(&selection.id, None),
+                    ConfigCategory::Model | ConfigCategory::ThoughtLevel
+                )
+            {
+                return Err(Problem::Failed(format!(
+                    "Saved option {:?} on {} has no recorded category and may have been a mode; choose the agent's options again.",
+                    selection.id, self.agent_name
+                )));
+            }
+            let is_mode = current_opt.category == ConfigCategory::Mode;
             let choice_exists = current_opt
                 .choices
                 .iter()
@@ -625,11 +861,14 @@ impl Connection {
 
             if current_opt.current_value != selection.value {
                 if session.uses_legacy_models && current_opt.category == ConfigCategory::Model {
-                    self.set_legacy_model(&session.session_id, &selection.value)
+                    let confirmed = self
+                        .set_legacy_model(&session.session_id, &selection.value)
                         .await?;
+                    let actual_model = confirmed.unwrap_or_else(|| selection.value.clone());
                     if let Some(opt) = live.iter_mut().find(|opt| opt.id == current_opt.id) {
-                        opt.current_value = selection.value.clone();
+                        opt.current_value = actual_model;
                     }
+                    self.absorb_config_updates(&session.session_id, &mut live);
                 } else if session.uses_legacy_modes && is_mode {
                     let confirmed = self
                         .set_legacy_mode(&session.session_id, &selection.value)
@@ -643,10 +882,13 @@ impl Connection {
                     if let Some(opt) = live.iter_mut().find(|opt| opt.id == current_opt.id) {
                         opt.current_value = selection.value.clone();
                     }
+                    self.absorb_config_updates(&session.session_id, &mut live);
                 } else {
                     live = self
                         .set_config_option(&session.session_id, &current_opt.id, &selection.value)
                         .await?;
+                    // The answer is newer than anything reported while it was awaited.
+                    self.config_updates.clear();
                     let confirmed = live
                         .iter()
                         .find(|opt| opt.id == current_opt.id)
@@ -665,18 +907,66 @@ impl Connection {
                     }
                 }
             }
+            if is_mode {
+                modes.push((current_opt.id.clone(), selection.value.clone()));
+            }
             effective.push(ConfigSelection {
                 id: current_opt.id,
                 value: selection.value.clone(),
                 category: Some(current_opt.category),
             });
         }
+        // Drain any mode or config updates already queued on stdout before approving the final
+        // configuration so a late mode change after `session/new` / `session/load` or setter
+        // aborts before `session/prompt` is sent (`C-NO-SILENT-REGRESSION`).
+        self.drain_pending_config_updates(&session.session_id, &mut live)
+            .await?;
+        for (id, requested) in modes {
+            let actual = live
+                .iter()
+                .find(|opt| opt.id == id && opt.category == ConfigCategory::Mode)
+                .map(|opt| opt.current_value.clone());
+            if actual.as_deref() != Some(requested.as_str()) {
+                return Err(Problem::ModeMismatch { requested, actual });
+            }
+        }
+        // Recheck already-confirmed non-mode options (model, thought level, etc.): a later setter
+        // or update may replace the full live option list and reset an earlier choice, which must
+        // surface explicitly rather than proceed silently.
+        notices.extend(reconcile_non_mode_options(
+            &self.agent_name,
+            &live,
+            &mut effective,
+        ));
 
         Ok(AppliedConfig {
             live_options: live,
             effective_selections: effective,
             notices,
         })
+    }
+
+    /// Take in what the agent reported for `session_id` while a legacy setter waited: a replaced
+    /// option list, or a mode it switched to. Another session's updates say nothing of this one.
+    fn absorb_config_updates(&mut self, session_id: &str, live: &mut Vec<ConfigOption>) {
+        let updates = std::mem::take(&mut self.config_updates);
+        for (_, event) in updates
+            .into_iter()
+            .filter(|(update_session, _)| update_session == session_id)
+        {
+            match event {
+                SessionEvent::ConfigOptionsUpdated { options } => *live = options,
+                SessionEvent::ModeChanged { mode_id } => {
+                    if let Some(mode) = live
+                        .iter_mut()
+                        .find(|opt| opt.category == ConfigCategory::Mode)
+                    {
+                        mode.current_value = mode_id;
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Inspect advertised models (and per-model thought levels when supported) for probes/CLI.
@@ -742,14 +1032,26 @@ impl Connection {
     }
 
     pub async fn start_prompt(&mut self, session_id: &str, text: &str) -> Result<u64, Problem> {
-        self.send_request(
-            "session/prompt",
-            json!({
-                "sessionId": session_id,
-                "prompt": [{ "type": "text", "text": text }],
-            }),
-        )
-        .await
+        let next_id = self.next_request_id + 1;
+        self.signals
+            .prompt_end_queued
+            .store(false, Ordering::SeqCst);
+        self.signals
+            .active_prompt_id
+            .store(next_id, Ordering::SeqCst);
+        let result = self
+            .send_request(
+                "session/prompt",
+                json!({
+                    "sessionId": session_id,
+                    "prompt": [{ "type": "text", "text": text }],
+                }),
+            )
+            .await;
+        if result.is_err() {
+            self.clear_active_prompt();
+        }
+        result
     }
 
     /// Receive the next FIFO frame while a prompt is active. Automatically answers unknown
@@ -910,6 +1212,12 @@ impl Connection {
                     WireFrame::ProtocolError(msg) => {
                         return Err(Problem::Failed(self.redactor.redact_all(&msg)));
                     }
+                    WireFrame::Update {
+                        session_id,
+                        event:
+                            event @ (SessionEvent::ConfigOptionsUpdated { .. }
+                            | SessionEvent::ModeChanged { .. }),
+                    } => self.record_config_update(session_id, event),
                     WireFrame::Update { .. }
                     | WireFrame::Response { .. }
                     | WireFrame::Error { .. } => {}
@@ -923,6 +1231,26 @@ impl Connection {
                 self.agent_name
             )))
         })
+    }
+
+    fn record_config_update(&mut self, session_id: String, event: SessionEvent) {
+        match &event {
+            SessionEvent::ConfigOptionsUpdated { .. } => {
+                // A full option list supersedes every earlier config/mode update for this session.
+                self.config_updates.retain(|(sid, _)| sid != &session_id);
+            }
+            SessionEvent::ModeChanged { .. } => {
+                // Only the latest mode change for this session matters after any full list.
+                self.config_updates.retain(|(sid, existing)| {
+                    !(sid == &session_id && matches!(existing, SessionEvent::ModeChanged { .. }))
+                });
+            }
+            _ => return,
+        }
+        if self.config_updates.len() >= MAX_CONFIG_UPDATES {
+            self.config_updates.remove(0);
+        }
+        self.config_updates.push((session_id, event));
     }
 
     async fn send_request(&mut self, method: &str, params: Value) -> Result<u64, Problem> {
@@ -941,16 +1269,30 @@ impl Connection {
     async fn send_json(&mut self, value: &Value) -> Result<(), Problem> {
         let mut bytes = value.to_string().into_bytes();
         bytes.push(b'\n');
-        self.write.write_all(&bytes).await.map_err(|_| {
-            Problem::Failed(format!("{} stopped reading ACP input.", self.agent_name))
-        })?;
-        self.write
-            .flush()
-            .await
-            .map_err(|_| Problem::Failed(format!("{} stopped reading ACP input.", self.agent_name)))
+        let agent_name = self.agent_name.clone();
+        tokio::time::timeout(STDIN_WRITE_TIMEOUT, async {
+            self.write
+                .write_all(&bytes)
+                .await
+                .map_err(|_| Problem::Failed(format!("{agent_name} stopped reading ACP input.")))?;
+            self.write
+                .flush()
+                .await
+                .map_err(|_| Problem::Failed(format!("{agent_name} stopped reading ACP input.")))
+        })
+        .await
+        .unwrap_or_else(|_| {
+            Err(Problem::Failed(format!(
+                "{} timed out reading ACP input.",
+                self.agent_name
+            )))
+        })
     }
 
     async fn next_raw_frame(&mut self, method: &str) -> Result<WireFrame, Problem> {
+        if let Some(frame) = self.buffered_frames.pop_front() {
+            return Ok(frame);
+        }
         self.frames.recv().await.ok_or_else(|| {
             Problem::Failed(format!(
                 "{} exited while handling ACP {method}.",
@@ -1019,6 +1361,40 @@ fn classify_rpc_error(
     })
 }
 
+/// Extract a confirmed model ID from a legacy `session/set_model` JSON-RPC result when present.
+fn extract_confirmed_legacy_model(result: &Value) -> Option<String> {
+    if let Some(model) = result
+        .get("currentModelId")
+        .or_else(|| result.get("modelId"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+        return Some(model.to_owned());
+    }
+    if let Some(model) = result
+        .get("models")
+        .and_then(|m| m.get("currentModelId"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+        return Some(model.to_owned());
+    }
+    if let Some(raw_opts) = result.get("configOptions").and_then(Value::as_array) {
+        let parsed: Vec<RawConfigOption> = raw_opts
+            .iter()
+            .filter_map(|v| serde_json::from_value(v.clone()).ok())
+            .collect();
+        let options = normalize_config_options(parsed);
+        if let Some(opt) = options
+            .into_iter()
+            .find(|opt| opt.category == ConfigCategory::Model && !opt.current_value.is_empty())
+        {
+            return Some(opt.current_value);
+        }
+    }
+    None
+}
+
 /// Extract a confirmed mode ID from a legacy `session/set_mode` JSON-RPC result when present.
 fn extract_confirmed_legacy_mode(result: &Value) -> Option<String> {
     if let Some(mode) = result
@@ -1059,6 +1435,43 @@ impl Drop for Connection {
     }
 }
 
+/// Reconcile active non-mode selections (model, thought level, etc.) against a newly received
+/// `live` option list, returning explicit fallback notices for any option that changed or was
+/// dropped (`C-NO-SILENT-REGRESSION`).
+pub(crate) fn reconcile_non_mode_options(
+    agent_name: &str,
+    live: &[ConfigOption],
+    selections: &mut Vec<ConfigSelection>,
+) -> Vec<String> {
+    let mut notices = Vec::new();
+    let mut reconciled = Vec::with_capacity(selections.len());
+    for mut selection in std::mem::take(selections) {
+        if selection.category == Some(ConfigCategory::Mode) {
+            reconciled.push(selection);
+            continue;
+        }
+        match live.iter().find(|opt| opt.id == selection.id) {
+            Some(opt) if opt.current_value != selection.value => {
+                notices.push(format!(
+                    "{agent_name} changed {} from {:?} to {:?}.",
+                    opt.name, selection.value, opt.current_value
+                ));
+                selection.value = opt.current_value.clone();
+                reconciled.push(selection);
+            }
+            Some(_) => reconciled.push(selection),
+            None => {
+                notices.push(format!(
+                    "{agent_name} dropped {} {:?}.",
+                    selection.id, selection.value
+                ));
+            }
+        }
+    }
+    *selections = reconciled;
+    notices
+}
+
 /// Frames surfaced to the turn runner during an active `session/prompt`.
 #[derive(Debug)]
 pub enum PromptFrame {
@@ -1072,10 +1485,34 @@ async fn stdout_reader_loop(
     stdout: ChildStdout,
     tx: mpsc::Sender<WireFrame>,
     hide_always_options: bool,
+    redactor: StreamRedactor,
+    signals: Arc<ReaderSignals>,
 ) {
     let mut reader = BufReader::new(stdout);
     let mut line = Vec::new();
     let mut dropped_display_deltas: usize = 0;
+    // Redact thought deltas across chunk boundaries BEFORE `try_send` so dropping a delta on a
+    // full channel can never leave half of a split secret unredacted (`C-ACP-EDGE-ISOLATION`).
+    let mut thought_redactor = redactor.clone();
+    let mut thought_session: Option<String> = None;
+
+    let try_emit_thought =
+        |tx: &mpsc::Sender<WireFrame>, sid: String, text: String, dropped: &mut usize| -> bool {
+            if text.is_empty() {
+                return true;
+            }
+            match tx.try_send(WireFrame::Update {
+                session_id: sid,
+                event: SessionEvent::AgentThoughtChunk { text },
+            }) {
+                Ok(()) => true,
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    *dropped += 1;
+                    true
+                }
+                Err(mpsc::error::TrySendError::Closed(_)) => false,
+            }
+        };
 
     loop {
         line.clear();
@@ -1086,6 +1523,7 @@ async fn stdout_reader_loop(
         {
             Ok(count) => count,
             Err(error) => {
+                signals.prompt_end_queued.store(true, Ordering::SeqCst);
                 let _ = tx
                     .send(WireFrame::ProtocolError(format!(
                         "Cannot read ACP output: {error}."
@@ -1095,10 +1533,22 @@ async fn stdout_reader_loop(
             }
         };
         if read == 0 {
+            let tail = thought_redactor.flush();
+            signals
+                .thought_pending
+                .store(thought_redactor.has_pending(), Ordering::SeqCst);
+            if let Some(sid) = thought_session.take()
+                && !try_emit_thought(&tx, sid, tail, &mut dropped_display_deltas)
+            {
+                return;
+            }
+            signals.prompt_end_queued.store(true, Ordering::SeqCst);
             let _ = tx.send(WireFrame::Eof).await;
             return;
         }
         if line.len() as u64 > LINE_BYTES {
+            signals.rx_lines.fetch_add(1, Ordering::SeqCst);
+            signals.prompt_end_queued.store(true, Ordering::SeqCst);
             let _ = tx
                 .send(WireFrame::ProtocolError(
                     "ACP agent wrote an oversized message (> 32 MiB).".into(),
@@ -1109,16 +1559,90 @@ async fn stdout_reader_loop(
         if line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
+        signals.rx_lines.fetch_add(1, Ordering::SeqCst);
         if line.starts_with(AUTH_LINK_MARKER.as_bytes()) {
+            signals.prompt_end_queued.store(true, Ordering::SeqCst);
             let _ = tx.send(WireFrame::SignedOut).await;
             return;
         }
-        let parsed = match parse_wire_frame(&line, hide_always_options) {
+        let parsed = match parse_wire_frame(&line, hide_always_options, &redactor) {
             Ok(Some(frame)) => frame,
             Ok(None) => continue,
             Err(error) => {
+                signals.prompt_end_queued.store(true, Ordering::SeqCst);
                 let _ = tx.send(WireFrame::ProtocolError(error)).await;
                 return;
+            }
+        };
+
+        let active_prompt = signals.active_prompt_id.load(Ordering::SeqCst);
+        if active_prompt != 0
+            && matches!(
+                &parsed,
+                WireFrame::Response { id, .. } | WireFrame::Error { id, .. } if *id == active_prompt
+            )
+        {
+            signals.prompt_end_queued.store(true, Ordering::SeqCst);
+        }
+
+        let parsed = match parsed {
+            WireFrame::Update {
+                session_id,
+                event: SessionEvent::AgentThoughtChunk { text },
+            } => {
+                if thought_session.as_deref() != Some(session_id.as_str()) {
+                    let prev_tail = thought_redactor.flush();
+                    signals
+                        .thought_pending
+                        .store(thought_redactor.has_pending(), Ordering::SeqCst);
+                    if let Some(prev_sid) = thought_session.replace(session_id.clone())
+                        && !try_emit_thought(&tx, prev_sid, prev_tail, &mut dropped_display_deltas)
+                    {
+                        return;
+                    }
+                }
+                let safe = thought_redactor.push(&text);
+                signals
+                    .thought_pending
+                    .store(thought_redactor.has_pending(), Ordering::SeqCst);
+                if safe.is_empty() {
+                    continue;
+                }
+                WireFrame::Update {
+                    session_id,
+                    event: SessionEvent::AgentThoughtChunk { text: safe },
+                }
+            }
+            other => {
+                let is_boundary = matches!(
+                    other,
+                    WireFrame::Response { .. }
+                        | WireFrame::Error { .. }
+                        | WireFrame::SignedOut
+                        | WireFrame::Eof
+                );
+                let tail = if is_boundary {
+                    thought_redactor.flush()
+                } else {
+                    thought_redactor.release()
+                };
+                signals
+                    .thought_pending
+                    .store(thought_redactor.has_pending(), Ordering::SeqCst);
+                if !tail.is_empty()
+                    && let Some(sid) = if is_boundary {
+                        thought_session.take()
+                    } else {
+                        thought_session.clone()
+                    }
+                    && !try_emit_thought(&tx, sid, tail, &mut dropped_display_deltas)
+                {
+                    return;
+                }
+                if is_boundary {
+                    thought_session = None;
+                }
+                other
             }
         };
 
@@ -1173,6 +1697,7 @@ fn is_non_essential_display_delta(frame: &WireFrame) -> bool {
 pub(crate) fn parse_wire_frame(
     bytes: &[u8],
     hide_always_options: bool,
+    redactor: &StreamRedactor,
 ) -> Result<Option<WireFrame>, String> {
     let incoming: RawIncoming = serde_json::from_slice(bytes)
         .map_err(|error| format!("ACP agent wrote an invalid JSON-RPC message: {error}."))?;
@@ -1186,9 +1711,16 @@ pub(crate) fn parse_wire_frame(
                     id,
                     parsed,
                     hide_always_options,
+                    redactor,
                 ))))
             } else {
-                Ok(Some(WireFrame::UnknownServerRequest { id, method }))
+                #[cfg(not(test))]
+                let _ = method;
+                Ok(Some(WireFrame::UnknownServerRequest {
+                    id,
+                    #[cfg(test)]
+                    method,
+                }))
             }
         }
         RawIncoming::Notification { method, params } => {
@@ -1198,7 +1730,7 @@ pub(crate) fn parse_wire_frame(
             let update: RawUpdateNotification = serde_json::from_value(params)
                 .map_err(|_| "ACP agent sent malformed session/update notification.".to_owned())?;
             Ok(
-                normalize_update(update.update).map(|event| WireFrame::Update {
+                normalize_update(update.update, redactor).map(|event| WireFrame::Update {
                     session_id: update.session_id,
                     event,
                 }),
@@ -1352,19 +1884,9 @@ struct RawCapabilities {
     #[serde(default)]
     load_session: bool,
     #[serde(default)]
-    mcp_capabilities: RawMcpCapabilities,
-    #[serde(default)]
     auth: RawAuthCapabilities,
     #[serde(default, rename = "_meta")]
     meta: RawAgentMeta,
-}
-
-#[derive(Default, Deserialize)]
-struct RawMcpCapabilities {
-    #[serde(default)]
-    http: bool,
-    #[serde(default)]
-    sse: bool,
 }
 
 #[derive(Default, Deserialize)]
@@ -1772,7 +2294,43 @@ struct RawPermissionToolCall {
     #[serde(default)]
     locations: Vec<RawToolLocation>,
     #[serde(default)]
-    raw_input: Option<Value>,
+    raw_input: Option<RawPermissionInput>,
+}
+
+/// Typed display subset extracted from ACP `toolCall.rawInput` at the edge; unknown JSON shapes
+/// and unparsed fields are discarded rather than forwarded into public `Block::Permission.detail`.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawPermissionInput {
+    Text(String),
+    Fields(RawPermissionFields),
+    Other(serde::de::IgnoredAny),
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawCommandField {
+    Text(String),
+    Argv(Vec<String>),
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawPermissionFields {
+    #[serde(default, alias = "cmd")]
+    command: Option<RawCommandField>,
+    #[serde(default)]
+    program: Option<String>,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(default, alias = "filePath", alias = "file_path")]
+    path: Option<String>,
+    #[serde(default)]
+    cwd: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1818,7 +2376,10 @@ fn map_plan_status(status: Option<&str>) -> PlanStepStatus {
     }
 }
 
-fn extract_tool_content(items: Vec<RawToolContent>) -> (Option<String>, Option<ToolDiff>, bool) {
+fn extract_tool_content(
+    items: Vec<RawToolContent>,
+    redactor: &StreamRedactor,
+) -> (Option<String>, Option<ToolDiff>, bool) {
     let mut output_parts = Vec::new();
     let mut diff = None;
     for item in items {
@@ -1831,9 +2392,9 @@ fn extract_tool_content(items: Vec<RawToolContent>) -> (Option<String>, Option<T
                 old_text,
                 new_text,
             } => {
-                let (old_text, new_text, truncated) = bound_diff(old_text, new_text);
+                let (old_text, new_text, truncated) = bound_diff(old_text, new_text, redactor);
                 diff = Some(ToolDiff {
-                    path: platform::normalize_external_path(&path),
+                    path: redactor.redact_all(&platform::normalize_external_path(&path)),
                     old_text,
                     new_text,
                     truncated,
@@ -1845,22 +2406,30 @@ fn extract_tool_content(items: Vec<RawToolContent>) -> (Option<String>, Option<T
     if output_parts.is_empty() {
         (None, diff, false)
     } else {
-        let joined = output_parts.join("\n");
+        // Redact BEFORE truncating so a secret straddling the cap boundary is replaced cleanly
+        // and `[REDACTED]` expansion never exceeds `TOOL_OUTPUT_BYTES` (`C-ACP-EDGE-ISOLATION`).
+        let joined = redactor.redact_all(&output_parts.join("\n"));
         let (bounded, truncated) = bound_text(&joined, TOOL_OUTPUT_BYTES);
         (Some(bounded), diff, truncated)
     }
 }
 
-fn bound_diff(old_text: Option<String>, new_text: String) -> (Option<String>, String, bool) {
+fn bound_diff(
+    old_text: Option<String>,
+    new_text: String,
+    redactor: &StreamRedactor,
+) -> (Option<String>, String, bool) {
     let half = DIFF_BYTES / 2;
     let (old_bounded, old_trunc) = match old_text {
         Some(text) => {
-            let (b, t) = bound_text(&text, half);
+            let redacted = redactor.redact_all(&text);
+            let (b, t) = bound_text(&redacted, half);
             (Some(b), t)
         }
         None => (None, false),
     };
-    let (new_bounded, new_trunc) = bound_text(&new_text, DIFF_BYTES.saturating_sub(half));
+    let redacted_new = redactor.redact_all(&new_text);
+    let (new_bounded, new_trunc) = bound_text(&redacted_new, DIFF_BYTES.saturating_sub(half));
     (old_bounded, new_bounded, old_trunc || new_trunc)
 }
 
@@ -1875,7 +2444,7 @@ pub(crate) fn bound_text(text: &str, max_bytes: usize) -> (String, bool) {
     (text[..end].to_owned(), true)
 }
 
-fn normalize_update(raw: RawUpdate) -> Option<SessionEvent> {
+fn normalize_update(raw: RawUpdate, redactor: &StreamRedactor) -> Option<SessionEvent> {
     match raw {
         RawUpdate::AgentMessageChunk {
             content: RawContentBlock::Text { text },
@@ -1891,7 +2460,7 @@ fn normalize_update(raw: RawUpdate) -> Option<SessionEvent> {
             locations,
             content,
         } => {
-            let (output, diff, output_truncated) = extract_tool_content(content);
+            let (output, diff, output_truncated) = extract_tool_content(content, redactor);
             let locations: Vec<ToolLocation> = locations
                 .into_iter()
                 .map(|loc| ToolLocation {
@@ -1927,7 +2496,7 @@ fn normalize_update(raw: RawUpdate) -> Option<SessionEvent> {
             content,
         } => {
             let (output, diff, output_truncated) = content
-                .map(extract_tool_content)
+                .map(|items| extract_tool_content(items, redactor))
                 .unwrap_or((None, None, false));
             let locations = locations.map(|locs| {
                 locs.into_iter()
@@ -1965,19 +2534,82 @@ fn normalize_update(raw: RawUpdate) -> Option<SessionEvent> {
                 options: normalize_config_options(config_options),
             })
         }
-        RawUpdate::CurrentModeUpdate { current_mode_id } if !current_mode_id.is_empty() => {
-            Some(SessionEvent::ModeChanged {
-                mode_id: current_mode_id,
-            })
-        }
+        RawUpdate::CurrentModeUpdate { current_mode_id } => Some(SessionEvent::ModeChanged {
+            mode_id: current_mode_id,
+        }),
         _ => None,
     }
+}
+
+fn format_permission_detail(
+    input: RawPermissionInput,
+    redactor: &StreamRedactor,
+) -> Option<String> {
+    let raw = match input {
+        RawPermissionInput::Text(text) => text,
+        RawPermissionInput::Fields(fields) => {
+            let mut lines = Vec::new();
+            if let Some(command) = fields.command {
+                let text = match command {
+                    RawCommandField::Text(s) => s,
+                    RawCommandField::Argv(argv) => argv.join(" "),
+                };
+                if !text.trim().is_empty() {
+                    lines.push(("Command", text));
+                }
+            } else if let Some(program) = fields.program
+                && !program.trim().is_empty()
+            {
+                let text = if fields.args.is_empty() {
+                    program
+                } else {
+                    format!("{program} {}", fields.args.join(" "))
+                };
+                lines.push(("Command", text));
+            }
+            if let Some(path) = fields.path
+                && !path.trim().is_empty()
+            {
+                lines.push(("Path", platform::normalize_external_path(&path)));
+            }
+            if let Some(cwd) = fields.cwd
+                && !cwd.trim().is_empty()
+            {
+                lines.push(("Directory", platform::normalize_external_path(&cwd)));
+            }
+            if let Some(url) = fields.url
+                && !url.trim().is_empty()
+            {
+                lines.push(("URL", url));
+            }
+            if let Some(description) = fields.description
+                && !description.trim().is_empty()
+            {
+                lines.push(("Description", description));
+            }
+            match lines.as_slice() {
+                [] => return None,
+                [(_, only)] => only.clone(),
+                many => many
+                    .iter()
+                    .map(|(label, value)| format!("{label}: {value}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            }
+        }
+        RawPermissionInput::Other(_) => return None,
+    };
+    let cleaned = platform::clean_program_text(raw.as_bytes());
+    let redacted = redactor.redact_all(&cleaned);
+    let (bounded, _) = bound_text(&redacted, PERMISSION_DETAIL_BYTES);
+    (!bounded.trim().is_empty()).then_some(bounded)
 }
 
 fn normalize_permission(
     rpc_id: RpcId,
     raw: RawPermissionParams,
     hide_always_options: bool,
+    redactor: &StreamRedactor,
 ) -> IncomingPermission {
     let tool = raw.tool_call.unwrap_or(RawPermissionToolCall {
         title: None,
@@ -2006,18 +2638,9 @@ fn normalize_permission(
     } else {
         title.clone()
     };
-    let detail = tool.raw_input.and_then(|value| {
-        if value.is_null() {
-            return None;
-        }
-        let formatted = match value {
-            Value::String(text) => text,
-            other => serde_json::to_string_pretty(&other).unwrap_or_else(|_| other.to_string()),
-        };
-        let cleaned = platform::clean_program_text(formatted.as_bytes());
-        let (bounded, _) = bound_text(&cleaned, PERMISSION_DETAIL_BYTES);
-        (!bounded.trim().is_empty()).then_some(bounded)
-    });
+    let detail = tool
+        .raw_input
+        .and_then(|input| format_permission_detail(input, redactor));
     let options = raw
         .options
         .into_iter()
@@ -2138,7 +2761,8 @@ mod tests {
                 }
             }
         });
-        let frame = parse_wire_frame(thought_line.to_string().as_bytes(), false)
+        let no_secrets = StreamRedactor::new(Vec::<String>::new());
+        let frame = parse_wire_frame(thought_line.to_string().as_bytes(), false, &no_secrets)
             .unwrap()
             .unwrap();
         assert!(matches!(
@@ -2166,7 +2790,7 @@ mod tests {
                 ]
             }
         });
-        let frame = parse_wire_frame(perm_line.to_string().as_bytes(), false)
+        let frame = parse_wire_frame(perm_line.to_string().as_bytes(), false, &no_secrets)
             .unwrap()
             .unwrap();
         let WireFrame::PermissionRequest(req) = frame else {
@@ -2177,7 +2801,7 @@ mod tests {
         assert!(req.options[1].persists_in_agent_settings);
 
         // When a preset hides always options with unverified persistence scopes:
-        let frame_hidden = parse_wire_frame(perm_line.to_string().as_bytes(), true)
+        let frame_hidden = parse_wire_frame(perm_line.to_string().as_bytes(), true, &no_secrets)
             .unwrap()
             .unwrap();
         let WireFrame::PermissionRequest(req_hidden) = frame_hidden else {
@@ -2193,7 +2817,7 @@ mod tests {
             "method": "fs/read_text_file",
             "params": {}
         });
-        let frame = parse_wire_frame(unknown.to_string().as_bytes(), false)
+        let frame = parse_wire_frame(unknown.to_string().as_bytes(), false, &no_secrets)
             .unwrap()
             .unwrap();
         assert!(matches!(
@@ -2258,5 +2882,121 @@ mod tests {
         };
         assert!(!msg.contains("sk-acp-super-secret-value-999"), "{msg}");
         assert!(msg.contains("[REDACTED]"), "{msg}");
+    }
+
+    #[test]
+    fn empty_current_mode_update_is_forwarded_and_raw_input_is_typed() {
+        let no_secrets = StreamRedactor::new(Vec::<String>::new());
+        let mode_update = json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": "s1",
+                "update": {
+                    "sessionUpdate": "current_mode_update",
+                    "currentModeId": ""
+                }
+            }
+        });
+        let frame = parse_wire_frame(mode_update.to_string().as_bytes(), false, &no_secrets)
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            frame,
+            WireFrame::Update {
+                event: SessionEvent::ModeChanged { ref mode_id },
+                ..
+            } if mode_id.is_empty()
+        ));
+
+        let perm_typed = json!({
+            "jsonrpc": "2.0",
+            "id": "rpc-1",
+            "method": "session/request_permission",
+            "params": {
+                "sessionId": "s1",
+                "toolCall": {
+                    "title": "Run tests",
+                    "kind": "execute",
+                    "rawInput": { "cmd": "cargo test", "arbitraryBlob": { "nested": true } }
+                },
+                "options": [
+                    { "optionId": "once", "name": "Allow once", "kind": "allow_once" }
+                ]
+            }
+        });
+        let WireFrame::PermissionRequest(req) =
+            parse_wire_frame(perm_typed.to_string().as_bytes(), false, &no_secrets)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected permission request");
+        };
+        assert_eq!(req.detail.as_deref(), Some("cargo test"));
+
+        let perm_unknown = json!({
+            "jsonrpc": "2.0",
+            "id": "rpc-2",
+            "method": "session/request_permission",
+            "params": {
+                "sessionId": "s1",
+                "toolCall": {
+                    "title": "Opaque tool",
+                    "kind": "other",
+                    "rawInput": { "opaque": [1, 2, 3] }
+                },
+                "options": [
+                    { "optionId": "once", "name": "Allow once", "kind": "allow_once" }
+                ]
+            }
+        });
+        let WireFrame::PermissionRequest(req_unknown) =
+            parse_wire_frame(perm_unknown.to_string().as_bytes(), false, &no_secrets)
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected permission request");
+        };
+        assert_eq!(req_unknown.detail, None);
+
+        // Secret straddling TOOL_OUTPUT_BYTES is redacted BEFORE truncation.
+        let secret = "sk-boundary-secret-token-xyz";
+        let boundary_redactor = StreamRedactor::new([secret.to_owned()]);
+        let prefix = "a".repeat(TOOL_OUTPUT_BYTES - 5);
+        let tool_line = json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": "s1",
+                "update": {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tc1",
+                    "title": "Dump",
+                    "kind": "execute",
+                    "status": "completed",
+                    "content": [{ "type": "content", "content": { "type": "text", "text": format!("{prefix}{secret}") } }]
+                }
+            }
+        });
+        let WireFrame::Update {
+            event:
+                SessionEvent::ToolCall {
+                    output: Some(output),
+                    output_truncated,
+                    ..
+                },
+            ..
+        } = parse_wire_frame(tool_line.to_string().as_bytes(), false, &boundary_redactor)
+            .unwrap()
+            .unwrap()
+        else {
+            panic!("expected tool_call update");
+        };
+        assert!(output_truncated);
+        assert!(output.len() <= TOOL_OUTPUT_BYTES);
+        assert!(
+            !output.contains("sk-bo"),
+            "secret prefix leaked across cap boundary"
+        );
     }
 }

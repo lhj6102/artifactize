@@ -71,7 +71,7 @@ pub struct LogEntry {
     /// The run, unique while the app runs.
     pub run: ToolRunKey,
     /// Its start, at milliseconds since the Unix epoch.
-    pub at: f64,
+    pub at: crate::ids::EpochMillis,
     pub operation: String,
     pub artifact: String,
     pub lines: Vec<LogText>,
@@ -90,7 +90,7 @@ pub struct LogText {
 fn entry(entry: &Entry) -> LogEntry {
     LogEntry {
         run: entry.run.into(),
-        at: (entry.at.unix_timestamp_nanos() / 1_000_000) as f64,
+        at: entry.at.into(),
         operation: entry.operation.clone(),
         artifact: entry.artifact.clone(),
         lines: entry

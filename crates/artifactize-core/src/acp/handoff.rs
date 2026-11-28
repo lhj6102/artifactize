@@ -95,47 +95,65 @@ pub fn build_handoff(
     }
 
     let header = "Prior conversation handoff (chronological summary; newest turns preserved if truncated):\n";
-    let mut budget = HANDOFF_MAX_BYTES.saturating_sub(header.len());
     let mut prefix = String::new();
+    let mut prefix_budget = HANDOFF_MAX_BYTES.saturating_sub(header.len());
     for section in sections {
         let piece = format!("{section}\n\n");
-        if piece.len() <= budget {
-            budget -= piece.len();
+        if piece.len() <= prefix_budget {
+            prefix_budget -= piece.len();
             prefix.push_str(&piece);
         }
     }
 
-    // Keep the most recent turns within the remaining deterministic 128 KiB byte budget.
-    let mut kept_rev = Vec::new();
-    let mut omitted = 0usize;
-    for entry in turn_entries.into_iter().rev() {
-        let needed = entry.len() + 2;
-        if needed <= budget {
-            budget -= needed;
-            kept_rev.push(entry);
-        } else if kept_rev.is_empty() && budget > 32 {
-            kept_rev.push(truncate_utf8(&entry, budget.saturating_sub(20)));
-            omitted += 1;
-        } else {
-            omitted += 1;
-        }
-    }
-    kept_rev.reverse();
-
+    let base_len = header.len() + prefix.len();
+    let total_turns_len: usize = turn_entries.iter().map(|entry| entry.len() + 2).sum();
     let mut out = String::with_capacity(HANDOFF_MAX_BYTES.min(4096));
     out.push_str(header);
     out.push_str(&prefix);
-    if omitted > 0 {
-        let note =
-            format!("[{omitted} earlier turn(s) omitted to stay within 128 KiB handoff cap]\n\n");
-        if out.len() + note.len() <= HANDOFF_MAX_BYTES {
-            out.push_str(&note);
-        }
-    }
-    for entry in kept_rev {
-        if out.len() + entry.len() + 2 <= HANDOFF_MAX_BYTES {
+
+    if base_len + total_turns_len <= HANDOFF_MAX_BYTES {
+        for entry in turn_entries {
             out.push_str(&entry);
             out.push_str("\n\n");
+        }
+    } else {
+        // Reserve space for the omission note upfront before packing or truncating the newest
+        // turn so the note can never push the only retained turn past the 128 KiB cap.
+        let max_note = format!(
+            "[{} earlier turn(s) omitted to stay within 128 KiB handoff cap]\n\n",
+            turn_entries.len()
+        );
+        let mut budget = HANDOFF_MAX_BYTES.saturating_sub(base_len + max_note.len());
+        let mut kept_rev = Vec::new();
+        let mut omitted = 0usize;
+        for entry in turn_entries.into_iter().rev() {
+            let needed = entry.len() + 2;
+            if needed <= budget {
+                budget -= needed;
+                kept_rev.push(entry);
+            } else if kept_rev.is_empty() && budget > 8 {
+                // `truncate_utf8` appends a 3-byte ellipsis (`…`), plus 2 bytes for `\n\n`.
+                let max_body = budget.saturating_sub(5);
+                kept_rev.push(truncate_utf8(&entry, max_body));
+                budget = 0;
+            } else {
+                omitted += 1;
+            }
+        }
+        kept_rev.reverse();
+        if omitted > 0 {
+            let note = format!(
+                "[{omitted} earlier turn(s) omitted to stay within 128 KiB handoff cap]\n\n"
+            );
+            if out.len() + note.len() <= HANDOFF_MAX_BYTES {
+                out.push_str(&note);
+            }
+        }
+        for entry in kept_rev {
+            if out.len() + entry.len() + 2 <= HANDOFF_MAX_BYTES {
+                out.push_str(&entry);
+                out.push_str("\n\n");
+            }
         }
     }
     let trimmed = out.trim_end().to_owned();
@@ -264,5 +282,19 @@ mod tests {
         assert!(handoff.len() <= HANDOFF_MAX_BYTES);
         assert!(handoff.contains("Prompt 6"));
         assert!(!handoff.contains("Prompt 1"));
+    }
+
+    #[test]
+    fn single_oversized_turn_is_truncated_and_preserved_within_128_kib() {
+        let huge = "y".repeat(200 * 1024);
+        let turns = vec![Turn {
+            user: "Explain the diff".into(),
+            blocks: vec![Block::Text { text: huge }],
+            state: TurnState::Completed,
+        }];
+        let handoff = build_handoff(&turns, None, Path::new("/repo")).unwrap();
+        assert!(handoff.len() <= HANDOFF_MAX_BYTES);
+        assert!(handoff.contains("Explain the diff"), "{handoff}");
+        assert!(handoff.contains("yyy"));
     }
 }

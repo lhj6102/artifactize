@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{platform, process, types::SessionId};
 
-use super::{AcpBinding, AgentId, Problem, engine::VerifiedAcpLaunch, wire::Connection};
+use super::{AcpBinding, AgentId, Problem, WarmOwner, engine::VerifiedAcpLaunch, wire::Connection};
 
 /// Bound idle warm child lifetime so Windows CWD locks do not outlive inactive sessions (`P-FILES`).
 pub const IDLE_TTL: Duration = Duration::from_secs(5 * 60);
@@ -36,6 +36,7 @@ pub struct WarmChild {
     pub generation: u64,
     pub executable_sha256: String,
     pub runtime_fingerprint: String,
+    pub(crate) cwd_identity: platform::FileIdentity,
     pub remote_session_id: Option<String>,
     pub connection: Connection,
     child: platform::Child,
@@ -55,33 +56,42 @@ impl WarmChild {
         generation: u64,
         worktree: &Path,
     ) -> Result<Self, Problem> {
-        launch.reverify_before_exec(worktree)?;
+        let (verified_file, verified_cwd) = launch.open_and_reverify_before_exec(worktree)?;
+        let cwd_identity = platform::file_identity(&verified_cwd).map_err(|error| {
+            Problem::Failed(format!(
+                "Cannot inspect ACP worktree {}: {error}.",
+                platform::path_text(worktree)
+            ))
+        })?;
         let spec = &launch.spec;
         let resolved_executable = &launch.fingerprint.resolved_executable;
         let executable_sha256 = launch.fingerprint.executable_sha256.clone();
         let runtime_fingerprint = launch.runtime_fingerprint.clone();
         let process_cancel = CancellationToken::new();
-        let command = process::Command {
-            program: resolved_executable.as_os_str().to_owned(),
-            args: spec.args.iter().map(Into::into).collect(),
-            cwd: worktree.to_path_buf(),
-            env: spec.build_env(true),
-            // Process supervision is decoupled from turn deadlines; spawn_supervised does not
-            // attach a fixed execution deadline to the child lifetime.
-            timeout: Duration::MAX,
-        };
-        let mut child = process::spawn_supervised(&command, &process_cancel)
-            .await
-            .map_err(|error| {
-                if matches!(&error, process::Error::Spawn(e) if e.kind() == std::io::ErrorKind::NotFound) {
-                    Problem::Missing {
-                        agent: spec.name.clone(),
-                        hint: spec.install_hint.clone(),
-                    }
-                } else {
-                    Problem::Failed(format!("Cannot start {}: {error}.", spec.name))
+        let args: Vec<std::ffi::OsString> = spec.args.iter().map(Into::into).collect();
+        let env = spec.build_env(true);
+        let mut child = process::spawn_verified_supervised(
+            resolved_executable,
+            verified_file,
+            &executable_sha256,
+            &args,
+            worktree,
+            verified_cwd,
+            &env,
+            &process_cancel,
+        )
+        .await
+        .map_err(|error| {
+            if matches!(&error, process::Error::Spawn(e) if e.kind() == std::io::ErrorKind::NotFound)
+            {
+                Problem::Missing {
+                    agent: spec.name.clone(),
+                    hint: spec.install_hint.clone(),
                 }
-            })?;
+            } else {
+                Problem::Failed(format!("Cannot start {}: {error}.", spec.name))
+            }
+        })?;
         let stdout = child.stdout().take().expect("ACP stdout piped");
         let stdin = child.stdin().take().expect("ACP stdin piped");
         let mut stderr = child.stderr().take().expect("ACP stderr piped");
@@ -113,6 +123,7 @@ impl WarmChild {
             generation,
             executable_sha256,
             runtime_fingerprint,
+            cwd_identity,
             remote_session_id: None,
             connection,
             child,
@@ -127,6 +138,7 @@ impl WarmChild {
         self.quiescent = true;
         self.remote_session_id = remote_session_id;
         self.last_used = Instant::now();
+        self.connection.mark_quiescent();
     }
 
     /// Terminate the process tree via `platform`/`process` (`P-ONE-LAYER`) and return captured stderr.
@@ -170,6 +182,7 @@ impl Pool {
         &self,
         session_id: &SessionId,
         binding: Option<&AcpBinding>,
+        owner: WarmOwner,
         agent_id: &AgentId,
         verified_sha256: &str,
         runtime_fingerprint: &str,
@@ -180,11 +193,13 @@ impl Pool {
         };
         let digest_mismatch = child.executable_sha256 != verified_sha256;
         let matches = child.quiescent
+            && child.connection.is_quiescent()
             && !digest_mismatch
             && child.agent_id == *agent_id
             && child.runtime_fingerprint == runtime_fingerprint
             && child.last_used.elapsed() < IDLE_TTL
-            && binding.is_some_and(|b| b.generation == child.generation);
+            && binding
+                .is_some_and(|b| b.generation == child.generation && b.warm_owner == Some(owner));
         if matches {
             child.quiescent = false;
             child.last_used = Instant::now();

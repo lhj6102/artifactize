@@ -54,7 +54,7 @@ pub fn tools() -> Vec<Tool> {
     vec![
         tool(
             ReadTool::Plugins,
-            "List built-in and installed project Artifact types.",
+            "List the built-in and installed plugins by namespace.",
             Map::new(),
             &[],
         ),
@@ -66,9 +66,9 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             PluginTool::Remove,
-            "Remove an installed Artifact type plugin by type name.",
-            object!({"type":string}),
-            &["type"],
+            "Remove an installed plugin by its namespace.",
+            object!({"namespace":string}),
+            &["namespace"],
         ),
         tool(
             VerifyTool::Start,
@@ -131,6 +131,18 @@ pub fn tools() -> Vec<Tool> {
         tool(
             ReadTool::Config,
             "Validate declarations, without hashing or executing project tools.",
+            Map::new(),
+            &[],
+        ),
+        tool(
+            ReadTool::Expand,
+            "Each Artifact's binding as written (file, line, macro) and the declaration it expands to, as .artf code with macros and toolsets filled in. One Artifact, or all.",
+            object!({"artifact":string}),
+            &[],
+        ),
+        tool(
+            ReadTool::Symbols,
+            "Every global binding of the project and its plugins: Artifacts, tools, profiles and evals, macros with their parameters and defaults, and where each is declared.",
             Map::new(),
             &[],
         ),
@@ -263,6 +275,8 @@ fn annotations(id: ToolId) -> Hints {
             Read::Graph
             | Read::Logs
             | Read::Config
+            | Read::Expand
+            | Read::Symbols
             | Read::Runs
             | Read::Run
             | Read::Requests

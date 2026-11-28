@@ -910,10 +910,7 @@ fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
             request_id: "run-lifecycle-fixture-1".parse().unwrap(),
             execution_id: "execution-run-lifecycle-fixture-1".parse().unwrap(),
             profile: artifactize_core::config::StoredProfile::from(eval.declaration.profile()),
-            options: artifactize_core::store::ExecutionOptions::new(
-                eval.declaration.profile(),
-                None,
-            ),
+            options: artifactize_core::store::ExecutionOptions::new(eval.declaration.profile()),
             execution_paths: pins.clone(),
             result: json!({"verdict":"GREEN"}).try_into().unwrap(),
             usage: None,
@@ -943,7 +940,7 @@ fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect();
-    for key in ["app_app.start", "app_app.stop"] {
+    for key in ["app-tools_app_app:start", "app-tools_app_app:stop"] {
         assert_eq!(pins[key]["harness.py"], expected);
     }
     let entries = server.entries();

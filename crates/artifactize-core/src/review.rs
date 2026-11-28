@@ -2,8 +2,6 @@
 
 mod detail;
 mod draft;
-mod form;
-mod reasons;
 mod runs;
 pub mod search;
 
@@ -11,10 +9,9 @@ pub mod search;
 pub use crate::{human::Submission, tools::human::log};
 pub use detail::{Stage, meta, outcome_text, shared, stage, technical};
 pub use draft::{
-    Draft, DraftEdit, DraftFields, EMPTY_REASON, FieldValue, Point, REASON_CHANGED, Readiness,
-    append_point, edit_draft, read_draft, remove_point, values_of,
+    Draft, DraftEdit, EMPTY_ISSUE, ISSUE_CHANGED, Point, Readiness, append_point, edit_draft,
+    read_draft, remove_point,
 };
-pub use form::{Field, Form, Input, Key, Row, Specification};
 pub use runs::Runs;
 
 use crate::{
@@ -207,6 +204,8 @@ impl Outcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tool {
     pub name: ToolName,
+    /// Its name as its toolset declares it: `release.notes`.
+    pub fqn: crate::config::ToolFqn,
     /// The Artifact that declares the tool.
     pub artifact: crate::types::ArtifactName,
     pub kind: HumanToolKind,
@@ -215,16 +214,10 @@ pub struct Tool {
 }
 
 impl Tool {
-    /// Its name in the Artifact that declares it: `open` of `notes` is `open_notes`.
+    /// Its name as a person reads it: the toolset's `release.notes`, whatever Artifact
+    /// composes it.
     pub fn operation(&self) -> &str {
-        Self::operation_of(&self.name, &self.artifact)
-    }
-
-    /// The name tool `name` has in `artifact`, which declares it.
-    pub fn operation_of<'a>(name: &'a ToolName, artifact: &crate::types::ArtifactName) -> &'a str {
-        name.as_str()
-            .strip_suffix(&format!("_{}", artifact))
-            .unwrap_or(name.as_str())
+        self.fqn.as_str()
     }
 
     /// What running the tool does, as the Tools pane shows it: a command's resolved line once
@@ -462,12 +455,11 @@ impl ArtifactDeclarations {
             .human_tools
             .iter()
             .map(|(operation, declaration)| {
-                let name: ToolName = format!("{operation}_{}", self.artifact)
-                    .parse()
-                    .expect("validated tool and Artifact names");
+                let name: ToolName = operation.published(self.artifact.as_str());
                 let command = registry.is_command(&name).then(|| registry.command(&name));
                 let tool = Tool {
                     name,
+                    fqn: operation.clone(),
                     artifact: self.artifact.clone(),
                     kind: declaration.kind(),
                     description: declaration
@@ -534,34 +526,25 @@ fn declared(
                 .and_then(|views| views.human_tools.value())
                 .into_iter()
                 .flatten()
-                // A saved name that is not a valid tool name has no tool to run; the
-                // registry, built from the same declarations, refuses it as well.
-                .filter_map(move |(operation, tool)| {
+                .map(move |(operation, tool)| {
                     let (kind, description) = match tool {
                         HumanTool::Command(tool) => (tool.kind, &tool.description),
                         HumanTool::Builtin(tool) => (tool.kind, &tool.description),
                         HumanTool::Viewer(tool) => (HumanToolKind::Viewer, &tool.description),
                     };
-                    Some(Tool {
-                        name: format!("{operation}_{}", id).parse().ok()?,
+                    Tool {
+                        name: operation.published(id.as_str()),
+                        fqn: operation.clone(),
                         artifact: id.clone(),
                         kind,
                         description: description.replace("{artifactName}", id.as_str()),
                         declared: Runs::parse(artifacts, id, tool),
-                    })
+                    }
                 })
         })
         .collect();
     tools.sort_by(|a, b| a.name.cmp(&b.name));
     tools
-}
-
-/// The typed specification of the saved Human form. A missing definition is not an empty form.
-pub fn form(request: &Request, verdict: crate::runtime::Verdict) -> Result<Form, String> {
-    let definition = request.human_definition.as_ref().ok_or(
-        "This request records no Human definition; open the original request its actions go to.",
-    )?;
-    definition.eval.form(verdict)
 }
 
 /// Words joined for an on-screen preview, double-quoted when a word has whitespace or a
@@ -589,17 +572,28 @@ mod submission_tests {
     use serde_json::json;
 
     #[test]
-    fn submission_parses_one_verdict_and_keeps_its_owner_fields() {
+    fn green_approves_without_issues_and_red_lists_them() {
         for (value, verdict) in [
-            (json!({"verdict":"GREEN","approved":true}), Verdict::Green),
-            (json!({"verdict":"RED","reason":"needs work"}), Verdict::Red),
+            (json!({"verdict":"GREEN","issues":[]}), Verdict::Green),
+            (
+                json!({"verdict":"RED","issues":["needs work"]}),
+                Verdict::Red,
+            ),
         ] {
             let submitted = Submission::try_from(value.clone()).unwrap();
             assert_eq!(submitted.verdict(), verdict);
             assert_eq!(submitted.to_json(), value);
         }
-        assert!(Submission::try_from(json!({"approved":true})).is_err());
-        assert!(Submission::try_from(json!({"verdict":"ERROR"})).is_err());
+        for invalid in [
+            json!({"issues":[]}),
+            json!({"verdict":"ERROR"}),
+            json!({"verdict":"GREEN","approved":true}),
+            json!({"verdict":"GREEN","issues":["still a problem"]}),
+            json!({"verdict":"RED"}),
+            json!({"verdict":"RED","issues":["  "]}),
+        ] {
+            assert!(Submission::try_from(invalid.clone()).is_err(), "{invalid}");
+        }
     }
 }
 
@@ -616,9 +610,11 @@ mod artifact_tool_tests {
         std::fs::write(
             root.join(".artifactize/app.artf"),
             r#"
-path = "notes.md"
-[views.human_tools]
-notes = { builtin = "read", args = ["{artifactPath}"] }
+tool reader = {
+  human notes = builtin(op = "read", args = ["@{path self}"])
+}
+
+artf app : reader = { path = "notes.md" }
 "#,
         )
         .unwrap();
@@ -628,7 +624,7 @@ notes = { builtin = "read", args = ["{artifactPath}"] }
         let artifact = "app".parse().unwrap();
         let sites = crate::config::read_sites(&root).unwrap();
         let app = ArtifactDeclarations::read(&root, &artifact, &sites[&artifact]).unwrap();
-        let tool = "notes_app".parse().unwrap();
+        let tool = "reader_notes_app".parse().unwrap();
         let run = || {
             app.run_tool(
                 &checkout,

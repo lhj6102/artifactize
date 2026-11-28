@@ -1,3 +1,4 @@
-basis = true
-path = "input/"
-type = "files"
+artf input : files = {
+  basis = true
+  path = "input/"
+}

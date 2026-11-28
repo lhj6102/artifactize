@@ -153,7 +153,13 @@ Microsoft references used for the package and API:
 ## Packaging seams
 
 `binaries.yml` runs on `release/*` pushes and pull requests, manual rehearsals, and tag
-releases (via `release.yml`). Its Linux policy job
+releases (via `release.yml`). Every one of those runs the install and smoke steps below on the
+packages it built and uploads a package only once its smoke passed, so what a release
+attaches was installed and run as released (release verification belongs to CI and Binaries,
+not a duplicate tag-time test job). `release.yml`'s first job also refuses a tag whose commit
+has no successful Binaries run from a `release/*` push, before anything is built or
+published. The macOS desktop bundle is attached only when it also opened on an Intel Mac in
+the release, and Homebrew is updated only when every macOS package it names was attached. On every run, its Linux policy job
 runs `python3 -I .github/scripts/test-channels.py`: generated metadata, prerelease
 skips, missing credentials, simulated certification/drafts, and the Store
 clone/update/upload/commit sequence are checked without network submission.

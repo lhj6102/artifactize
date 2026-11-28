@@ -237,7 +237,7 @@ export class ChatModeState {
   /** Open Move chat for the shown session: the live checkouts, its own first (J-CHAT-MOVE). */
   async openMove(): Promise<void> {
     const view = this.view;
-    if (!view || view.running) return;
+    if (!view || view.activity !== "idle") return;
     const id = view.session.id;
     this.moving = { id, worktree: view.session.worktree, branches: null, error: null, busy: false };
     try {
@@ -281,7 +281,7 @@ export class ChatModeState {
       const view = await call(this.ipc.chatOpen(id));
       if (mine !== this.#reads || this.selected !== id) return;
       this.view = view;
-      if (!view.running) this.stopping.delete(id);
+      if (view.activity === "idle") this.stopping.delete(id);
       if (acknowledge) this.acknowledge();
     } catch (failure) {
       if (mine === this.#reads && this.selected === id) this.error = message(failure);
@@ -289,7 +289,7 @@ export class ChatModeState {
   }
 
   acknowledge(): void {
-    if (this.view?.session.unseen && !this.view.running && this.shown()) void this.#markSeen(this.view.session.id);
+    if (this.view?.session.unseen && this.view.activity === "idle" && this.shown()) void this.#markSeen(this.view.session.id);
   }
 
   async #markSeen(id: string): Promise<void> {
@@ -313,7 +313,7 @@ export class ChatModeState {
     const view = this.view;
     if (
       !view ||
-      view.running ||
+      view.activity !== "idle" ||
       view.session.unavailable !== null ||
       view.session.target === null ||
       view.session.target.engine === "legacyClaudeAgent"
@@ -362,7 +362,14 @@ export class ChatModeState {
     if (!prompt || prompt.busy) return;
     this.trustPrompt = { ...prompt, busy: true, error: null };
     try {
-      await call(this.ipc.chatTrustGrant(prompt.worktree, prompt.requirement.agentId));
+      await call(
+        this.ipc.chatTrustGrant(
+          prompt.worktree,
+          prompt.requirement.agentId,
+          prompt.requirement.scope,
+          prompt.requirement.fingerprint,
+        ),
+      );
       this.trustPrompt = null;
       if (this.selected === prompt.sessionId) {
         await this.send();
@@ -399,7 +406,7 @@ export class ChatModeState {
 
   async stop(): Promise<void> {
     const view = this.view;
-    if (!view?.running || this.stopping.has(view.session.id)) return;
+    if (!view || view.activity === "idle" || this.stopping.has(view.session.id)) return;
     const id = view.session.id;
     this.stopping.set(id, true);
     this.error = null;

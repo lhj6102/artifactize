@@ -26,7 +26,8 @@
 //      current main. examples/ is left out. Declarations the current app no longer reads
 //      are converted once to the current format: 0.7–0.8's artifactize.json, and dependency
 //      evals, whose relations become references; then the built CLI's own `config migrate`
-//      moves a release declared in its tree into `.artifactize/`, one file per Artifact.
+//      converts each release's definitions, in its tree or in `.artifactize/`, into the `.artf`
+//      language the current app reads.
 //
 // Modes:
 //   (none)        record into assets/demos/.
@@ -338,15 +339,16 @@ process.exit(readFileSync(artifact + "/code.txt", "utf8").includes("BUG") ? 1 : 
     const folder = join(repo, artifact.name);
     mkdirSync(folder, { recursive: true });
     writeFileSync(join(folder, "code.txt"), artifact.bug ? "work in progress: BUG\n" : "done\n");
-    const uses = artifact.uses.map((name) => `{${name}}`).join(" and ");
+    const uses = artifact.uses.join(" and ");
+    const deps = artifact.uses.length ? `\n    deps = [${artifact.uses.join(", ")}]` : "";
     const evals = artifact.evals.map(([id, seconds]) => `
-[evals.${id}]
-title = "${artifact.name} ${id} pass"
-profile = { kind = "runtime", command = ${JSON.stringify(process.execPath)}, args = [${JSON.stringify(checker)}, "{${artifact.name}}", "${seconds}"] }
-payload.instruction = "Run the ${id} of {${artifact.name}}${uses ? ` with ${uses}` : ""}."
+  // Run the ${id} of ${artifact.name}${uses ? ` with ${uses}` : ""}.
+  eval ${id} : runtime(command = ${JSON.stringify(process.execPath)}, args = [${JSON.stringify(checker)}, "@{path self}", "${seconds}"]) = {
+    title = "${artifact.name} ${id} pass"${deps}
+  }
 `).join("");
     mkdirSync(join(repo, ".artifactize"), { recursive: true });
-    writeFileSync(join(repo, ".artifactize", `${artifact.name}.artf`), `path = "${artifact.name}/"\n${evals}`);
+    writeFileSync(join(repo, ".artifactize", `${artifact.name}.artf`), `artf ${artifact.name} = {\n  path = "${artifact.name}/"\n${evals}}\n`);
   }
 }
 
@@ -590,10 +592,10 @@ function checkout(ref: string, tree: string, state: string, cli: string, env: No
     });
     if (converted !== text) writeFileSync(file, converted);
   }
-  // A release from before definitions lived in .artifactize/: its own CLI's successor moves them.
-  const defined = existsSync(join(tree, ".artifactize")) && files(join(tree, ".artifactize"), (name) => name.endsWith(".artf")).length > 0;
+  // Every release's definitions, in its tree or in .artifactize/ as TOML, become the .artf
+  // language the current app reads; a release already written in it is left as it is.
   const config = ["--repo", tree, "--state-dir", state, "config"];
-  if (!defined) run(cli, [...config, "migrate"], { env });
+  run(cli, [...config, "migrate"], { env });
   // Keep every release in the lineage, but never ask the app to open an invalid graph.
   try { run(cli, [...config, "check"], { env }); }
   catch (error) { throw new Error(`${ref}'s historical declarations did not pass config check`, { cause: error }); }

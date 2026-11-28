@@ -442,12 +442,77 @@ impl AgentSpec {
     }
 
     /// All secret values injected into this agent's environment (for `StreamRedactor`).
+    /// A digest of the variables this agent is launched with, its secrets included, for the
+    /// runtime fingerprint; the values themselves are never kept.
+    pub fn environment_digest(&self) -> String {
+        let mut text = Vec::new();
+        for (key, value) in &self.extra_env {
+            text.extend_from_slice(key.as_bytes());
+            text.push(0);
+            text.extend_from_slice(value.as_bytes());
+            text.push(0);
+        }
+        text.push(1);
+        for (key, secret) in &self.secret_env {
+            text.extend_from_slice(key.as_bytes());
+            text.push(0);
+            text.extend_from_slice(secret.expose().as_bytes());
+            text.push(0);
+        }
+        hex_sha256(&text)
+    }
+
+    /// All secret values exposed to this agent's environment (saved `secret_env` values PLUS any
+    /// inherited credential-bearing environment variables not stripped by `env_denylist`) for
+    /// `StreamRedactor` (`C-ACP-EDGE-ISOLATION`).
     pub fn known_secrets(&self) -> Vec<String> {
-        self.secret_env
+        let mut secrets: Vec<String> = self
+            .secret_env
             .values()
             .map(|secret| secret.expose().to_owned())
-            .collect()
+            .collect();
+        for (key, value) in self.build_env(true) {
+            let Some(key_str) = key.to_str() else {
+                continue;
+            };
+            if is_sensitive_env_name(key_str)
+                && let Some(val_str) = value.to_str()
+                && !val_str.is_empty()
+                && !secrets.iter().any(|existing| existing == val_str)
+            {
+                secrets.push(val_str.to_owned());
+            }
+        }
+        secrets
     }
+}
+
+fn is_sensitive_env_name(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    matches!(
+        upper.as_str(),
+        "ANTHROPIC_API_KEY"
+            | "OPENAI_API_KEY"
+            | "GEMINI_API_KEY"
+            | "GOOGLE_API_KEY"
+            | "AWS_SECRET_ACCESS_KEY"
+            | "AWS_ACCESS_KEY_ID"
+            | "AWS_SESSION_TOKEN"
+            | "GH_TOKEN"
+            | "GITHUB_TOKEN"
+    ) || upper.ends_with("_API_KEY")
+        || upper.ends_with("_ACCESS_KEY")
+        || upper.ends_with("_SECRET_KEY")
+        || upper.ends_with("_PRIVATE_KEY")
+        || upper.ends_with("_AUTH_KEY")
+        || upper.ends_with("_SIGNING_KEY")
+        || upper.ends_with("_ENCRYPTION_KEY")
+        || upper.ends_with("_TOKEN")
+        || upper.ends_with("_SECRET")
+        || upper.ends_with("_PASSWORD")
+        || upper.ends_with("_PASSWD")
+        || upper.ends_with("_CREDENTIAL")
+        || upper.ends_with("_CREDENTIALS")
 }
 
 /// Summary of an ACP agent for Settings → Chat Agents and CLI `chat-agent list`.
@@ -759,10 +824,16 @@ pub async fn probe_agent(
             };
         }
     };
-    probe_spec(&spec, force_refresh).await
+    probe_spec(&spec, repo, force_refresh).await
 }
 
-pub async fn probe_spec(spec: &AgentSpec, force_refresh: bool) -> AgentAvailability {
+/// Probe `spec` as `probe_agent` does. With a `worktree`, a built-in preset whose executable
+/// resolves inside it is refused before anything runs (C-TRUST-BEFORE-WORKTREE).
+pub async fn probe_spec(
+    spec: &AgentSpec,
+    worktree: Option<&Path>,
+    force_refresh: bool,
+) -> AgentAvailability {
     let probe_dir = match platform::private_tempdir_in(
         "artifactize-acp-probe-",
         &platform::temporary_directory(),
@@ -801,6 +872,16 @@ pub async fn probe_spec(spec: &AgentSpec, force_refresh: bool) -> AgentAvailabil
             };
         }
     };
+    if spec.reject_worktree_executable
+        && let Some(worktree) = worktree
+        && let Err(error) = trust::outside_worktree(&resolved, worktree)
+    {
+        return AgentAvailability::Failed {
+            executable: Some(resolved.clone()),
+            version: None,
+            error,
+        };
+    }
     let mtime_secs = std::fs::metadata(&resolved)
         .ok()
         .and_then(|meta| meta.modified().ok())
@@ -821,7 +902,19 @@ pub async fn probe_spec(spec: &AgentSpec, force_refresh: bool) -> AgentAvailabil
         return entry.availability.clone();
     }
 
-    let availability = run_live_probe(spec, &resolved, probe_dir.path()).await;
+    if let Err(error) = check_probe_dir_isolated(probe_dir.path(), worktree) {
+        return AgentAvailability::Failed {
+            executable: Some(resolved.clone()),
+            version: None,
+            error: format!(
+                "Refusing to probe {} inside a workspace: {error}",
+                spec.name
+            ),
+        };
+    }
+
+    let availability = run_live_probe(spec, &resolved, worktree).await;
+    drop(probe_dir);
     if let Ok(mut cache) = probe_cache().lock() {
         cache.insert(
             cache_key,
@@ -834,15 +927,137 @@ pub async fn probe_spec(spec: &AgentSpec, force_refresh: bool) -> AgentAvailabil
     availability
 }
 
+/// Ensure a probe tempdir never lands inside a selected `worktree` OR inside any enclosing Git
+/// repository checkout (e.g. if `TMPDIR`/`TEMP` was pointed into a worktree), even for callers
+/// that pass `worktree: None` (`C-TRUST-BEFORE-WORKTREE`).
+pub(crate) fn check_probe_dir_isolated(
+    probe_dir: &Path,
+    worktree: Option<&Path>,
+) -> Result<(), String> {
+    if let Some(worktree) = worktree {
+        trust::outside_worktree(probe_dir, worktree)?;
+    }
+    if let Some(repo_root) = crate::repository::identify(probe_dir).worktree_path {
+        return Err(format!(
+            "temporary probe directory {} is inside Git worktree {}.",
+            platform::path_text(probe_dir),
+            platform::path_text(&repo_root),
+        ));
+    }
+    Ok(())
+}
+
+/// Sign out an ACP agent cleanly via its ACP `logout` method inside an isolated empty private
+/// tempdir outside any Git checkout, keeping all ACP wire handling confined to `src/acp/`
+/// (`C-TRUST-BEFORE-WORKTREE`, `C-ACP-EDGE-ISOLATION`).
+pub(crate) async fn logout_spec(spec: &AgentSpec) -> Result<(), String> {
+    let probe_dir =
+        platform::private_tempdir_in("artifactize-acp-logout-", &platform::temporary_directory())
+            .map_err(|error| format!("Cannot create {} logout directory: {error}.", spec.name))?;
+    check_probe_dir_isolated(probe_dir.path(), None).map_err(|error| {
+        format!(
+            "Refusing to run {} logout inside a workspace: {error}",
+            spec.name
+        )
+    })?;
+    let resolved = trust::resolve_executable(&spec.program, None, false)?;
+    let mut args: Vec<OsString> = spec.args.iter().map(OsString::from).collect();
+    if spec.id.as_str() == "antigravity" {
+        args.push("--sandbox".into());
+        args.push("--include-default-customizations=false".into());
+    }
+    let command = process::Command {
+        program: resolved.into_os_string(),
+        args,
+        cwd: probe_dir.path().to_path_buf(),
+        env: spec.build_env(true),
+        timeout: PROBE_TIMEOUT,
+    };
+    let cancel = CancellationToken::new();
+    let mut child = process::spawn_supervised(&command, &cancel)
+        .await
+        .map_err(|error| format!("Cannot start {}: {error}.", spec.name))?;
+    let stdout = child.stdout().take().expect("logout stdout piped");
+    let stdin = child.stdin().take().expect("logout stdin piped");
+    let mut stderr = child.stderr().take().expect("logout stderr piped");
+    let stderr_task = tokio::spawn(async move { read_bounded_stderr(&mut stderr).await });
+    let known_secrets = spec.known_secrets();
+    let redactor = super::redactor::StreamRedactor::new(known_secrets.clone());
+    let mut conn = Connection::new(
+        &spec.name,
+        &spec.install_hint,
+        stdout,
+        stdin,
+        false,
+        known_secrets,
+    );
+    let result = tokio::time::timeout(PROBE_TIMEOUT, conn.logout())
+        .await
+        .unwrap_or_else(|_| {
+            Err(Problem::Failed(format!(
+                "{} did not answer ACP logout in time.",
+                spec.name
+            )))
+        });
+    drop(conn);
+    let _ = process::terminate(&mut child).await;
+    let _ = child.cleanup().await;
+    let stderr_bytes = crate::task::joined(stderr_task.await).unwrap_or_default();
+    let stderr_text = platform::output_text(&stderr_bytes);
+
+    bump_auth_generation();
+    invalidate_probe_cache(&spec.id);
+
+    match result {
+        Ok(()) => Ok(()),
+        Err(problem) => {
+            let final_problem = if stderr_text.contains(super::wire::AUTH_LINK_MARKER) {
+                Problem::SignedOut {
+                    agent: spec.name.clone(),
+                    hint: spec.install_hint.clone(),
+                }
+            } else {
+                problem
+            };
+            Err(redactor.redact_all(&crate::agent::error::Failure::from(final_problem).message))
+        }
+    }
+}
+
 async fn run_live_probe(
     spec: &AgentSpec,
     executable: &Path,
-    probe_dir: &Path,
+    worktree: Option<&Path>,
 ) -> AgentAvailability {
     let cancel = CancellationToken::new();
     let deadline = tokio::time::Instant::now() + PROBE_TIMEOUT;
 
-    let detected_version = probe_version(spec, executable, probe_dir, deadline, &cancel).await;
+    let version_dir = match platform::private_tempdir_in(
+        "artifactize-acp-version-",
+        &platform::temporary_directory(),
+    ) {
+        Ok(dir) => dir,
+        Err(error) => {
+            return AgentAvailability::Failed {
+                executable: Some(executable.to_path_buf()),
+                version: None,
+                error: format!("Cannot create ACP version probe directory: {error}."),
+            };
+        }
+    };
+    if let Err(error) = check_probe_dir_isolated(version_dir.path(), worktree) {
+        return AgentAvailability::Failed {
+            executable: Some(executable.to_path_buf()),
+            version: None,
+            error: format!(
+                "Refusing to run {} version probe inside a workspace: {error}",
+                spec.name
+            ),
+        };
+    }
+    let detected_version =
+        probe_version(spec, executable, version_dir.path(), deadline, &cancel).await;
+    drop(version_dir);
     if let Some(minimum) = &spec.minimum_version {
         match &detected_version {
             None => {
@@ -870,6 +1085,30 @@ async fn run_live_probe(
         }
     }
 
+    let probe_dir = match platform::private_tempdir_in(
+        "artifactize-acp-models-",
+        &platform::temporary_directory(),
+    ) {
+        Ok(dir) => dir,
+        Err(error) => {
+            return AgentAvailability::Failed {
+                executable: Some(executable.to_path_buf()),
+                version: detected_version.map(|v| v.to_string()),
+                error: format!("Cannot create ACP model probe directory: {error}."),
+            };
+        }
+    };
+    if let Err(error) = check_probe_dir_isolated(probe_dir.path(), worktree) {
+        return AgentAvailability::Failed {
+            executable: Some(executable.to_path_buf()),
+            version: detected_version.map(|v| v.to_string()),
+            error: format!(
+                "Refusing to run {} model probe inside a workspace: {error}",
+                spec.name
+            ),
+        };
+    }
+
     let mut args: Vec<OsString> = spec.args.iter().map(OsString::from).collect();
     // For Antigravity empty-tempdir probes, disable default customizations cleanly.
     if spec.id.as_str() == "antigravity" {
@@ -879,8 +1118,8 @@ async fn run_live_probe(
     let command = process::Command {
         program: executable.as_os_str().to_owned(),
         args,
-        cwd: probe_dir.to_path_buf(),
-        env: spec.build_env(false),
+        cwd: probe_dir.path().to_path_buf(),
+        env: spec.build_env(true),
         timeout: PROBE_TIMEOUT,
     };
     let process_cancel = CancellationToken::new();
@@ -906,7 +1145,7 @@ async fn run_live_probe(
         spec.hide_always_options,
         spec.known_secrets(),
     );
-    let result = tokio::time::timeout(PROBE_TIMEOUT, conn.inspect_models(probe_dir))
+    let result = tokio::time::timeout(PROBE_TIMEOUT, conn.inspect_models(probe_dir.path()))
         .await
         .unwrap_or_else(|_| {
             Err(Problem::Failed(format!(
@@ -922,12 +1161,34 @@ async fn run_live_probe(
 
     let version_str = detected_version.map(|v| v.to_string());
     match result {
-        Ok((models, config_options)) => AgentAvailability::Ready {
-            executable: executable.to_path_buf(),
-            version: version_str,
-            models,
-            config_options,
-        },
+        // What the agent advertised reaches Settings and a session's default target: redacted.
+        Ok((models, config_options)) => {
+            let redactor = super::redactor::StreamRedactor::new(spec.known_secrets());
+            AgentAvailability::Ready {
+                executable: executable.to_path_buf(),
+                version: version_str,
+                // A slug is an ID the person picks by: one that carries a known secret is left
+                // out rather than shown.
+                models: models
+                    .into_iter()
+                    .filter(|model| redactor.redact_all(model.slug.as_str()) == model.slug.as_str())
+                    .map(|model| ListedModel {
+                        display_name: redactor.redact_all(&model.display_name),
+                        efforts: model
+                            .efforts
+                            .iter()
+                            .map(|effort| redactor.redact_all(effort))
+                            .collect(),
+                        default_effort: model
+                            .default_effort
+                            .as_deref()
+                            .map(|effort| redactor.redact_all(effort)),
+                        ..model
+                    })
+                    .collect(),
+                config_options: super::engine::redact_options(&config_options, &redactor),
+            }
+        }
         Err(problem) => {
             let classified = if stderr_text.contains(super::wire::AUTH_LINK_MARKER) {
                 Problem::SignedOut {
@@ -991,7 +1252,7 @@ async fn probe_version(
         program: executable.as_os_str().to_owned(),
         args: spec.version_args.iter().map(OsString::from).collect(),
         cwd: probe_dir.to_path_buf(),
-        env: spec.build_env(false),
+        env: spec.build_env(true),
         timeout: deadline
             .saturating_duration_since(tokio::time::Instant::now())
             .min(INITIALIZE_TIMEOUT),
@@ -1513,9 +1774,10 @@ mod tests {
         assert!(agents_json.contains("MY_SECRET"));
 
         let spec = resolve_spec(&saved.id, Some(&state), Some(&worktree)).unwrap();
-        assert_eq!(
-            spec.known_secrets(),
-            vec!["top-secret-value-999".to_owned()]
+        assert!(
+            spec.known_secrets()
+                .iter()
+                .any(|value| value == "top-secret-value-999")
         );
         assert!(is_chat_agent("my-acp", Some(&state), Some(&worktree)));
 

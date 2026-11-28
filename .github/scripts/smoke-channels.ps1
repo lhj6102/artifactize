@@ -95,12 +95,14 @@ try {
     [IO.File]::WriteAllText((Join-Path $probe 'write-appdata.ps1'), $writer.Replace('@NAME@', $childName))
     New-Item -ItemType Directory -Path (Join-Path $probe '.artifactize') | Out-Null
     [IO.File]::WriteAllText((Join-Path $probe '.artifactize/virtualization-probe.artf'), @'
-path = "./"
-[evals.appdata]
-title = "Measure packaged child AppData writes"
-profile = { kind = "runtime", command = "powershell.exe", args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "write-appdata.ps1"] }
-[evals.appdata.payload]
-instruction = "Write a new AppData file to measure packaged child-process redirection."
+artf virtualization-probe = {
+  path = "./"
+
+  eval appdata : runtime(command = "powershell.exe", args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "write-appdata.ps1"]) = {
+    title = "Measure packaged child AppData writes"
+    instruction = "Write a new AppData file to measure packaged child-process redirection."
+  }
+}
 '@)
     & $alias verify --repo $probe --all --wait
     if ($LASTEXITCODE -ne 0) { throw 'MSIX child-process Runtime eval failed' }

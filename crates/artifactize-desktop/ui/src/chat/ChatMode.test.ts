@@ -65,8 +65,7 @@ const session: ChatSession = {
   target: DEFAULT_TARGET,
   createdAt: "2026-11-21T00:00:00Z",
   updatedAt: "2026-11-21T00:00:00Z",
-  running: false,
-  waitingPermission: false,
+  activity: "idle",
   legacyMigrationNotice: false,
   outcome: null,
   unseen: false,
@@ -88,14 +87,14 @@ const AGY_ENTRY: ChatAgentCatalogEntry = {
   registry: null,
 };
 
-function chatViewOf(s: ChatSession, running: boolean, turns: ChatTurn[]): ChatView {
+function chatViewOf(s: ChatSession, running: boolean, turns: ChatTurn[], handoffFrom: string | null = null): ChatView {
   return {
     session: s,
-    running,
-    waitingPermission: s.waitingPermission,
+    activity: !running ? "idle" : s.activity === "waitingPermission" ? "waitingPermission" : "running",
     turns,
     liveConfigOptions: [],
     verifyBridgeState: "notConnected",
+    handoffFrom,
   };
 }
 
@@ -118,6 +117,7 @@ function backend() {
     send: null as ((text: string) => Promise<ChatSendResult | void>) | null,
     stop: null as (() => Promise<boolean>) | null,
     antigravitySignedIn: false,
+    handoffFrom: null as string | null,
   };
   mockIPC(
     (cmd, args) => {
@@ -133,7 +133,7 @@ function backend() {
           if (state.other && (args as { id: string }).id === state.other.id) {
             return chatViewOf(state.other, false, []);
           }
-          return chatViewOf(state.session, state.running, state.turns);
+          return chatViewOf(state.session, state.running, state.turns, state.handoffFrom);
         case "chat_mark_seen":
           state.session = { ...state.session, unseen: false };
           return null;
@@ -163,10 +163,9 @@ function backend() {
             scannedAt: 1,
             fingerprint: "",
             revision: 1,
-            scanning: false,
+            scan: { state: "scanned" },
             checking: 0,
             artifacts: 0,
-            failure: null,
           };
         case "graph":
           return {
@@ -621,7 +620,7 @@ it("says why a session whose branch cannot be worked on now sends nothing, its c
 it("delegates search to the library, clears it with Esc, and acknowledges an unseen outcome only when shown", async () => {
   const { calls, state } = backend();
   state.session = { ...session, outcome: "completed", unseen: true };
-  state.other = { ...session, id: "chat-2", title: "Another chat", outcome: "running", running: true };
+  state.other = { ...session, id: "chat-2", title: "Another chat", outcome: "running", activity: "running" };
   show();
   await screen.findByRole("button", { name: "Fix checkout rounding fix/rounding finished" });
   expect(screen.getByRole("button", { name: "Another chat fix/rounding running" })).toBeTruthy();
@@ -1057,7 +1056,9 @@ it("asks for Workspace Trust on trustRequired and retries send automatically aft
   trusted = true;
   await fireEvent.click(within(dialog).getByRole("button", { name: "Trust and continue" }));
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "Trust workspace" })).toBeNull());
-  expect(calls.some(({ cmd, args }) => cmd === "chat_trust_grant" && args.agent === "antigravity")).toBe(true);
+  // Trust is asked for the launcher the dialog showed.
+  expect(calls.some(({ cmd, args }) => cmd === "chat_trust_grant" && args.agent === "antigravity"
+    && (args.fingerprint as { executableSha256?: string } | undefined)?.executableSha256 === "deadbeef1234")).toBe(true);
   expect(calls.filter(({ cmd }) => cmd === "chat_send")).toHaveLength(2);
 });
 
@@ -1066,8 +1067,7 @@ it("renders rich ACP blocks, interactive permission cards with always-persistenc
   state.running = true;
   state.session = {
     ...session,
-    running: true,
-    waitingPermission: true,
+    activity: "waitingPermission",
     target: { engine: "acp", agent: "antigravity", config: [] },
   };
   state.turns = [
@@ -1102,10 +1102,14 @@ it("renders rich ACP blocks, interactive permission cards with always-persistenc
       ],
     },
   ];
+  state.handoffFrom = "Direct (codex)";
   show();
   const row = await screen.findByRole("button", { name: /Fix checkout rounding.*waiting/ });
   await fireEvent.click(row);
   const log = within(await screen.findByRole("log", { name: "Conversation" }));
+  // A handoff is one quiet line; the switch is said above the composer (D-CHAT-13).
+  expect(log.getByText("Continued from Direct (codex) to ACP (antigravity)").tagName).toBe("P");
+  expect(await screen.findByText("Switched from Direct (codex); the next message continues with a handoff.")).toBeTruthy();
   expect(log.getByText("Thought")).toBeTruthy();
   expect(log.getByText("Read failing test")).toBeTruthy();
   expect(log.getByText("Saved model fell back to default.")).toBeTruthy();
@@ -1121,8 +1125,7 @@ it("renders rich ACP blocks, interactive permission cards with always-persistenc
   state.running = false;
   state.session = {
     ...session,
-    running: false,
-    waitingPermission: false,
+    activity: "idle",
     legacyMigrationNotice: true,
     target: { engine: "legacyClaudeAgent", model: "sonnet", effort: null },
   };

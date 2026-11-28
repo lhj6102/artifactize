@@ -6,7 +6,7 @@
 //! executable's bytes directly at the Trust gate before every spawn or warm reuse.
 
 use std::{
-    io::Read,
+    io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
@@ -109,8 +109,24 @@ impl LauncherFingerprint {
         })
     }
 
+    /// Compute the launcher fingerprint directly from an already-opened executable handle so the
+    /// caller can bind spawn to that exact verified handle.
+    pub(crate) fn compute_from_file(
+        resolved_executable: PathBuf,
+        file: &mut std::fs::File,
+        args: &[String],
+    ) -> Result<Self, String> {
+        let executable_sha256 = hash_file(file, &resolved_executable)?;
+        let args_hash = hash_args(args);
+        Ok(Self {
+            resolved_executable,
+            executable_sha256,
+            args_hash,
+        })
+    }
+
     /// Combine with `auth_generation` into the `AcpBinding::runtime_fingerprint` key.
-    pub fn runtime_fingerprint(&self, auth_generation: u64) -> String {
+    pub fn runtime_fingerprint(&self, auth_generation: u64, environment: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(platform::path_text(&self.resolved_executable).as_bytes());
         hasher.update([0]);
@@ -119,6 +135,8 @@ impl LauncherFingerprint {
         hasher.update(self.args_hash.as_bytes());
         hasher.update([0]);
         hasher.update(auth_generation.to_le_bytes());
+        hasher.update([0]);
+        hasher.update(environment.as_bytes());
         hex_digest(hasher.finalize().as_slice())
     }
 }
@@ -183,17 +201,35 @@ pub fn resolve_executable(
         )
     })?;
     if reject_inside_worktree && let Some(worktree) = worktree {
-        let canonical_worktree =
-            crate::workspace::canonical_target(worktree).map_err(|error| error.to_string())?;
-        if platform::is_within(&canonical, &canonical_worktree) {
+        outside_worktree(&canonical, worktree)?;
+    }
+    Ok(canonical)
+}
+
+/// Refuse a built-in preset's resolved executable `canonical` inside `worktree` or its enclosing
+/// Git worktree root: the repository's own files never run as an agent before Workspace Trust, a
+/// probe included.
+pub fn outside_worktree(canonical: &Path, worktree: &Path) -> Result<(), String> {
+    let canonical_worktree =
+        crate::workspace::canonical_target(worktree).map_err(|error| error.to_string())?;
+    if platform::is_within(canonical, &canonical_worktree) {
+        return Err(format!(
+            "Refusing to launch built-in ACP preset executable {} located inside the workspace {}.",
+            platform::path_text(canonical),
+            platform::path_text(&canonical_worktree),
+        ));
+    }
+    if let Some(root) = repository::identify(&canonical_worktree).worktree_path {
+        let canonical_root = crate::workspace::canonical_target(&root).unwrap_or(root);
+        if platform::is_within(canonical, &canonical_root) {
             return Err(format!(
                 "Refusing to launch built-in ACP preset executable {} located inside the workspace {}.",
-                platform::path_text(&canonical),
-                platform::path_text(&canonical_worktree),
+                platform::path_text(canonical),
+                platform::path_text(&canonical_root),
             ));
         }
     }
-    Ok(canonical)
+    Ok(())
 }
 
 /// Hash the executable's bytes directly via SHA-256 (never `(mtime, size)`).
@@ -211,6 +247,17 @@ pub fn hash_executable(path: &Path) -> Result<String, String> {
                 platform::path_text(path)
             )
         })?;
+    hash_file(&mut file, path)
+}
+
+/// Hash an already-opened regular executable file directly via SHA-256 and rewind it to offset 0.
+pub(crate) fn hash_file(file: &mut std::fs::File, path: &Path) -> Result<String, String> {
+    file.seek(SeekFrom::Start(0)).map_err(|error| {
+        format!(
+            "Cannot seek ACP executable {}: {error}.",
+            platform::path_text(path)
+        )
+    })?;
     let mut hasher = Sha256::new();
     let mut buffer = [0u8; HASH_CHUNK_BYTES];
     loop {
@@ -225,6 +272,12 @@ pub fn hash_executable(path: &Path) -> Result<String, String> {
         }
         hasher.update(&buffer[..count]);
     }
+    file.seek(SeekFrom::Start(0)).map_err(|error| {
+        format!(
+            "Cannot rewind ACP executable {}: {error}.",
+            platform::path_text(path)
+        )
+    })?;
     Ok(hex_digest(hasher.finalize().as_slice()))
 }
 
@@ -433,5 +486,80 @@ mod tests {
         let error = resolve_executable(&platform::path_text(&malicious), Some(&worktree), true)
             .unwrap_err();
         assert!(error.contains("inside the workspace"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn probing_a_builtin_preset_inside_the_worktree_runs_nothing() {
+        let root = crate::test_os::tempdir();
+        let worktree = root.path().join("repo");
+        std::fs::create_dir_all(&worktree).unwrap();
+        let malicious = crate::test_os::executable_named(&worktree, "agy");
+        std::fs::write(&malicious, b"fake-acp-binary\n").unwrap();
+        crate::test_os::make_executable(&malicious);
+        let mut spec = super::super::catalog::AgentSpec::from_preset(
+            super::super::catalog::preset_by_id("antigravity").unwrap(),
+        );
+        spec.program = platform::path_text(&malicious);
+        let probed = super::super::catalog::probe_spec(&spec, Some(&worktree), true).await;
+        let super::super::catalog::AgentAvailability::Failed { error, .. } = probed else {
+            panic!("the probe ran the workspace's executable: {probed:?}");
+        };
+        assert!(error.contains("inside the workspace"), "{error}");
+    }
+
+    #[test]
+    fn builtin_preset_rejects_executable_in_enclosing_git_worktree_from_subdirectory() {
+        let root = crate::test_os::tempdir();
+        let repo = root.path().join("repo");
+        let subdir = repo.join("packages").join("app");
+        std::fs::create_dir_all(&subdir).unwrap();
+        crate::test_os::git(&repo, &["init", "--quiet"]);
+        let malicious = crate::test_os::executable_named(&repo, "agy");
+        std::fs::write(&malicious, b"fake-acp-binary\n").unwrap();
+        crate::test_os::make_executable(&malicious);
+        let error =
+            resolve_executable(&platform::path_text(&malicious), Some(&subdir), true).unwrap_err();
+        assert!(error.contains("inside the workspace"), "{error}");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn verified_spawn_runs_hashed_script_even_if_path_is_replaced_before_exec() {
+        use tokio::io::AsyncReadExt;
+
+        let root = crate::test_os::tempdir();
+        let script = root.path().join("agent.sh");
+        std::fs::write(&script, b"#!/bin/sh\nprintf 'verified-original'\n").unwrap();
+        crate::test_os::make_executable(&script);
+
+        let mut file = platform::open_verified_executable(&script).unwrap();
+        let sha256 = hash_file(&mut file, &script).unwrap();
+
+        // Atomically replace the pathname on disk with different bytes AFTER verification.
+        let replacement = root.path().join("agent.sh.new");
+        std::fs::write(&replacement, b"#!/bin/sh\nprintf 'malicious-swap'\n").unwrap();
+        crate::test_os::make_executable(&replacement);
+        std::fs::rename(&replacement, &script).unwrap();
+
+        let verified_cwd = platform::open_verified_worktree(root.path()).unwrap();
+        let env = std::collections::BTreeMap::new();
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let mut child = crate::process::spawn_verified_supervised(
+            &script,
+            file,
+            &sha256,
+            &[],
+            root.path(),
+            verified_cwd,
+            &env,
+            &cancel,
+        )
+        .await
+        .unwrap();
+        let mut stdout = child.stdout().take().unwrap();
+        let mut out = String::new();
+        stdout.read_to_string(&mut out).await.unwrap();
+        let _ = child.wait().await;
+        assert_eq!(out, "verified-original");
     }
 }

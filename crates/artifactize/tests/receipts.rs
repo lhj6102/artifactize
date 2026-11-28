@@ -324,8 +324,7 @@ async fn concurrent_runs_share_a_claim_without_preventing_independent_executions
     support::declaration::write(&repo, repo.join("index.artf"), json!({
         "name":"app", "fingerprint":{"files":["input"]},
         "evals":[{"id":"check", "title":"Check", "payload":{"instruction":"Check."},
-            "profile":{"kind":"runtime","command":support::os::steps(),"args":["wait","release"]},
-            "profile_variants":{"other":{"kind":"runtime","command":support::os::steps(),"args":["wait","release"],"timeout_ms":120_000}}}]
+            "profile":{"kind":"runtime","command":support::os::steps(),"args":["wait","release"]}}]
     }).to_string()).unwrap();
     fs::write(repo.join("input"), "stable").unwrap();
     let submit = |args: &[&str]| -> RunId {
@@ -369,15 +368,11 @@ async fn concurrent_runs_share_a_claim_without_preventing_independent_executions
     assert!(main.0.is_some() && main.1.is_some());
     let second = submit(&[]);
     assert_eq!(pending(&second, RequestStatus::Queued).await, main);
-    let other = submit(&["--profile", "other"]);
-    let variant = pending(&other, RequestStatus::Running).await;
-    assert_eq!(variant.0, main.0);
-    assert_ne!(variant.1, main.1);
     let forced = submit(&["--force"]);
     // Forced work has its own child before its execution ID is saved with the outcome.
     assert!(pending(&forced, RequestStatus::Running).await.1.is_none());
     release.release().unwrap();
-    for (id, relation) in [(first, 1), (second, 0), (other, 1), (forced, 1)] {
+    for (id, relation) in [(first, 1), (second, 0), (forced, 1)] {
         let completed = owned_run::terminal(&state, &id).await;
         assert_eq!(completed.requests[0].status(), RequestStatus::Green);
         assert_eq!(completed.run.executions_started, relation);

@@ -4,17 +4,17 @@
 use std::{collections::BTreeMap, fmt::Write, path::Path};
 
 use serde::Serialize;
-use serde_json::{Map, Value};
+
 use sha2::{Digest, Sha256};
 
 use crate::{
-    config::{ArtifactKind, EvalPayload, Fingerprint, Profile, RepoConfig},
+    config::{ArtifactKind, Fingerprint, Profile, RepoConfig, Views},
     scope::{Argument, RelationKind},
     types::{ArtifactName, EvalId},
 };
 
 /// Domain separation: changing the extraction contract invalidates old graph fingerprints.
-const FORMAT: &[u8] = b"artifactize-graph-v1\n";
+const FORMAT: &[u8] = b"artifactize-graph-v2\n";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,10 +27,12 @@ pub struct Structure {
 #[derive(Debug, Serialize)]
 pub struct Artifact {
     pub kind: ArtifactKind,
-    /// The scoped declarations view carries a type, including null for Custom. Omit it
-    /// from the workspace-wide extraction, whose bytes define the graph fingerprint.
-    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    pub type_name: Option<Option<crate::config::ArtifactType>>,
+    /// The target as resolved, so moving it changes what a definitions review saw.
+    pub path: String,
+    /// The toolsets it composes and what they resolve to: a change to a shared toolset changes
+    /// every Artifact that composes it.
+    pub toolsets: Vec<String>,
+    pub tools: Views,
     pub basis: Option<bool>,
     pub fingerprint: Coverage,
     /// An aspect's boundary; absent for other kinds, so their extraction is unchanged.
@@ -60,9 +62,9 @@ pub struct Eval {
     pub target: ArtifactName,
     pub title: String,
     pub criteria: Criteria,
-    pub payload: Option<EvalPayload>,
-    pub pass_schema: Option<Map<String, Value>>,
-    pub fail_schema: Option<Map<String, Value>>,
+    pub instruction: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub inputs: Vec<ArtifactName>,
     /// Artifactize Viewer names external inputs without importing their definitions.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub reads: Vec<ArtifactName>,
@@ -105,6 +107,10 @@ pub enum Edge {
         name: crate::config::ReferenceName,
         path: crate::scope::LogicalTarget,
     },
+    Input {
+        eval_id: EvalId,
+        name: crate::config::ReferenceName,
+    },
 }
 
 pub fn extract(config: &RepoConfig) -> Structure {
@@ -142,7 +148,9 @@ fn extract_where(
                 name.clone(),
                 Artifact {
                     kind: artifact.kind(),
-                    type_name: None,
+                    path: artifact.path.to_string(),
+                    toolsets: artifact.toolsets.clone(),
+                    tools: artifact.views.clone(),
                     basis: artifact.basis,
                     fingerprint,
                     select: artifact.select().to_vec(),
@@ -172,9 +180,8 @@ fn extract_where(
                     target: eval.target.clone(),
                     title: declaration.title.clone(),
                     criteria,
-                    payload: declaration.payload().cloned(),
-                    pass_schema: declaration.pass_schema().cloned(),
-                    fail_schema: declaration.fail_schema().cloned(),
+                    instruction: declaration.instruction().map(str::to_owned),
+                    inputs: declaration.inputs().to_vec(),
                     reads: Vec::new(),
                 },
             )
@@ -206,6 +213,10 @@ fn extract_where(
                     name: name.clone(),
                     path: path.clone(),
                 },
+                RelationKind::Input { eval_id, name } => Edge::Input {
+                    eval_id: eval_id.clone(),
+                    name: name.clone(),
+                },
             },
         })
         .collect();
@@ -224,7 +235,8 @@ pub fn read(repo: &Path) -> Result<Structure, String> {
         .map_err(|error| error.to_string())
 }
 
-/// Read only nodes with declarations in the owner's target, and edges between those nodes.
+/// Read only nodes bound in a file under the owner's target, and edges between those nodes:
+/// what they declare once expanded, wherever the macros they call are declared.
 pub fn read_scoped(repo: &Path, owner: &crate::config::Artifact) -> Result<Structure, String> {
     let Some(target) = owner
         .path
@@ -248,9 +260,6 @@ pub fn read_scoped(repo: &Path, owner: &crate::config::Artifact) -> Result<Struc
                     .any(|selection| path.starts_with(Path::new(selection.as_str())))
         })
     });
-    for (name, node) in &mut structure.artifacts {
-        node.type_name = Some(config.artifacts[name].type_name.clone());
-    }
     for eval in &config.evals {
         if let Some(scoped) = structure.evals.get_mut(&eval.id) {
             scoped.reads.clone_from(&eval.deps);

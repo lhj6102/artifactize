@@ -7,7 +7,10 @@ name: Release
 #
 #   git tag v0.5.4 && git push origin v0.5.4
 #
-# 1. The Linux release builds run after reading the tag.
+# 1. The Linux release builds run after reading the tag. The tag must name a commit whose
+#    Binaries run on its release/* push passed. The tag's own builds smoke-test the installers
+#    they built, as every Binaries run does, and keep only what passed: a package is attached
+#    only when its own smoke passed in this release.
 # 2. Once they pass, publish creates the GitHub release with the Linux archives and
 #    their .sha256 checksums, so install.sh serves the new version; crates then publishes
 #    the crates to crates.io. A failed Linux build publishes nothing, and a failed
@@ -34,15 +37,27 @@ jobs:
   plan:
     name: Read the tag
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     outputs:
       version: ${{ steps.tag.outputs.version }}
       prerelease: ${{ steps.tag.outputs.prerelease }}
     steps:
       - id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           version=${GITHUB_REF_NAME#v}
           if ! printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
             echo "Tag $GITHUB_REF_NAME is not v<major>.<minor>.<patch>[-<prerelease>]." >&2
+            exit 1
+          fi
+          # A tag names a commit its release/* branch already passed Binaries with; a commit
+          # without such a run is refused before anything is built or published.
+          passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/binaries.yml/runs?head_sha=$GITHUB_SHA&event=push&status=success&per_page=1" --jq '.total_count')
+          if [ "${passed:-0}" -eq 0 ]; then
+            echo "Commit $GITHUB_SHA has no passing Binaries run from a release/* push; push it to its release branch, let Binaries pass, then tag it." >&2
             exit 1
           fi
           case $version in
@@ -202,6 +217,7 @@ jobs:
     continue-on-error: true
     permissions:
       contents: write # the GitHub release
+      actions: read # whether the macOS app opened on Intel
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -214,6 +230,12 @@ jobs:
           GH_REPO: ${{ github.repository }}
         working-directory: dist
         run: |
+          # Each bundle here passed its own smoke before it was kept. The universal macOS app
+          # must also have opened on an Intel Mac in this release, or it is not attached.
+          intel=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" --jq '.jobs[] | select(.name | endswith("Open desktop universal-apple-darwin on Intel")) | .conclusion')
+          if [ "$intel" != success ]; then
+            rm -f ./*-apple-darwin*
+          fi
           sha256sum -c ./*.sha256
           # Stable names too, so the landing page's download buttons can link to
           # releases/latest/download/Artifactize.dmg and Artifactize-amd64.deb.
@@ -275,7 +297,20 @@ jobs:
           merge-multiple: true
       - name: Generate and update the stable formula and the desktop app's cask
         if: steps.gate.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
+          # The formula and the cask link this release's own assets: every macOS package they
+          # name must have been attached, or the tap is left as it is.
+          attached=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')
+          for file in dist/*; do
+            name=$(basename "$file")
+            if ! printf '%s\n' "$attached" | grep -Fxq "$name"; then
+              echo "$name is not attached to $GITHUB_REF_NAME; the Homebrew tap is left as it is." >&2
+              exit 0
+            fi
+          done
           python3 -I .github/scripts/channels.py generate homebrew --version "$VERSION" --dist dist --output formula
           python3 -I .github/scripts/channels.py generate cask --version "$VERSION" --dist dist --output cask
           python3 -I .github/scripts/channels.py publish homebrew --version "$VERSION" --formula formula/artifactize.rb --cask cask/artifactize.rb

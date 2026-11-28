@@ -4,14 +4,17 @@ use std::collections::BTreeMap;
 
 /// Provider envelopes, null placeholders and JSON-encoded fields are presentation details.
 /// Only a matching validated End replaces the raw answer; examples and failed answers stay.
-/// An Agent answer is its findings alone; artifactize derived the verdict the End records.
+/// An Agent answer is its issues alone; artifactize derived the verdict the End records.
 pub(super) fn candidate(text: &str) -> Option<Candidate> {
     if text.len() > crate::agent::verdict::MAX_RESPONSE_BYTES {
         return None;
     }
     let mut value: serde_json::Value = serde_json::from_str(text).ok()?;
     // Conversations saved before the envelope moved to the root wrap it in `result`.
-    if value.get("verdict").is_none() && value.get("findings").is_none() {
+    if value.get("verdict").is_none()
+        && value.get("issues").is_none()
+        && value.get("findings").is_none()
+    {
         if value.as_object()?.len() != 1 {
             return None;
         }
@@ -52,7 +55,7 @@ pub(super) fn candidate(text: &str) -> Option<Candidate> {
 
 #[derive(Debug)]
 pub(super) struct Candidate {
-    /// `None` for findings, whose verdict the answer does not carry.
+    /// `None` for issues, whose verdict the answer does not carry.
     verdict: Option<crate::runtime::Verdict>,
     fields: BTreeMap<String, OwnerValue>,
 }
@@ -60,7 +63,7 @@ pub(super) struct Candidate {
 impl Candidate {
     pub(super) fn matches(&self, result: &crate::agent::verdict::ValidatedResult) -> bool {
         self.verdict.is_none_or(|verdict| verdict == result.verdict)
-            && owner_fields_match(&self.fields, &result.fields)
+            && owner_fields_match(&self.fields, &result.fields())
     }
 }
 

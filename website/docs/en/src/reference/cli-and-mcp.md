@@ -11,15 +11,17 @@ Most `artifactize` subcommands accept `--repo PATH`, `--state-dir PATH`, and `--
 
 | Command | Flags & arguments | Output & behavior | Exit codes |
 |---|---|---|---|
-| `verify SELECTOR` | `[--profile NAME]` (see [`profile_variants`](declarations.md#eval-fields-evalsid)), `--recursive`, `--force`, `--jobs N`, `--fingerprint-jobs N` (default: available CPUs), `--max-executions N`, `--wait` \| `--watch`, `--request-key KEY`, `--comment TEXT`, `--reuse-only KINDS`, `--speculate` | Submits or follows a Run; see [Runs and Workflows](../concepts/runs.md). | `0` accepted, or [Run outcome](../concepts/runs.md#sign-offs-and-the-end-of-a-run) with `--wait`/`--watch` |
-| `status [SELECTOR]` (default `--all`) | `[--profile NAME]`, `--recursive`, `--force`, `--fingerprint-jobs N` (default: available CPUs) | Reports eval and Artifact states, predicted actions (`execute`, `reuse`, `wait`, `blocked`; see [Runs and Workflows](../concepts/runs.md)), and changed inputs when no reusable result matches (see [Fingerprints and Reuse](../concepts/reuse.md#completed-result-reuse)). | `0` satisfied, `1` obligations remain, `2` command/state error |
+| `verify SELECTOR` | `--recursive`, `--force`, `--jobs N`, `--fingerprint-jobs N` (default: available CPUs), `--max-executions N`, `--wait` \| `--watch`, `--request-key KEY`, `--comment TEXT`, `--reuse-only KINDS`, `--speculate` | Submits or follows a Run; see [Runs and Workflows](../concepts/runs.md). | `0` accepted, or [Run outcome](../concepts/runs.md#sign-offs-and-the-end-of-a-run) with `--wait`/`--watch` |
+| `status [SELECTOR]` (default `--all`) | `--recursive`, `--force`, `--fingerprint-jobs N` (default: available CPUs) | Reports eval and Artifact states, predicted actions (`execute`, `reuse`, `wait`, `blocked`; see [Runs and Workflows](../concepts/runs.md)), and changed inputs when no reusable result matches (see [Fingerprints and Reuse](../concepts/reuse.md#completed-result-reuse)). | `0` satisfied, `1` obligations remain, `2` command/state error |
 | `config check` | — | Validates `.artifactize/` definitions statically without running project code. | `0` valid, `2` invalid |
 | `config graph [ARTIFACT]` | `--impact` | Prints Artifacts, evals, cycle components, and input-to-consumer relations (`--impact` adds downstream consumers). | `0` |
-| `config migrate` | `--repo PATH` | Moves legacy declarations into `.artifactize/` or adds `type = "files"` where a local Artifact is missing a required review tool. | `0` |
+| `config expand [ARTIFACT]` | — | Prints what each Artifact's binding (or one Artifact's) expands to, macros and toolsets filled in, after the file and line it is bound at. | `0`, `2` invalid |
+| `config symbols` | — | Lists the global bindings: Artifacts, toolsets and profiles, and the macros' signatures, each with where it is declared. | `0`, `2` invalid |
+| `config migrate` | `--repo PATH` | [Converts older definitions](declarations.md#upgrading-an-in-tree-project) into the `.artf` language. | `0` |
 | `plugin add PATH` | `--repo PATH` | Installs a [viewer plugin](../guides/viewer-plugins.md) from a folder. | `0` |
-| `plugin remove TYPE` | `--repo PATH` | Removes a project-installed plugin by type. | `0` |
-| `plugin list` | `--repo PATH` | Lists the built-in and project-installed plugin types. | `0` |
-| `config rename OLD NEW` | — | Renames Artifact `OLD` to `NEW` across definitions, `parts`, and `{OLD}` references. | `0` |
+| `plugin remove NAMESPACE` | `--repo PATH` | Removes a project-installed plugin by its namespace. | `0` |
+| `plugin list` | `--repo PATH` | Lists the built-in and project-installed plugins. | `0` |
+| `config rename OLD NEW` | — | Renames Artifact `OLD` to `NEW` wherever the code names it: its binding, `parts`, slots and `deps`. | `0` |
 | `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | Lists saved Runs newest first for the current/`--repo` repository (`--repo-only`, the default) or across all repositories in the state (`--all`), with status, counts, and comment. | `0` |
 | `run show RUN_ID` | `--wait [--timeout-ms MS]` | Prints full saved Run JSON (`origin`, `evidence`, `requests`, `usage`, `validation`). `--wait` waits for an open Run (default 10-minute observation timeout; `--timeout-ms` requires `--wait`). | `0` (or Run outcome with `--wait`; `3` when `--wait` times out, leaving the Run running) |
 | `run watch RUN_ID` | — | Streams JSON-line progress (`update`, `eval_result`, `outcome`) until settlement. | Run outcome |
@@ -30,7 +32,7 @@ Most `artifactize` subcommands accept `--repo PATH`, `--state-dir PATH`, and `--
 | `request claim ID` | `--reviewer NAME` | Claims a waiting Human request (default reviewer: `$USER`, then `$LOGNAME` on Unix or `%USERNAME%` on Windows). | `0` |
 | `request unclaim ID` | `--reviewer NAME` | Releases a Human claim without submitting a verdict. | `0` |
 | `request tool ID TOOL` | `--reviewer NAME` | Runs a declared Human `launch` or `output` tool on a claimed request. A `viewer` tool instead tells you to open the Artifact in the desktop app (or returns a viewer descriptor with `--json`). | `0` (`2` tool error) |
-| `request submit ID` | `--verdict GREEN\|RED`, `[--fields JSON \| --fields-file PATH]`, `--reviewer NAME` | Validates owner fields (mutually exclusive `--fields` or `--fields-file`; omitting both submits `{}`) against the verdict's schema and settles the Human request. | `0` (also for `RED`) |
+| `request submit ID` | `--verdict GREEN\|RED`, `[--issue TEXT ... \| --issues-file PATH]`, `--reviewer NAME` | Settles the Human request: `GREEN` with no issues, or `RED` with at least one (`--issue` once for each, or a JSON array of strings in `--issues-file`). | `0` (also for `RED`) |
 | `session show REF` | `--summary` | Prints saved Agent review transcript (or token/turn/tool-call summary). | `0` |
 | `session send REF MSG` | — | Continues a saved Agent conversation with a follow-up question (verdict unchanged). | `0` |
 | `tools check [EVAL]` | static: `[EVAL \| --eval ID] [--tool NAME]` or `[--artifact ID] [--audience agent\|human] [--tool NAME]`; execute: `--execute --tool NAME (EVAL \| --eval ID \| --artifact ID --audience agent\|human) [--args JSON]` (`--args` is for Agent tools only) | Validates tool declarations and executables statically (or runs one tool with `--execute`). | `0` ready/ok, `1` check/tool failed |
@@ -95,13 +97,15 @@ Every MCP tool accepts an optional `project` argument (absolute project path); i
 | `verify_status` | **`run`** | Returns saved Run state, counts, elapsed seconds, and `next_check`. |
 | `verify_wait` | **`run`**, optional `seconds` (0–40, default 30) | Waits for Run settlement or the timeout bound. |
 | `verify_watch` | **`run`** | Follows Run changes for up to 30s; sends `notifications/progress` (`update`, `eval_result`, `outcome`) when the host supplies `_meta.progressToken` in request metadata (use `verify_wait` when the host does not display progress). |
-| `verify_result` | **`run`**, optional `cursor` | Returns final verdict and paged `findings` (`ready: false` while running). |
+| `verify_result` | **`run`**, optional `cursor` | Returns final verdict and paged `findings`, one per failing request, each summarizing its issues (`ready: false` while running). |
 | `verify_cancel` | **`run`** | Requests cancellation of an open Run. |
 | `status` | optional `scope` (Selection object, default `{"kind":"all"}`) | Predicts current states and `execute`/`reuse`/`wait`/`blocked` actions. |
 | `config_check` | none | Static validation of `.artifactize/` definitions. |
-| `plugin_list` | none | Lists the built-in and project-installed plugin types in the paged CLI JSON format. |
-| `plugin_add` | `path` (absolute folder) | Installs a plugin. Returns its type and details with `action: "added"`. |
-| `plugin_remove` | `type` | Removes a project-installed plugin. Returns its type with `action: "removed"`. |
+| `config_expand` | optional `artifact` | What each Artifact's binding (or one Artifact's) expands to, with where it is bound, as `config expand --json` prints it. |
+| `config_symbols` | none | The global bindings and macro signatures, as `config symbols --json` prints them. |
+| `plugin_list` | none | Lists the built-in and project-installed plugins in the paged CLI JSON format. |
+| `plugin_add` | `path` (absolute folder) | Installs a plugin. Returns its namespace and details with `action: "added"`. |
+| `plugin_remove` | `namespace` | Removes a project-installed plugin. Returns its namespace with `action: "removed"`. |
 | `config_graph` | optional `scope` (Selection object), `impact` (boolean, default `false`) | Static graph of Artifacts, evals, cycles, and relations (`impact: true` includes downstream consumers). |
 | `request_logs` | **`id`**, optional `stream` (`"stdout"\|"stderr"\|"both"`), `tail`, `start`, `end`, `search` | Reads bounded runtime output lines for request `id`. |
 | `run_list` | optional `limit` (default 20), `offset` (default 0) | Lists saved Runs for this project, newest first. |

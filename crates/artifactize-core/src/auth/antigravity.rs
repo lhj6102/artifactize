@@ -2,7 +2,7 @@
 //! URLs and a single pasted code are relayed to the official CLI; its credentials and vendor
 //! files never pass through Artifactize.
 
-use std::{ffi::OsString, path::PathBuf, time::Duration};
+use std::{path::PathBuf, time::Duration};
 
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -16,11 +16,10 @@ use crate::{
         AgentId, Problem,
         catalog::{
             ANTIGRAVITY_MINIMUM, AgentAvailability, AgentSpec, PROBE_TIMEOUT, bump_auth_generation,
-            invalidate_probe_cache, preset_by_id, probe_spec,
+            check_probe_dir_isolated, invalidate_probe_cache, logout_spec, preset_by_id,
+            probe_spec,
         },
-        wire::{AUTH_LINK_MARKER, Connection},
     },
-    agent::error::Failure,
     llm::models::ListedModel,
     platform, process,
 };
@@ -60,7 +59,7 @@ fn antigravity_id() -> AgentId {
 /// Probe Antigravity in an empty private tempdir without authenticating or sending a prompt.
 pub async fn status() -> Status {
     let spec = antigravity_spec();
-    match probe_spec(&spec, true).await {
+    match probe_spec(&spec, None, true).await {
         AgentAvailability::Ready {
             executable,
             version,
@@ -119,9 +118,10 @@ pub async fn status() -> Status {
     }
 }
 
-pub async fn models() -> Result<Vec<ListedModel>, String> {
+/// The models Antigravity offers, probed as for `repo`: an executable inside it is never run.
+pub async fn models(repo: Option<&std::path::Path>) -> Result<Vec<ListedModel>, String> {
     let spec = antigravity_spec();
-    match probe_spec(&spec, true).await {
+    match probe_spec(&spec, repo, true).await {
         AgentAvailability::Ready { models, .. } => Ok(models),
         AgentAvailability::Missing { reason } => Err(reason),
         AgentAvailability::NotSetUp { reason, .. } => Err(format!(
@@ -133,68 +133,7 @@ pub async fn models() -> Result<Vec<ListedModel>, String> {
 }
 
 pub async fn logout() -> Result<(), String> {
-    let spec = antigravity_spec();
-    let probe_dir =
-        platform::private_tempdir_in("artifactize-acp-", &platform::temporary_directory())
-            .map_err(|error| format!("Cannot create Antigravity logout directory: {error}."))?;
-    let resolved = crate::acp::trust::resolve_executable(&spec.program, None, false)?;
-    let mut args: Vec<OsString> = spec.args.iter().map(OsString::from).collect();
-    args.push("--sandbox".into());
-    args.push("--include-default-customizations=false".into());
-    let command = process::Command {
-        program: resolved.into_os_string(),
-        args,
-        cwd: probe_dir.path().to_path_buf(),
-        env: spec.build_env(false),
-        timeout: PROBE_TIMEOUT,
-    };
-    let cancel = CancellationToken::new();
-    let mut child = process::spawn_supervised(&command, &cancel)
-        .await
-        .map_err(|error| format!("Cannot start Antigravity: {error}."))?;
-    let stdout = child.stdout().take().expect("stdout piped");
-    let stdin = child.stdin().take().expect("stdin piped");
-    let mut stderr = child.stderr().take().expect("stderr piped");
-    let stderr_task =
-        tokio::spawn(async move { crate::acp::catalog::read_bounded_stderr(&mut stderr).await });
-    let mut conn = Connection::new(
-        &spec.name,
-        &spec.install_hint,
-        stdout,
-        stdin,
-        false,
-        spec.known_secrets(),
-    );
-    let result = tokio::time::timeout(PROBE_TIMEOUT, conn.logout())
-        .await
-        .unwrap_or_else(|_| {
-            Err(Problem::Failed(
-                "Antigravity did not answer ACP logout in time.".into(),
-            ))
-        });
-    drop(conn);
-    let _ = process::terminate(&mut child).await;
-    let _ = child.cleanup().await;
-    let stderr_bytes = crate::task::joined(stderr_task.await).unwrap_or_default();
-    let stderr_text = platform::output_text(&stderr_bytes);
-
-    bump_auth_generation();
-    invalidate_probe_cache(&antigravity_id());
-
-    match result {
-        Ok(()) => Ok(()),
-        Err(problem) => {
-            let final_problem = if stderr_text.contains(AUTH_LINK_MARKER) {
-                Problem::SignedOut {
-                    agent: spec.name,
-                    hint: spec.install_hint,
-                }
-            } else {
-                problem
-            };
-            Err(Failure::from(final_problem).message)
-        }
-    }
+    logout_spec(&antigravity_spec()).await
 }
 
 #[derive(Debug, Clone)]
@@ -210,16 +149,21 @@ pub async fn login_with(
 ) -> Result<(), String> {
     let deadline = Instant::now() + LOGIN_TIMEOUT;
     let spec = antigravity_spec();
-    let directory =
-        platform::private_tempdir_in("artifactize-acp-", &platform::temporary_directory())
-            .map_err(|error| format!("Cannot create Antigravity sign-in directory: {error}."))?;
     let executable = crate::acp::trust::resolve_executable(&spec.program, None, false)?;
-    // Verify minimum CLI version before launching interactive login.
+    // Verify minimum CLI version in its own isolated empty private tempdir before interactive login.
+    let version_dir =
+        platform::private_tempdir_in("artifactize-acp-version-", &platform::temporary_directory())
+            .map_err(|error| {
+                format!("Cannot create Antigravity version check directory: {error}.")
+            })?;
+    check_probe_dir_isolated(version_dir.path(), None).map_err(|error| {
+        format!("Refusing to run Antigravity version check inside a workspace: {error}")
+    })?;
     let version_cmd = process::Command {
         program: executable.as_os_str().to_owned(),
         args: vec!["--version".into()],
-        cwd: directory.path().to_path_buf(),
-        env: spec.build_env(false),
+        cwd: version_dir.path().to_path_buf(),
+        env: spec.build_env(true),
         timeout: PROBE_TIMEOUT,
     };
     if let Ok(output) =
@@ -234,12 +178,19 @@ pub async fn login_with(
             "Antigravity CLI {ver} is too old; update `agy` to {ANTIGRAVITY_MINIMUM} or newer."
         ));
     }
+    drop(version_dir);
 
+    let login_dir =
+        platform::private_tempdir_in("artifactize-acp-login-", &platform::temporary_directory())
+            .map_err(|error| format!("Cannot create Antigravity sign-in directory: {error}."))?;
+    check_probe_dir_isolated(login_dir.path(), None).map_err(|error| {
+        format!("Refusing to run Antigravity sign-in inside a workspace: {error}")
+    })?;
     let command = process::Command {
         program: executable.into_os_string(),
         args: vec!["acp".into(), "--login".into()],
-        cwd: directory.path().to_path_buf(),
-        env: spec.build_env(false),
+        cwd: login_dir.path().to_path_buf(),
+        env: spec.build_env(true),
         timeout: deadline.saturating_duration_since(Instant::now()),
     };
     let mut cli = process::spawn_handoff(&command)

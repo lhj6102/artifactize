@@ -63,7 +63,7 @@ pub async fn execution_paths(
         let session = &registry.scope.artifacts[owner].views.agent_sessions[name];
         for (suffix, command) in [("start", &session.start), ("stop", &session.stop)] {
             let key: crate::config::ExecutionPinName =
-                format!("{name}_{}.{suffix}", owner).parse()?;
+                format!("{}:{suffix}", name.published(owner.as_str())).parse()?;
             for path in &command.execution_paths {
                 let absolute = scope::scoped_path(&config.root, Path::new(path))
                     .map_err(|error| format!("Tool {key} executionPaths {path}: {error}"))?;

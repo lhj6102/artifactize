@@ -242,18 +242,16 @@ pub struct ExecutionOptions {
     pub max_tool_calls: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u64>,
-    /// The selected `profileVariants` entry; absent for the declared profile.
+    /// The named profile a Run chose instead of the eval's own, which only executions saved
+    /// before profiles chose their settings from the environment record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub variant: Option<crate::config::ProfileVariantName>,
+    pub variant: Option<crate::config::ProfileName>,
 }
 
 impl ExecutionOptions {
     /// The declared options of an effective profile, as declared (absent means the default).
-    pub fn new(profile: &Profile, variant: Option<&crate::config::ProfileVariantName>) -> Self {
-        let mut options = Self {
-            variant: variant.cloned(),
-            ..Self::default()
-        };
+    pub fn new(profile: &Profile) -> Self {
+        let mut options = Self::default();
         match profile {
             Profile::Agent {
                 backend,

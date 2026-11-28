@@ -238,6 +238,29 @@ impl From<acp::VerifyBridgeState> for ChatVerifyBridgeState {
     }
 }
 
+/// What a chat's turn is doing now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ChatActivity {
+    /// No turn runs.
+    Idle,
+    /// A turn runs.
+    Running,
+    /// A turn runs and waits for an answer to a permission request.
+    WaitingPermission,
+}
+
+impl ChatActivity {
+    /// From the library's live flags; a permission waits only while its turn runs.
+    fn new(running: bool, waiting_permission: bool) -> Self {
+        match (running, waiting_permission) {
+            (false, _) => Self::Idle,
+            (true, false) => Self::Running,
+            (true, true) => Self::WaitingPermission,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum ChatSessionView {
@@ -259,8 +282,7 @@ pub struct ChatSession {
     pub target: Option<ChatTarget>,
     pub created_at: String,
     pub updated_at: String,
-    pub running: bool,
-    pub waiting_permission: bool,
+    pub activity: ChatActivity,
     pub legacy_migration_notice: bool,
     pub outcome: Option<ChatOutcome>,
     pub unseen: bool,
@@ -287,8 +309,7 @@ impl From<chat::Session> for ChatSession {
             target: session.target.map(Into::into),
             created_at: session.created_at.to_string(),
             updated_at: session.updated_at.to_string(),
-            running: session.running,
-            waiting_permission: session.waiting_permission,
+            activity: ChatActivity::new(session.running, session.waiting_permission),
             legacy_migration_notice: session.legacy_migration_notice,
             outcome,
             unseen,
@@ -715,11 +736,13 @@ pub struct ChatTurn {
 #[serde(rename_all = "camelCase")]
 pub struct ChatView {
     pub session: ChatSession,
-    pub running: bool,
-    pub waiting_permission: bool,
+    pub activity: ChatActivity,
     pub turns: Vec<ChatTurn>,
     pub live_config_options: Vec<ChatConfigOption>,
     pub verify_bridge_state: ChatVerifyBridgeState,
+    /// The engine or agent the conversation last ran on, when the session's target is another:
+    /// the next message continues there with a Handoff.
+    pub handoff_from: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -759,12 +782,22 @@ impl From<ChatTrustScope> for acp::trust::TrustScope {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatLauncherFingerprint {
     pub resolved_executable: PathKey,
     pub executable_sha256: String,
     pub args_hash: String,
+}
+
+impl From<ChatLauncherFingerprint> for acp::trust::LauncherFingerprint {
+    fn from(fp: ChatLauncherFingerprint) -> Self {
+        Self {
+            resolved_executable: fp.resolved_executable.to_path(),
+            executable_sha256: fp.executable_sha256,
+            args_hash: fp.args_hash,
+        }
+    }
 }
 
 impl From<acp::trust::LauncherFingerprint> for ChatLauncherFingerprint {
@@ -1025,8 +1058,7 @@ pub async fn chat_open(app: tauri::State<'_, App>, id: SessionKey) -> Result<Cha
                 .watch(std::slice::from_ref(&view.session));
             ChatView {
                 session: view.session.into(),
-                running: view.running,
-                waiting_permission: view.waiting_permission,
+                activity: ChatActivity::new(view.running, view.waiting_permission),
                 turns: view
                     .turns
                     .into_iter()
@@ -1042,6 +1074,7 @@ pub async fn chat_open(app: tauri::State<'_, App>, id: SessionKey) -> Result<Cha
                     .map(Into::into)
                     .collect(),
                 verify_bridge_state: view.verify_bridge_state.into(),
+                handoff_from: view.handoff_from,
             }
         })
         .map_err(Failure::Read)
@@ -1092,17 +1125,25 @@ pub async fn chat_permission_respond(
         .map_err(Failure::Action)
 }
 
-/// Record explicit machine-local Workspace Trust for an ACP agent on a worktree/repo scope.
+/// Record explicit machine-local Workspace Trust for an ACP agent on the `scope` and launcher
+/// `fingerprint` the trust prompt showed.
 #[tauri::command]
 #[specta::specta]
 pub async fn chat_trust_grant(
     app: tauri::State<'_, App>,
     worktree: PathKey,
     agent: String,
+    scope: ChatTrustScope,
+    fingerprint: ChatLauncherFingerprint,
 ) -> Result<ChatTrustRecord, Failure> {
     let agent_id: acp::AgentId = agent.parse().map_err(Failure::Invalid)?;
     app.chat
-        .trust_workspace(&worktree.to_path(), &agent_id)
+        .trust_workspace(
+            &worktree.to_path(),
+            &agent_id,
+            &scope.into(),
+            &fingerprint.into(),
+        )
         .await
         .map(Into::into)
         .map_err(Failure::Action)

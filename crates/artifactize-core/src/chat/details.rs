@@ -67,6 +67,108 @@ struct Arguments<'a> {
     args: Vec<&'a str>,
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct WriteArgs {
+    path: String,
+    text: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct EditArgs {
+    path: String,
+    old_text: String,
+    new_text: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CommandArgs {
+    program: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    args: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cwd: Option<String>,
+}
+
+#[derive(Default, Deserialize, Serialize)]
+#[serde(default)]
+struct ReadDisplayArgs {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pattern: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    start_line: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    end_line: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_results: Option<u64>,
+}
+
+/// Format only validated, typed tool arguments for public `Block::Tool.arguments`; unparsed or
+/// invalid provider payloads are dropped rather than forwarded verbatim (`C-ACP-EDGE-ISOLATION`).
+pub(super) fn display_arguments(name: &str, arguments: &Value) -> String {
+    let encoded = match name {
+        "read" | "list" | "glob" | "grep" => {
+            let builtin = match name {
+                "read" => artifactize_tools::Builtin::Read,
+                "list" => artifactize_tools::Builtin::List,
+                "glob" => artifactize_tools::Builtin::Glob,
+                "grep" => artifactize_tools::Builtin::Grep,
+                _ => unreachable!(),
+            };
+            if artifactize_tools::builtin::Input::parse(builtin, arguments.clone()).is_err() {
+                return String::new();
+            }
+            let parsed: ReadDisplayArgs = match serde_json::from_value(arguments.clone()) {
+                Ok(parsed) => parsed,
+                Err(_) => return String::new(),
+            };
+            serde_json::to_string(&parsed).unwrap_or_default()
+        }
+        "write" => {
+            let Ok(mut parsed) = serde_json::from_value::<WriteArgs>(arguments.clone()) else {
+                return String::new();
+            };
+            parsed.text = excerpt(parsed.text).0;
+            serde_json::to_string(&parsed).unwrap_or_default()
+        }
+        "edit" => {
+            let Ok(mut parsed) = serde_json::from_value::<EditArgs>(arguments.clone()) else {
+                return String::new();
+            };
+            parsed.old_text = excerpt(parsed.old_text).0;
+            parsed.new_text = excerpt(parsed.new_text).0;
+            serde_json::to_string(&parsed).unwrap_or_default()
+        }
+        "run_command" => {
+            let Ok(parsed) = serde_json::from_value::<CommandArgs>(arguments.clone()) else {
+                return String::new();
+            };
+            serde_json::to_string(&parsed).unwrap_or_default()
+        }
+        name if crate::verify_tools::chat_tool(name) => {
+            let Some(map) = arguments.as_object().cloned() else {
+                return String::new();
+            };
+            let Ok(call) =
+                crate::verify_tools::Call::parse(name, map, time::OffsetDateTime::now_utc())
+            else {
+                return String::new();
+            };
+            call.display_arguments()
+        }
+        _ => return String::new(),
+    };
+    if encoded.len() <= EXCERPT_BYTES {
+        encoded
+    } else {
+        excerpt(encoded).0
+    }
+}
+
 pub(super) fn read_summary(
     name: &str,
     path: Option<&std::path::Path>,

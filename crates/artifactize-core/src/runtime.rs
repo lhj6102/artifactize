@@ -195,7 +195,10 @@ pub enum Error {
     #[error(transparent)]
     Process(#[from] process::Error),
     #[error("runtime process terminated without a verdict (signal {signal:?})")]
-    AbnormalExit { signal: Option<i32>, output: Output },
+    AbnormalExit {
+        signal: Option<i32>,
+        output: Box<Output>,
+    },
 }
 
 /// Owns the supervisor and its process cleanup independently of the result waiter.
@@ -283,7 +286,10 @@ where
                     Outcome::Completed(ReviewResult { exit_code, output })
                 }
                 crate::platform::ProcessEnd::Signaled(signal) => {
-                    Outcome::OperationalError(Error::AbnormalExit { signal, output })
+                    Outcome::OperationalError(Error::AbnormalExit {
+                        signal,
+                        output: Box::new(output),
+                    })
                 }
             }
         }

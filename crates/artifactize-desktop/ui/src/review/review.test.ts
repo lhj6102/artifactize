@@ -1,12 +1,12 @@
-// The Review state against a mocked command boundary: verdict forms that answer out of
-// order, the library's draft per verdict and its Points, and the Tool log the backend's lines
+// The Review state against a mocked command boundary: verdict changes that answer out of
+// order, the library's draft with its issues and Points, and the Tool log the backend's lines
 // build.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "./review.svelte";
-import { draftLibrary, greenForm, humanView, scoredRed } from "./fixtures";
+import { draftLibrary, humanView } from "./fixtures";
 import type { DraftChange } from "../ipc/client";
 
 /** A verdict change the test answers when it chooses. */
@@ -30,31 +30,34 @@ function backend(library = draftLibrary()) {
 afterEach(() => clearMocks());
 
 describe("Review", () => {
-  it("shows a saved draft's verdict and reasons as the library holds them, sending nothing", async () => {
+  it("shows a saved draft's verdict and issues as the library holds them, sending nothing", async () => {
     const { pending, library } = backend();
     library.draft.verdict = "GREEN";
-    library.draft.reasons = ["Read it all."];
+    library.draft.issues = ["Read it all."];
     const review = new Review("run-a-2", new Jobs());
     await review.load();
     await waitFor(() => expect(review.verdict).toBe("GREEN"));
-    expect(review.reasons).toEqual(["Read it all."]);
-    expect(review.form?.verdict).toBe("GREEN");
+    expect(review.issues).toEqual(["Read it all."]);
+    expect(review.blocked("")).toBe("GREEN takes no issues: remove them, or submit RED with them.");
+    library.draft.verdict = "RED";
+    await review.readDraft();
     expect(review.blocked("")).toBeNull();
     expect(review.submittable("")).toBe(true);
-    expect(review.blocked("half typed")).toBe("Add the typed reason first");
+    expect(review.blocked("half typed")).toBe("Add the typed issue first");
     expect(pending).toEqual([]);
   });
 
-  it("opens no form for a draft whose verdict is not chosen yet", async () => {
+  it("asks for a verdict while the draft has none", async () => {
     backend();
     const review = new Review("run-a-2", new Jobs());
     await review.load();
     await review.readDraft();
     expect(review.draft?.verdict).toBeNull();
-    expect(review.form).toBeNull();
+    expect(review.verdict).toBeNull();
+    expect(review.blocked("")).toBe("Choose GREEN or RED");
   });
 
-  it("shows the verdict chosen last when its form arrives before the earlier one", async () => {
+  it("shows the verdict chosen last when its answer arrives before the earlier one", async () => {
     const { pending } = backend();
     const review = new Review("run-a-2", new Jobs());
     await review.load();
@@ -65,69 +68,67 @@ describe("Review", () => {
     await red;
     pending.find((request) => request.verdict === "GREEN")!.answer();
     await green;
-    expect(review.form?.verdict).toBe("RED");
+    expect(review.verdict).toBe("RED");
   });
 
-  it("writes reasons one after another, each edit naming the reason it saw; a refused edit says why and shows the draft as it stands", async () => {
+  it("writes issues one after another, each edit naming the issue it saw; a refused edit says why and shows the draft as it stands", async () => {
     const { library } = backend();
     const review = new Review("run-a-2", new Jobs());
     await review.load();
     await waitFor(() => expect(review.draft).not.toBeNull());
-    const [first, second] = await Promise.all([review.addReason("one"), review.addReason("two")]);
+    const [first, second] = await Promise.all([review.addIssue("one"), review.addIssue("two")]);
     expect([first, second]).toEqual([true, true]);
-    expect(review.reasons).toEqual(["one", "two"]);
-    expect(await review.addReason("   ")).toBe(false);
+    expect(review.issues).toEqual(["one", "two"]);
+    expect(await review.addIssue("   ")).toBe(false);
     // Changed elsewhere meanwhile: the edit names what it saw, the library refuses it.
-    library.draft.reasons[1] = "two, as another window wrote it";
-    expect(await review.editReason(1, "two", "2")).toBe(false);
+    library.draft.issues[1] = "two, as another window wrote it";
+    expect(await review.editIssue(1, "two", "2")).toBe(false);
     expect(review.notice?.error).toBe(true);
-    expect(review.reasons).toEqual(["one", "two, as another window wrote it"]);
-    expect(await review.removeReason(0, "one")).toBe(true);
-    expect(review.reasons).toEqual(["two, as another window wrote it"]);
+    expect(review.issues).toEqual(["one", "two, as another window wrote it"]);
+    expect(await review.removeIssue(0, "one")).toBe(true);
+    expect(review.issues).toEqual(["two, as another window wrote it"]);
   });
 
-  it("keeps each verdict's own fields in the library when switching verdicts, the reasons kept", async () => {
-    const { pending, library } = backend(draftLibrary(greenForm, scoredRed));
+  it("keeps the issues when switching verdicts; RED needs one and GREEN takes none", async () => {
+    const { pending, library } = backend();
     const review = new Review("run-a-2", new Jobs());
     await review.load();
     await waitFor(() => expect(review.draft).not.toBeNull());
-    await review.addReason("off by one");
     const red = review.choose("RED");
     await waitFor(() => expect(pending).toHaveLength(1));
     pending[0].answer();
     await red;
-    expect(review.blocked("")).toBe("score is required");
-    await review.form!.set("score", { kind: "integer", value: "2" });
+    expect(review.blocked("")).toBe("RED needs at least one issue.");
+    await review.addIssue("off by one");
     expect(review.blocked("")).toBeNull();
     const green = review.choose("GREEN");
     await waitFor(() => expect(pending[1]?.verdict).toBe("GREEN"));
     pending[1].answer();
     await green;
+    expect(review.blocked("")).toBe("GREEN takes no issues: remove them, or submit RED with them.");
     const again = review.choose("RED");
     await waitFor(() => expect(pending[2]?.verdict).toBe("RED"));
     pending[2].answer();
     await again;
     expect(library.draft.verdict).toBe("RED");
-    expect(review.form?.values.score).toEqual({ kind: "integer", value: "2" });
-    expect(review.reasons).toEqual(["off by one"]);
+    expect(review.issues).toEqual(["off by one"]);
   });
 
-  it("reloads a Point independently of the verdict's fields", async () => {
-    const { library } = backend(draftLibrary(greenForm, scoredRed));
+  it("reloads a Point independently of the issues", async () => {
+    const { library } = backend();
     library.draft.verdict = "RED";
     const review = new Review("run-a-2", new Jobs());
     await review.load();
-    await waitFor(() => expect(review.form?.verdict).toBe("RED"));
-    await review.form?.set("note", { kind: "text", value: "Total still wrong" });
-    await waitFor(() => expect(library.draft.red.draft.fields[1][1]).toEqual({ kind: "text", value: "Total still wrong" }));
+    await waitFor(() => expect(review.verdict).toBe("RED"));
+    await review.addIssue("Total still wrong");
     const point = { text: "#checkout .total", source: "Checkout", at: "2026-11-22T22:00:00Z" };
     library.draft.points.push(point);
     await review.readDraft();
     expect(review.draft?.points).toEqual([point]);
-    expect(review.form?.values.note).toEqual({ kind: "text", value: "Total still wrong" });
+    expect(review.issues).toEqual(["Total still wrong"]);
   });
 
-  it("keeps the claim and the open form when a read from before the claim answers after it", async () => {
+  it("keeps the claim and the chosen verdict when a read from before the claim answers after it", async () => {
     // The first read is held until the test answers it; the claim reads after it.
     let answer!: () => void;
     const held = new Promise<void>((done) => (answer = done));
@@ -152,7 +153,7 @@ describe("Review", () => {
     answer();
     await late;
     expect(review.view?.stage).toBe("review");
-    expect(review.form?.verdict).toBe("GREEN");
+    expect(review.verdict).toBe("GREEN");
   });
 
   it("runs a tool for its notice; its lines arrive in the Tool log on their own", async () => {

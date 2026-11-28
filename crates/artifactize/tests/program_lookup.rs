@@ -100,7 +100,7 @@ impl Project {
                 "--audience",
                 "human",
                 "--tool",
-                "launch",
+                "test-tools_launch",
             ],
             0,
         )
@@ -167,7 +167,10 @@ fn declared_eval_fingerprint_agent_and_human_share_path_lookup_and_literal_argum
     assert_eq!(checked["ok"], true);
     let run = project.run(&["verify", "--wait", "--all"], 0);
     assert_eq!(run["status"], "GREEN");
-    let stdout = run["requests"][0]["result"]["stdout"].as_str().unwrap();
+    // What it printed is in the Run's logs.
+    let id = run["requests"][0]["id"].as_str().unwrap().to_owned();
+    let logs = project.run(&["request", "logs", &id, "--stream", "stdout"], 0);
+    let stdout = logs["streams"][0]["lines"][0]["text"].as_str().unwrap();
     assert_eq!(serde_json::from_str::<Value>(stdout).unwrap(), args);
     for audience in ["agent", "human"] {
         let report = project.run(
@@ -180,7 +183,7 @@ fn declared_eval_fingerprint_agent_and_human_share_path_lookup_and_literal_argum
                 "--audience",
                 audience,
                 "--tool",
-                "argv",
+                "test-tools_argv",
             ],
             0,
         );
@@ -281,7 +284,7 @@ fn batch_argument_refusal_is_clear_for_runtime_agent_human_output_and_launch() {
                 "--audience",
                 audience,
                 "--tool",
-                "argv",
+                "test-tools_argv",
             ],
             1,
         );
@@ -308,7 +311,7 @@ fn batch_argument_refusal_is_clear_for_runtime_agent_human_output_and_launch() {
             "--audience",
             "human",
             "--tool",
-            "launch",
+            "test-tools_launch",
         ],
         1,
     );

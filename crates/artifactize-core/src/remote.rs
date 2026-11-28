@@ -17,8 +17,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::store::{Execution, ExecutionOptions, Origin, Producer, Provenance};
 
-/// Record schema version: 2 since records carry the 0.5 reuse key.
-pub const SCHEMA: u32 = 2;
+/// Record schema version: 3 since records carry `{ verdict, kind, issues }` results under
+/// `artifactize-key-v3` reuse keys; older records miss at the lookup boundary.
+pub const SCHEMA: u32 = 3;
 /// Bound network/storage cost of reduced records, which omit large captured execution output.
 pub const MAX_SUMMARY_BYTES: usize = 256 * 1024;
 /// Full records must fit the same per-entry budget as the local reusable cache.

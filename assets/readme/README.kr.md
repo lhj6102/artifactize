@@ -15,21 +15,28 @@ Artifactize는 프로젝트의 코드, 문서, 이미지, 실행 중인 앱을 �
 
 ## 한눈에 보기
 
-`.artifactize/<name>.artf` 파일에 각 Artifact와 평가를 선언한 뒤 `artifactize verify`를 실행합니다.
+`.artifactize/` 아래에 작은 `.artf` 언어로 각 Artifact와 평가를 선언하고, Agent 평가를 실행할 방식은 `.artfprofiles` 파일에 적은 뒤 `artifactize verify`를 실행합니다.
 
-```toml
-# .artifactize/api.artf
-path = "crates/api/"
+```rust
+// .artifactize/profiles.artfprofiles
+profile reviewer : agent = { backend = "codex", model = "gpt-6.2-sol", reasoning = "high" }
+```
 
-[evals.tests]
-title = "API tests pass"
-profile = { kind = "runtime", command = "cargo", args = ["test", "--locked"] }
-payload.instruction = "Run the test suite of {api}."
+```rust
+// .artifactize/api.artf
+artf api : files = {
+  path = "crates/api/"
 
-[evals.matches-spec]
-title = "API implementation matches the specification"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high" }
-payload.instruction = "Review {api} against {spec}. Submit GREEN only when every route matches."
+  // Run the API's test suite.
+  eval tests : runtime(command = "cargo", args = ["test", "--locked"]) = {
+    title = "API tests pass"
+  }
+
+  eval matches-spec : reviewer = {
+    title = "API implementation matches the specification"
+    instruction = "Review @{artf self} against @{artf spec}. Each route that does not match is an issue."
+  }
+}
 ```
 
 ```sh
@@ -86,7 +93,7 @@ Install Artifactize on this machine following https://artifactize.dev/docs/ko/ge
 /artifactize:hey-arti Artifactize를 설명하고 이 프로젝트에 어떻게 적용할 수 있을지 알려 줘
 ```
 
-Arti는 저장소를 살펴보고 팀에서 중요하게 여기는 기준을 물은 뒤, 프로젝트에 맞는 Artifact와 평가를 제안합니다. 제안에 동의하면 Arti가 `.artifactize/<name>.artf` 선언 파일을 작성하고 `verify`로 첫 검증을 실행합니다. AI 서비스에 가입하지 않고 먼저 체험해 보려면 [5분 빠른 시작](https://artifactize.dev/docs/ko/getting-started/guide.html)을 따라 해 보세요.
+Arti는 저장소를 살펴보고 팀에서 중요하게 여기는 기준을 물은 뒤, 프로젝트에 맞는 Artifact와 평가를 제안합니다. 제안에 동의하면 Arti가 `.artifactize/` 아래에 `.artf` 선언을 작성하고 `verify`로 첫 검증을 실행합니다. AI 서비스에 가입하지 않고 먼저 체험해 보려면 [5분 빠른 시작](https://artifactize.dev/docs/ko/getting-started/guide.html)을 따라 해 보세요.
 
 ## 동작 방식
 
@@ -98,16 +105,16 @@ Arti는 저장소를 살펴보고 팀에서 중요하게 여기는 기준을 물
 
 <p align="center">
   <img src="../others/graph-example.ko.png" width="800"
-       alt="예제 프로젝트의 Artifact Graph입니다. .artifactize/ 폴더의 .artf 파일에 PROBLEM.md, SPEC.md, code/, docs/를 선언했습니다. Artifact Graph에서 어떤 Artifact끼리 연결되는지, 연결마다 어떤 평가 방식을 쓰는지 확인할 수 있습니다. 평가 방식에는 명령 실행, AI 에이전트 리뷰, 사람의 승인이 있습니다.">
+       alt="예제 프로젝트의 Artifact Graph입니다. .artifactize/ 폴더의 .artf 코드에 PROBLEM.md, SPEC.md, code/, docs/를 각각 Artifact로 선언했습니다. Artifact Graph에서 어떤 Artifact끼리 연결되는지, 연결마다 어떤 평가 방식을 쓰는지 확인할 수 있습니다. 평가 방식에는 명령 실행, AI 에이전트 리뷰, 사람의 승인이 있습니다.">
 </p>
 
 | 기능 | 설명 |
 |---|---|
-| **Artifact Graph** | `.artifactize/<name>.artf`에서 `path`와 `parts`로 대상 파일이나 폴더, Live URI를 지정합니다. `{input}`으로 어떤 입력에 의존하는지 표시합니다. |
+| **Artifact Graph** | `.artifactize/` 아래의 `artf` 문에서 `path`와 `parts`로 대상 파일이나 폴더, Live URI를 지정합니다. eval이 `@{artf spec}`처럼 가리키는 입력으로 의존 관계를 드러내고, 반복되는 부분은 매크로로 한 번만 씁니다. |
 | **세 종류의 평가** | 한 워크플로에서 세 가지 평가 방식을 모두 쓸 수 있습니다. `runtime`에서는 테스트나 린터를 실행하고, `agent`에서는 LLM이 읽기 전용 도구로 평가 대상을 살펴보고 판정하며, `human`에서는 사람이 승인합니다. |
 | **입력 기반 재사용** | 평가에 쓰는 입력 내용으로 fingerprint(기본값 `artifactsum`)를 계산해 입력이 바뀌었는지 확인합니다. 다른 브랜치에서도 평가 입력이 바뀌지 않았다면 이전 결과를 그대로 재사용합니다. 팀원의 개발 환경과 CI에서도 마찬가지입니다. |
 | **백그라운드에서 계속 실행되는 Run** | `artifactize verify`로 시작한 Run은 백그라운드에서 실행됩니다. 에이전트가 평가에서 드러난 문제를 고치는 동안에도 Run은 계속 실행됩니다. 모든 자동 평가를 통과해야 Artifactize가 사람에게 승인을 요청합니다. |
-| **데스크톱 앱** | **Chat**에서 내장 에이전트와 작업합니다. **Verify**에서 Run을 살펴보고 선언을 편집합니다. **Review**에서는 Human 리뷰를 맡아 판정을 제출합니다. |
+| **데스크톱 앱** | **Chat**에서 내장 에이전트와 작업합니다. **Verify**에서 Run을 살펴보고, Current에서 선언을 코드로 읽습니다. **Review**에서는 Human 리뷰를 맡아 판정을 제출합니다. |
 | **Artifact 뷰어** | Artifact의 유형을 지정해 리뷰 도구를 재사용합니다. 전용 뷰어에서 파일, Markdown, 지정한 범위의 Artifactize 선언을 엽니다. Point를 지원하는 뷰어에서는 리뷰에 위치를 남길 수 있습니다. |
 
 ## 더 알아보기

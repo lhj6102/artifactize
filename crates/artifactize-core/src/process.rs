@@ -103,7 +103,28 @@ pub struct Output {
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
     pub truncated: bool,
+    /// The last bytes of each stream, whatever the prefix kept.
+    pub stdout_tail: Vec<u8>,
+    pub stderr_tail: Vec<u8>,
     pub duration: Duration,
+}
+
+/// Characters of a failed command's output its issue keeps.
+const REASON_CHARS: usize = 2000;
+
+impl Output {
+    /// Why a command that exited with `exit_code` failed: the end of what it wrote to stderr,
+    /// else to stdout, else that it exited with that code.
+    pub(crate) fn reason(&self, exit_code: i32) -> String {
+        [&self.stderr_tail, &self.stdout_tail]
+            .into_iter()
+            .map(|tail| platform::output_text(tail))
+            .find(|text| !text.trim().is_empty())
+            .map_or_else(
+                || crate::store::exited_with(exit_code),
+                |text| crate::store::output_tail(&text, REASON_CHARS),
+            )
+    }
 }
 
 /// Run a program artifactize itself uses, such as git, found through the shared program
@@ -541,6 +562,45 @@ pub(crate) async fn spawn_handoff(command: &Command) -> Result<Child, Error> {
     platform::spawn_windowless(child)
         .await
         .map_err(Error::Spawn)
+}
+
+/// Spawn an owned long-lived process (such as a warm ACP agent) from already-opened,
+/// SHA-256-verified executable and directory handles without re-resolving `PATH` or `cwd`
+/// (`C-TRUST-BEFORE-WORKTREE`).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Binds verified executable handle, verified worktree directory handle, and child launch parameters atomically"
+)]
+pub(crate) async fn spawn_verified_supervised(
+    path: &std::path::Path,
+    verified_file: std::fs::File,
+    expected_sha256: &str,
+    args: &[OsString],
+    cwd: &std::path::Path,
+    verified_cwd: std::fs::File,
+    env: &BTreeMap<OsString, OsString>,
+    process_cancel: &CancellationToken,
+) -> Result<Child, Error> {
+    if process_cancel.is_cancelled() {
+        return Err(Error::Cancelled);
+    }
+    let environment = platform::environment::for_child(env);
+    let mut spawned = platform::spawn_verified(
+        path,
+        verified_file,
+        expected_sha256,
+        args,
+        cwd,
+        verified_cwd,
+        &environment,
+    )
+    .await
+    .map_err(Error::Spawn)?;
+    if process_cancel.is_cancelled() {
+        let _ = terminate(&mut spawned).await;
+        return Err(Error::Cancelled);
+    }
+    Ok(spawned)
 }
 
 /// Spawn an owned long-lived process (such as a warm ACP agent) whose supervision lifetime is

@@ -216,7 +216,20 @@ impl<'a> Scheduler<'a, '_> {
                 Decision::Claim => (),
             }
             let declared = declarations[&request.eval_id];
-            if let Err(error) = cache::validate_file_inputs(&self.config, declared) {
+            let eval_backend_err = match &request.profile {
+                crate::config::StoredProfile::Agent { backend, .. } => {
+                    crate::llm::validate_eval_backend(
+                        backend,
+                        Some(&self.run.state_dir),
+                        Some(&self.config.root),
+                    )
+                    .err()
+                }
+                _ => None,
+            };
+            if let Some(error) = eval_backend_err
+                .or_else(|| cache::validate_file_inputs(&self.config, declared).err())
+            {
                 admissions[index] = Admission::Idle;
                 request.blocked_reason = None;
                 request.state = crate::store::RequestState::failed(

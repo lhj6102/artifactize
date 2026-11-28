@@ -321,6 +321,14 @@ public static class E2eBuildJob {
   }
 
   public static int Main() {
+    // Ctrl+C or Ctrl+Break reaches every process on the console, this wrapper included. Its
+    // child handles it, saving evidence and tearing down its fixtures; the wrapper stays until
+    // the child has exited, since closing the job first would kill the child mid-teardown.
+    try {
+      Console.CancelKeyPress += (sender, interrupt) => { interrupt.Cancel = true; };
+    } catch (IOException) {
+      // Without a console there is no Ctrl+C to outlast.
+    }
     try {
       IntPtr job = CreateJobObject(IntPtr.Zero, IntPtr.Zero);
       if (job == IntPtr.Zero) {
@@ -913,4 +921,12 @@ export function installBrowserOpener(root: NativePath, env: Environment, client:
   const bin = makeDirectory(nativePath(root, "browser-bin"));
   writeNodeCommand(bin, MACOS ? "open" : "xdg-open", "DESKTOP_TEST_BROWSER_CLIENT");
   return { ...withPathFirst(env, [bin]), ...browser };
+}
+
+/** This machine's key in an ACP Registry feed's binary distribution, as the app reads it. */
+export function registryPlatform(): string {
+  const os = ({ darwin: "darwin", linux: "linux", win32: "windows" } as Record<string, string>)[process.platform];
+  const arch = ({ x64: "x86_64", arm64: "aarch64" } as Record<string, string>)[process.arch];
+  if (!os || !arch) throw new Error(`no Registry platform for ${process.platform} ${process.arch}`);
+  return `${os}-${arch}`;
 }

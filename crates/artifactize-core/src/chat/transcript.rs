@@ -338,7 +338,10 @@ impl Fold {
                                     call_id: Some(wire_id),
                                     name: name.to_owned(),
                                     title: None,
-                                    arguments: call.function.arguments.to_string(),
+                                    arguments: details::display_arguments(
+                                        name,
+                                        &call.function.arguments,
+                                    ),
                                     result: None,
                                     tool_kind,
                                     status: ToolStatus::Running,
@@ -512,17 +515,31 @@ pub(super) fn turns(
         };
     }
 
-    // Mark any unfinished tools on settled turns as Cancelled/Interrupted rather than Running.
+    // Mark any unfinished tools and open permissions on settled turns as Cancelled rather than
+    // active.
     for fold in turns.values_mut() {
         if !matches!(
             fold.turn.state,
             TurnState::Running | TurnState::WaitingPermission
         ) {
             for block in &mut fold.turn.blocks {
-                if let Block::Tool { status, .. } = block
-                    && matches!(status, ToolStatus::Pending | ToolStatus::Running)
-                {
-                    *status = ToolStatus::Cancelled;
+                match block {
+                    Block::Tool { status, .. }
+                        if matches!(status, ToolStatus::Pending | ToolStatus::Running) =>
+                    {
+                        *status = ToolStatus::Cancelled;
+                    }
+                    Block::Permission { status, .. }
+                        if matches!(
+                            status,
+                            PermissionStatus::Pending
+                                | PermissionStatus::Selected
+                                | PermissionStatus::Delivering
+                        ) =>
+                    {
+                        *status = PermissionStatus::Cancelled;
+                    }
+                    _ => {}
                 }
             }
         }

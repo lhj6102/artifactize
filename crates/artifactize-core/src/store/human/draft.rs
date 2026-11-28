@@ -12,7 +12,7 @@ struct SavedDraft {
     draft: Draft,
     #[serde(default)]
     notes: String,
-    /// Absent from drafts saved before reasons, whose answer text becomes the reasons.
+    /// What drafts saved before 0.27 called their issues.
     reasons: Option<Vec<String>>,
 }
 
@@ -22,9 +22,8 @@ impl From<SavedDraft> for Draft {
         if !saved.notes.is_empty() {
             draft.points.insert(0, Point::earlier_notes(saved.notes));
         }
-        match saved.reasons {
-            Some(reasons) => draft.reasons = reasons,
-            None => draft.adopt_reasons(),
+        if let Some(reasons) = saved.reasons {
+            draft.issues = reasons;
         }
         draft
     }

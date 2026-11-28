@@ -1,2 +1,4 @@
-basis = true
-path = "glossary/"
+artf glossary = {
+  basis = true
+  path = "glossary/"
+}

@@ -1,19 +1,35 @@
 <script lang="ts">
-  // Each run of the review's tools as one line of the conversation (D-REV-3, J-HUMAN-LOG), with
-  // a Chat tool line's anatomy: the fold icon (the in-progress icon while it runs), Ran or Opened
-  // with the operation and its Artifact, its last stderr line behind a red rule, and at the right
-  // its end with how many lines it printed, or while it runs its newest line, its seconds and
-  // Cancel. A click on the line (also Enter) unfolds its lines under it, and another folds them.
+  // Each run of Human tools as one line (D-REV-3, J-HUMAN-LOG; an Artifact's Tool log, D-INS-4),
+  // with a Chat tool line's anatomy: the fold icon (the in-progress icon while it runs), Ran or
+  // Opened with the operation and its Artifact, its last stderr line behind a red rule, and at
+  // the right its end with how many lines it printed, or while it runs its newest line, its
+  // seconds and Cancel when there is one. A click on the line (also Enter) unfolds its lines
+  // under it, and another folds them. Where `newestOpen` is set, the newest run is unfolded until
+  // folded, so the one running shows its lines as they come.
   import type { Attachment } from "svelte/attachments";
   import { SvelteSet } from "svelte/reactivity";
-  import type { LogEntry } from "../ipc/client";
+  import type { LogEntry, ToolView } from "../ipc/client";
   import Icon from "../shell/Icon.svelte";
   import ToolLog from "./ToolLog.svelte";
-  import type { Review } from "./review.svelte";
 
-  let { review }: { review: Review } = $props();
-  /** The runs unfolded, by run. */
+  let {
+    log,
+    tools,
+    cancel = null,
+    newestOpen = false,
+  }: {
+    log: LogEntry[];
+    /** The tools the runs are of: whether a run opens a file or runs a command. */
+    tools: ToolView[];
+    /** Stops the running tool, offered on its line; none where Cancel is said elsewhere. */
+    cancel?: (() => void) | null;
+    newestOpen?: boolean;
+  } = $props();
+  /** The runs unfolded, and the newest folded by hand, by run. */
   const open = new SvelteSet<string>();
+  const shut = new SvelteSet<string>();
+  const newest = $derived(log.at(-1)?.run ?? null);
+  const unfolded = (run: string) => open.has(run) || (newestOpen && run === newest && !shut.has(run));
 
   let now = $state(Date.now());
   /** The seconds of a running tool tick only while one is shown. */
@@ -25,7 +41,7 @@
 
   /** A launch or viewer tool opens; an output tool runs. */
   function opens(entry: LogEntry): boolean {
-    const tool = review.view?.tools.find((each) => each.operation === entry.operation && each.artifact === entry.artifact);
+    const tool = tools.find((each) => each.operation === entry.operation && each.artifact === entry.artifact);
     return tool !== undefined && tool.kind !== "output";
   }
   const count = (entry: LogEntry) => `${entry.lines.length} ${entry.lines.length === 1 ? "line" : "lines"}`;
@@ -38,19 +54,24 @@
   const failed = (entry: LogEntry) => !!entry.end?.error && !/^■ exit 0\b/.test(entry.end.text);
 
   function toggle(run: string) {
-    if (open.has(run)) open.delete(run);
-    else open.add(run);
+    if (unfolded(run)) {
+      open.delete(run);
+      shut.add(run);
+    } else {
+      open.add(run);
+      shut.delete(run);
+    }
   }
 </script>
 
-{#each review.log as entry (entry.run)}
+{#each log as entry (entry.run)}
   {@const running = entry.end === null}
   {@const verb = opens(entry) ? (running ? "Opening" : "Opened") : running ? "Running" : "Ran"}
   {@const error = running ? null : stderr(entry)}
   <div class="run">
     <div class="line">
-      <button class="fold" aria-expanded={open.has(entry.run)} aria-label="{verb} {entry.operation} · {entry.artifact}" onclick={() => toggle(entry.run)}>
-        <span class={running ? "tone-running icon" : "icon"}><Icon name={running ? "running" : open.has(entry.run) ? "unfold" : "fold"} /></span>
+      <button class="fold" aria-expanded={unfolded(entry.run)} aria-label="{verb} {entry.operation} · {entry.artifact}" onclick={() => toggle(entry.run)}>
+        <span class={running ? "tone-running icon" : "icon"}><Icon name={running ? "running" : unfolded(entry.run) ? "unfold" : "fold"} /></span>
         <span class="verb">{verb}</span>
         <span class="target">{entry.operation}</span>
         <span class="artifact">· {entry.artifact}</span>
@@ -62,11 +83,11 @@
           <span class="end" class:failed={failed(entry)}>{end(entry)}</span>
         {/if}
       </button>
-      {#if running && review.busy?.tool}
-        <button class="button small quiet" aria-label="Cancel (Esc)" aria-keyshortcuts="Escape" onclick={() => review.cancel()}>Cancel</button>
+      {#if running && cancel}
+        <button class="button small quiet" aria-label="Cancel (Esc)" aria-keyshortcuts="Escape" onclick={cancel}>Cancel</button>
       {/if}
     </div>
-    {#if open.has(entry.run)}
+    {#if unfolded(entry.run)}
       <div class="lines"><ToolLog entries={[entry]} /></div>
     {/if}
   </div>

@@ -1,24 +1,19 @@
-path = "crates/artifactize-desktop/ui/e2e/"
-type = "files"
-parts = ["desktop-e2e-input", "desktop-e2e-integrity", "desktop-e2e-infra", "desktop-e2e-cases"]
+artf desktop-e2e : files = {
+  parts = [desktop-e2e-input, desktop-e2e-integrity, desktop-e2e-infra, desktop-e2e-cases]
+  path = "crates/artifactize-desktop/ui/e2e/"
 
-[evals.covers-journeys]
-title = "The scenarios cover every journey of the UX"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
+  eval covers-journeys : reviewer = {
+    title = "The scenarios cover every journey of the UX"
+    red_at = "P1"
+    instruction = "Read the journeys @{artf desktop-ux-features} and E2E-COVERAGE of the end-to-end rules @{artf desktop-e2e-rules}. Review the scenarios of @{artf desktop-e2e} (cases/, read through the views they call) for coverage only, as E2E-COVERAGE defines it. A gap is a journey no scenario covers, or one whose check would still pass with the journey's key outcome broken: say which breakage would pass unnoticed. What E2E-COVERAGE makes optional is not a gap, and code style and the other rules have their own reviews."
+  }
 
-[evals.covers-journeys.payload]
-instruction = """
-Read the journeys {desktop-ux-features} and E2E-COVERAGE of the end-to-end rules {desktop-e2e-rules}. Review the \
-scenarios of {desktop-e2e} (cases/, read through the views they call) for coverage only, as E2E-COVERAGE defines \
-it. A gap is a journey no scenario covers, or one whose check would still pass with the journey's key outcome \
-broken: say which breakage would pass unnoticed. What E2E-COVERAGE makes optional is not a gap, and code style and \
-the other rules have their own reviews."""
-
-[evals.lint]
-title = "The end-to-end TypeScript lint and type check pass"
-profile = { kind = "runtime", command = "pnpm", args = ["lint"], timeout_ms = 600000 }
-
-[evals.lint.payload]
-instruction = "Check the source-integrity rules over the suite {desktop-e2e} and its vendored provider with its part {desktop-e2e-integrity} (the checker it runs); then run TypeScript eslint over every test and helper of {desktop-e2e}, which enforces the mechanical parts of E2E-PLATFORM and E2E-REAL-APP of {desktop-e2e-rules}, then type-check them."
-
+  // Check the source-integrity rules over the suite desktop-e2e and its vendored provider with
+  // its part desktop-e2e-integrity (the checker it runs); then run TypeScript eslint over every
+  // test and helper of desktop-e2e, which enforces the mechanical parts of E2E-PLATFORM and
+  // E2E-REAL-APP of desktop-e2e-rules, then type-check them.
+  eval lint : runtime(command = "pnpm", args = ["lint"], timeout_ms = 600000) = {
+    title = "The end-to-end TypeScript lint and type check pass"
+    deps = [desktop-e2e-integrity, desktop-e2e-rules]
+  }
+}

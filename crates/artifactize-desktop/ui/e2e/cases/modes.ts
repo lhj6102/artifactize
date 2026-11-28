@@ -11,7 +11,7 @@ import { windows } from "../views/viewers.ts";
 export const scenarios: Scenario[] = [
   scenario<{ id: string; runId: string; otherId: string; otherRun: string }>({
     id: "review-reference",
-    title: "Claim from Verify; open the claimed review outside the default filter, keep its draft on release and restart, submit it and go back to its Run and Artifact",
+    title: "Claim from Verify; the claimed review stays waiting; open it outside an unclaimed filter, keep its draft on release and restart, submit it and go back to its Run and Artifact",
     journeys: ["J-DETAIL-REVIEW", "J-REVIEW-REF", "J-REVIEW-BACK", "J-HUMAN-DRAFT", "J-PANE-ROWS"],
     prepare: async (owned) => {
       const fixture = await createRelease(owned);
@@ -33,10 +33,22 @@ export const scenarios: Scenario[] = [
       await stage("claimable");
       await app.detail.reviewAction("Claim to review");
       await stage("yours");
-      await app.waitingBadge(1);
+      // A claimed review still waits for a person, its claimant: the bar keeps counting it and
+      // the waiting filter keeps listing it.
+      await app.waitingBadge(2);
       await app.mode("Review");
       const listed = async () => (await app.review.list()).map((row) => row.id);
-      await app.until(async () => (await listed()).join() === otherId, "the waiting filter lists only the other review");
+      await app.until(async () => [...await listed()].sort().join() === [id, otherId].sort().join(), "the waiting filter lists the claimed review beside the other");
+      await app.review.filterFor("type:human is:unclaimed");
+      await app.until(async () => (await listed()).join() === otherId, "the unclaimed filter lists only the other review");
+      await app.review.openListed(otherId);
+      await app.mode("Verify");
+      await app.graph.titled(runId);
+      await app.detail.until((detail) => detail.evals.some((row) => row.id === "e:release/signoff"), "returning to Verify restored the Artifact Detail as left");
+      await app.mode("Review");
+      assert.equal(await app.review.filter(), "type:human is:unclaimed", "returning to Review kept the filter");
+      await app.until(async () => (await listed()).join() === otherId, "returning to Review kept the filtered list");
+      await app.review.titleContains("release/signoff");
       await app.mode("Verify");
       await app.detail.reviewAction("Open in Review");
       await app.review.titleContains("release/signoff");
@@ -52,13 +64,12 @@ export const scenarios: Scenario[] = [
       await app.review.titleContains("release/signoff");
       await app.review.until((shown) => shown.stage === "Yours", "the direct reference shows the claimed review");
       assert.equal(await app.review.hasOutsideHint(), false);
-      assert.equal(await app.review.filter(), "type:human waiting");
+      assert.equal(await app.review.filter(), "type:human is:unclaimed");
       assert.deepEqual(await listed(), [otherId], "opening the exact review did not pin it into the filtered list");
       assert.match(await app.review.debugState(), new RegExp(`^Request ${id} `));
       await app.review.choose("GREEN");
-      await app.review.addReason("Release notes checked");
+      await app.review.addIssue("Check the linked notes again");
       await app.review.choose("RED");
-      await app.review.enter("reason", "Check the linked notes again");
       await app.review.release();
       await app.waitingBadge(2);
     },
@@ -70,19 +81,17 @@ export const scenarios: Scenario[] = [
       await app.review.openListed(id, true);
       await app.review.claim();
       await app.review.until((shown) => shown.verdict === "RED", "Review automatically opens the saved RED verdict after restart");
-      assert.equal(await app.review.value("reason"), "Check the linked notes again");
+      assert.deepEqual((await app.review.read())!.issues, ["Check the linked notes again"], "the issues kept across the restart");
       // Without any new verdict selection, the pet also opens the draft's last verdict.
       const w = windows();
       await w.mode("Verify");
       await w.pet();
       await w.petUntil((shown) => shown.verdict === "RED", "the pet opens the persisted RED verdict after restart");
       await w.mode("Review");
-      await app.review.choose("GREEN");
-      await app.review.until((shown) => shown.reasons.join() === "Release notes checked", "reclaim after restart restored the reasons");
       const completed = await app.review.submit();
-      assert.match(completed.completed, /Release notes checked/);
+      assert.match(completed.completed, /Check the linked notes again/);
       const saved = requests(fixture).find((row) => row.id === id);
-      assert.equal(saved?.status, "GREEN");
+      assert.equal(saved?.status, "RED");
       await app.waitingBadge(1);
       await app.review.openInVerify();
       await app.graph.titled(runId);
@@ -98,8 +107,8 @@ export const scenarios: Scenario[] = [
       await installChatProvider(owned, fixture);
       const gate = nativePath(fixture.root, "chat-run-gate");
       const definition = nativePath(fixture.repo, ".artifactize", "docs.artf");
-      writeText(definition, readText(definition).replace(/^profile = .*$/m,
-        `profile = ${runtimeProfile("slow", 120000, portablePath(gate))}`));
+      writeText(definition, readText(definition).replace(/^(\s*eval lint : )runtime\(.*\)( = \{)$/m,
+        (_, head: string, tail: string) => `${head}${runtimeProfile("slow", 120000, portablePath(gate))}${tail}`));
       return { fixture, args: ["--repo", fixture.repo], data: { firstRun: request(fixture).runId, gate } };
     },
     run: async (app, { fixture, data: { firstRun, gate } }) => {
@@ -151,6 +160,12 @@ export const scenarios: Scenario[] = [
       const streamed = await app.chat.reading(run);
       assert.equal(streamed.top, reading.top, "a new streamed line does not move what is being read");
       assert.equal(streamed.atEnd, false);
+      // Switching to Verify and back restores Verify's selected Run without re-selecting it,
+      // and restores Chat's exact session and scrolled reading position (J-MODES, J-CHAT-READ).
+      await app.mode("Verify");
+      await app.graph.titled(run);
+      await app.mode("Chat");
+      await app.until(async () => { const where = await app.chat.reading(run); return where.top === reading.top && !where.atEnd; }, "returning to Chat restored the scrolled reading position");
       await app.chat.scrollToEnd(run);
       const closed = nativePath(fixture.root, STOP_STREAM_CLOSED);
       assert.equal(exists(closed), false, "the provider is still streaming before Stop");
@@ -159,6 +174,10 @@ export const scenarios: Scenario[] = [
       await app.chat.send(CONTINUE_PROMPT);
       await app.chat.says(CONTINUE_ANSWER);
       await app.chat.show("Graph");
+      await app.mode("Verify");
+      await app.graph.titled(run);
+      await app.mode("Chat");
+      await app.chat.viewShown("Graph");
     },
     restarted: async (app) => {
       await app.mode("Chat");

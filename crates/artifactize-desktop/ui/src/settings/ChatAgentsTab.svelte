@@ -330,11 +330,13 @@
       <Dialog.Title class="dialog-title">Install ACP agent from Registry</Dialog.Title>
       {#if s.registryConfirm}
         {@const spec = s.registryConfirm}
+        <!-- Nothing is installed without the SHA-256 shown here (D-SET-9, D-OVL-8). -->
+        {@const undigested = !spec.artifactSha256}
         <form
           class="dialog-layout"
           onsubmit={(event) => {
             event.preventDefault();
-            if (s.registryConfirm) void s.installRegistry(s.registryConfirm);
+            if (s.registryConfirm && !undigested) void s.installRegistry(s.registryConfirm);
           }}
         >
           <div class="dialog-body">
@@ -366,7 +368,7 @@
               <dt>SHA-256</dt>
               <dd class="mono">{spec.artifactSha256 ?? "Not published by Registry"}</dd>
             </dl>
-            {#if spec.distributionKind === "npx" || spec.distributionKind === "uvx"}
+            {#if !undigested && (spec.distributionKind === "npx" || spec.distributionKind === "uvx")}
               <label class="consent-opt">
                 <input
                   type="checkbox"
@@ -377,22 +379,14 @@
                 /> Allow package build scripts (off by default)
               </label>
             {/if}
-            {#if !spec.artifactSha256 && (spec.distributionKind === "binary" || spec.distributionKind === "archive")}
-              <label class="consent-opt">
-                <input
-                  type="checkbox"
-                  checked={spec.allowUnsignedDigest}
-                  onchange={(event) => {
-                    if (s.registryConfirm) s.registryConfirm = { ...s.registryConfirm, allowUnsignedDigest: event.currentTarget.checked };
-                  }}
-                /> Confirm installing an artifact without a published SHA-256 digest
-              </label>
+            {#if undigested}
+              <p class="consent-opt">The Registry publishes no SHA-256 for it, so it cannot be installed.</p>
             {/if}
             {#if s.registryError}<p class="error" role="alert">{s.registryError}</p>{/if}
           </div>
           <div class="dialog-actions">
             <Dialog.Close class="button">Cancel</Dialog.Close>
-            <button class="button primary" type="submit" disabled={s.registryInstalling}>
+            <button class="button primary" type="submit" disabled={s.registryInstalling || undigested}>
               {s.registryInstalling ? "Installing…" : "Install"}
             </button>
           </div>

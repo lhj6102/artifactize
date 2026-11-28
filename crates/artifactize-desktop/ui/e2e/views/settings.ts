@@ -6,6 +6,8 @@ import { fill } from "../keys.ts";
 import { chooseOption, holds, until } from "./wait.ts";
 
 const SETTINGS = '[role="dialog"].settings-dialog';
+/** The Registry install's consent, over Settings. */
+const CONSENT = '[role="dialog"].registry-consent';
 
 /** Settings as read: its tabs with the shown one, the providers and chat agents listed with the
  * chosen one, and the text of what the shown tab shows. */
@@ -103,6 +105,29 @@ export class Settings {
       return this.until((shown) => shown.chatAgents.some((each) => each.name === name && each.chosen), `${name}'s setup shown`);
     }
     throw new Error(`Settings lists no chat agent ${name}`);
+  }
+
+  /** Click Install… beside the Registry entry `name`: its consent dialog opens, and its facts
+   * (Agent, Pinned version, Platform, Distribution, Source, Environment, SHA-256) are read. */
+  async registryInstall(name: string): Promise<Record<string, string>> {
+    const item = this.browser.$(SETTINGS).$(".registry-list").$(`li*=${name}`);
+    await item.waitForDisplayed({ timeoutMsg: `the Registry lists ${name}` });
+    await item.$("button=Install…").click();
+    await this.browser.$(CONSENT).waitForDisplayed({ timeoutMsg: "the install consent dialog opened" });
+    return this.browser.execute((selector) => {
+      const facts: Record<string, string> = {};
+      for (const term of document.querySelectorAll(`${selector} dl.facts > dt`)) {
+        facts[term.textContent?.trim() ?? ""] = term.nextElementSibling?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+      }
+      return facts;
+    }, CONSENT);
+  }
+
+  /** Click Install in the consent dialog: it closes once the agent is installed. */
+  async confirmRegistryInstall(): Promise<void> {
+    const dialog = this.browser.$(CONSENT);
+    await dialog.$("button=Install").click();
+    await dialog.waitForDisplayed({ reverse: true, timeout: 30000, timeoutMsg: "the consent dialog closed once the agent was installed" });
   }
 
   /** The text of what the test id `id` marks (`key-openai`, `codex-status`, `remote-status`). */

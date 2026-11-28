@@ -81,7 +81,7 @@ async fn owned_review(fixture: &OwnedFixture, cancellation: CancellationToken) -
         openai_response(
             "exact-model",
             "completed",
-            vec![call("c1", "act_a")],
+            vec![call("c1", "a-tools_act_a")],
             Value::Null,
         ),
         final_openai(),
@@ -193,8 +193,13 @@ async fn concurrent_first_bound_calls_share_one_session_start() {
         .unwrap()
         .with_sessions(&sessions);
     let (first, second) = tokio::join!(
-        registry.call("probe_a", json!({}), &fixture.output, cancellation.clone()),
-        registry.call("probe_a", json!({}), &fixture.output, cancellation),
+        registry.call(
+            "a-tools_probe_a",
+            json!({}),
+            &fixture.output,
+            cancellation.clone()
+        ),
+        registry.call("a-tools_probe_a", json!({}), &fixture.output, cancellation),
     );
     assert!(!first.is_error(), "{first:?}");
     assert!(!second.is_error(), "{second:?}");
@@ -276,7 +281,12 @@ fn panic_and_caller_runtime_shutdown_still_run_stop_and_cleanup_bound_calls() {
             }
             registry
                 .with_sessions(&sessions)
-                .call("act_a", json!({}), &output, CancellationToken::new())
+                .call(
+                    "a-tools_act_a",
+                    json!({}),
+                    &output,
+                    CancellationToken::new(),
+                )
                 .await;
             sessions.close().await.unwrap();
         });

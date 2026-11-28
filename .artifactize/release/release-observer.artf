@@ -1,6 +1,10 @@
-path = ".github/scripts/observe-live.mjs"
+artf release-observer = {
+  path = ".github/scripts/observe-live.mjs"
 
-[evals.stand-ins]
-title = "Each observation accepts matching services and diagnoses failures"
-profile = { kind = "runtime", command = "node", args = ["{release-observer}", "test"], timeout_ms = 30000 }
-payload.instruction = "Run {release-observer} against its owned local origin and HTTP services. All six observations must accept matching state and reject mismatches, missing resources and unreachable addresses with address-specific expected/actual diagnostics."
+  // Run release-observer against its owned local origin and HTTP services. All six observations
+  // must accept matching state and reject mismatches, missing resources and unreachable
+  // addresses with address-specific expected/actual diagnostics.
+  eval stand-ins : runtime(command = "node", args = ["@{path release-observer}", "test"], timeout_ms = 30000) = {
+    title = "Each observation accepts matching services and diagnoses failures"
+  }
+}

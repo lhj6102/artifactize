@@ -254,17 +254,25 @@ impl Fixture {
             .send(&session.id, "first message".into(), None)
             .await
             .unwrap_err();
-        assert!(
-            matches!(err, SendError::TrustRequired(ref req) if req.agent_id == agent),
-            "{err:?}"
-        );
+        let SendError::TrustRequired(requirement) = err else {
+            panic!("an untrusted send asks for trust: {err:?}");
+        };
+        assert_eq!(requirement.agent_id, agent);
         assert!(
             chat.open(&session.id).await.unwrap().turns.is_empty(),
             "untrusted send must not record Kind::Send in JSONL"
         );
 
         // Grant explicit Workspace Trust.
-        let trust_record = chat.trust_workspace(&self.repo, &agent).await.unwrap();
+        let trust_record = chat
+            .trust_workspace(
+                &self.repo,
+                &agent,
+                &requirement.scope,
+                &requirement.fingerprint,
+            )
+            .await
+            .unwrap();
         assert_eq!(trust_record.agent_id, agent);
 
         owned_run::subscribed(&self.state, async |changes| {

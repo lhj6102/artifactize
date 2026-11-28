@@ -106,7 +106,7 @@ pub struct Evidence {
     pub text: String,
 }
 
-/// One entry of an eval's result, the verdict left out: a text, or a list of findings.
+/// One entry of an eval's result: a text, or its issues.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ResultEntry {
@@ -114,8 +114,7 @@ pub enum ResultEntry {
     Items { key: String, items: Vec<ResultItem> },
 }
 
-/// A finding: its priority, or its rule and place, as the head (`P1`, `item · where`), then
-/// its other fields.
+/// An issue: its priority or its exit code as the head (`P1`, `exit 7`), then its reason.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ResultItem {
@@ -140,64 +139,39 @@ pub struct CardView {
     pub model: Option<String>,
 }
 
-fn text(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::String(text) => text.clone(),
-        other => other.to_string(),
-    }
-}
-
-/// The fields a finding leads with: an Agent finding's priority, a Human finding's rule and place.
-const HEAD: [&str; 3] = ["priority", "item", "where"];
-
-fn result_item(value: &serde_json::Value) -> ResultItem {
-    let Some(object) = value.as_object() else {
-        return ResultItem {
-            head: Some(text(value)),
-            fields: Vec::new(),
-        };
-    };
-    let head: Vec<_> = HEAD
-        .into_iter()
-        .filter_map(|key| object.get(key).map(text))
-        .collect();
-    ResultItem {
-        head: (!head.is_empty()).then(|| head.join(" · ")),
-        fields: object
-            .iter()
-            .filter(|(key, _)| !HEAD.contains(&key.as_str()))
-            .map(|(key, value)| Field {
-                key: key.clone(),
-                value: text(value),
-            })
-            .collect(),
-    }
-}
-
-/// A result's fields as entries, in their order: a list as its items, any other value as text.
-pub fn result_entries<'a>(
-    fields: impl IntoIterator<Item = (&'a String, &'a serde_json::Value)>,
-) -> Vec<ResultEntry> {
-    fields
-        .into_iter()
-        .map(|(key, value)| match value {
-            serde_json::Value::Array(items) => ResultEntry::Items {
-                key: key.clone(),
-                items: items.iter().map(result_item).collect(),
-            },
-            other => ResultEntry::Text {
-                key: key.clone(),
-                text: text(other),
-            },
-        })
-        .collect()
+/// A result's issues as one entry: each led by its priority or exit code, or `none`.
+pub fn issue_entries(issues: &[artifactize_core::store::Issue]) -> Vec<ResultEntry> {
+    let key = "issues".to_owned();
+    vec![if issues.is_empty() {
+        ResultEntry::Text {
+            key,
+            text: "none".to_owned(),
+        }
+    } else {
+        ResultEntry::Items {
+            key,
+            items: issues
+                .iter()
+                .map(|issue| ResultItem {
+                    head: issue
+                        .priority
+                        .map(|priority| priority.to_string())
+                        .or(issue.exit_code.map(|code| format!("exit {code}"))),
+                    fields: vec![Field {
+                        key: "reason".to_owned(),
+                        value: issue.reason.clone(),
+                    }],
+                })
+                .collect(),
+        }
+    }]
 }
 
 impl From<monitor::Card> for CardView {
     fn from(card: monitor::Card) -> Self {
         Self {
             instruction: card.instruction,
-            result: card.result.as_ref().map(result_entries),
+            result: card.issues.as_deref().map(issue_entries),
             raw: card.raw,
             exit_code: card.exit_code,
             error: card.error,

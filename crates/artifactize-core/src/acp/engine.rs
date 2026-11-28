@@ -30,28 +30,34 @@ use crate::{
     platform, repository, runs,
     store::{
         Receipts,
-        chat::{DeliverClaim, NewPermission, Owner},
+        chat::{NewPermission, Owner, PermissionDelivery},
     },
     types::{DeliveryBlock, SessionId},
 };
 
 use super::{
-    AcpBinding, AgentId, ConfigSelection, PermissionStatus, Problem, ToolDiff, ToolStatus,
-    WarmOwner,
+    AcpBinding, AgentId, ConfigCategory, ConfigChoice, ConfigOption, ConfigSelection,
+    PermissionStatus, PlanStep, Problem, ToolDiff, ToolLocation, ToolStatus, WarmOwner,
     catalog::{self, AgentSpec},
     handoff,
     pool::{Pool, TakeOutcome, WarmChild},
     redactor::StreamRedactor,
     trust::{self, LauncherFingerprint, TrustRequirement, TrustScope},
-    verify_bridge::{BridgeCall, VerifyBridge},
+    verify_bridge::{BridgeCall, BridgeReply, VerifyBridge, redact_json_value},
     wire::{
         FINAL_ANSWER_BYTES, IncomingPermission, OpenedSession, PromptFrame, SessionEvent,
         StopReason, TURN_DISPLAY_EVENTS, TURN_PERSISTED_BYTES, bound_text,
+        reconcile_non_mode_options,
     },
 };
 
 /// Poll interval for cross-window Stop and Permission decisions.
 const CAS_POLL_INTERVAL: Duration = Duration::from_millis(250);
+/// Maximum reserved config-fallback notices recorded outside the normal display cap so genuine
+/// model/effort changes still surface without allowing unbounded transcript growth.
+const MAX_CONFIG_FALLBACK_NOTICES: usize = 32;
+/// Maximum byte length of one config-fallback notice.
+const CONFIG_FALLBACK_NOTICE_BYTES: usize = 512;
 
 /// Pre-checked ACP launch context verified BEFORE a Chat turn is accepted into JSONL.
 pub(crate) struct VerifiedAcpLaunch {
@@ -63,23 +69,101 @@ pub(crate) struct VerifiedAcpLaunch {
 }
 
 impl VerifiedAcpLaunch {
-    /// Re-hash the executable bytes on disk and re-verify Workspace Trust immediately before
-    /// spawning or reusing an ACP child in `worktree` (`C-TRUST-BEFORE-WORKTREE`).
-    pub(crate) fn reverify_before_exec(&self, worktree: &Path) -> Result<(), Problem> {
+    /// Open both the worktree directory and the resolved executable once without following links,
+    /// hash the executable bytes directly from its open handle, and re-verify Workspace Trust and
+    /// directory identity immediately before spawning or reusing an ACP child in `worktree`
+    /// (`C-TRUST-BEFORE-WORKTREE`). Returns `(verified_executable, verified_worktree)` so fresh
+    /// spawns bind directly to both verified handles.
+    pub(crate) fn open_and_reverify_before_exec(
+        &self,
+        worktree: &Path,
+    ) -> Result<(std::fs::File, std::fs::File), Problem> {
+        let verified_cwd = platform::open_verified_worktree(worktree).map_err(|error| {
+            Problem::Failed(format!(
+                "Cannot open ACP worktree {}: {error}.",
+                platform::path_text(worktree)
+            ))
+        })?;
+        let mut file = platform::open_verified_executable(&self.fingerprint.resolved_executable)
+            .map_err(|error| {
+                Problem::Failed(format!(
+                    "Cannot open ACP executable {}: {error}.",
+                    platform::path_text(&self.fingerprint.resolved_executable)
+                ))
+            })?;
+        // Re-canonicalize the executable path AFTER opening and confirm the open handle matches
+        // that exact canonical location, blocking ancestor-symlink swaps into the worktree
+        // (`C-TRUST-BEFORE-WORKTREE`).
+        let live_executable = platform::canonicalize(&self.fingerprint.resolved_executable)
+            .map_err(|error| {
+                Problem::Failed(format!(
+                    "Cannot resolve ACP executable {}: {error}.",
+                    platform::path_text(&self.fingerprint.resolved_executable)
+                ))
+            })?;
+        if !platform::same_file(&file, &live_executable).unwrap_or(false) {
+            return Err(Problem::Failed(format!(
+                "ACP executable {} changed while verifying its location.",
+                platform::path_text(&self.fingerprint.resolved_executable)
+            )));
+        }
         let current =
-            LauncherFingerprint::compute(&self.fingerprint.resolved_executable, &self.spec.args)
+            LauncherFingerprint::compute_from_file(live_executable, &mut file, &self.spec.args)
                 .map_err(Problem::Failed)?;
+        if self.spec.reject_worktree_executable {
+            trust::outside_worktree(&current.resolved_executable, worktree)
+                .map_err(Problem::Failed)?;
+        }
+        // The scope is read again from the checkout the worktree holds now: another repository
+        // put in its place is not covered by the consent given for the one prepared.
+        let identity = repository::identify(worktree);
+        if self.spec.reject_worktree_executable
+            && let Some(root) = &identity.worktree_path
+        {
+            trust::outside_worktree(&current.resolved_executable, root).map_err(Problem::Failed)?;
+        }
+        let scope = TrustScope::for_worktree(worktree, &identity).map_err(Problem::Failed)?;
+        if scope != self.scope {
+            return Err(Problem::TrustRequired(Box::new(TrustRequirement {
+                agent_id: self.spec.id.clone(),
+                agent_name: self.spec.name.clone(),
+                disclosure: scope.disclosure().to_owned(),
+                scope,
+                fingerprint: current,
+                reason: format!(
+                    "The worktree's checkout changed before {} started; confirm Workspace Trust for it.",
+                    self.spec.name
+                ),
+            })));
+        }
         match trust::check_trust(
             Some(&self.state),
             Some(worktree),
             &self.spec.id,
             &self.spec.name,
-            &self.scope,
+            &scope,
             &current,
         )
         .map_err(Problem::Failed)?
         {
-            Ok(()) if current == self.fingerprint => Ok(()),
+            Ok(()) if current == self.fingerprint => {
+                // Confirm the path still resolves to the exact directory handle opened before
+                // computing `TrustScope`, so `fchdir(verified_cwd)` enters the exact verified dir.
+                if !platform::same_directory(&verified_cwd, worktree).unwrap_or(false) {
+                    return Err(Problem::TrustRequired(Box::new(TrustRequirement {
+                        agent_id: self.spec.id.clone(),
+                        agent_name: self.spec.name.clone(),
+                        disclosure: scope.disclosure().to_owned(),
+                        scope,
+                        fingerprint: current,
+                        reason: format!(
+                            "The worktree directory changed before {} started; confirm Workspace Trust for it.",
+                            self.spec.name
+                        ),
+                    })));
+                }
+                Ok((file, verified_cwd))
+            }
             Ok(()) => Err(Problem::TrustRequired(Box::new(TrustRequirement {
                 agent_id: self.spec.id.clone(),
                 agent_name: self.spec.name.clone(),
@@ -110,6 +194,11 @@ pub(crate) fn verify_launch(
         Some(worktree),
         spec.reject_worktree_executable,
     )?;
+    if spec.reject_worktree_executable
+        && let Some(root) = &identity.worktree_path
+    {
+        trust::outside_worktree(&resolved, root)?;
+    }
     let fingerprint = LauncherFingerprint::compute(&resolved, &spec.args)?;
     let scope = TrustScope::for_worktree(worktree, identity)?;
     match trust::check_trust(
@@ -121,7 +210,10 @@ pub(crate) fn verify_launch(
         &fingerprint,
     )? {
         Ok(()) => {
-            let runtime_fingerprint = fingerprint.runtime_fingerprint(catalog::auth_generation());
+            // A warm child or a remote session started with other variables (a secret since
+            // replaced, say) is not this launch's: their digest is part of the fingerprint.
+            let runtime_fingerprint = fingerprint
+                .runtime_fingerprint(catalog::auth_generation(), &spec.environment_digest());
             Ok(Ok(VerifiedAcpLaunch {
                 state: state.to_path_buf(),
                 scope,
@@ -140,6 +232,9 @@ pub(crate) struct AcpTurnOutcome {
     pub result: Result<String, Failure>,
     pub generation: u64,
     pub warm_owner: Option<WarmOwner>,
+    /// Whether the agent's session ended quiescent, so a later turn may resume it with
+    /// `session/load`; a turn that ended with a Verify call still running is not.
+    pub resumable: bool,
 }
 
 /// Inputs required to execute one ACP Chat turn.
@@ -173,20 +268,38 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
         Err(error) => {
             return AcpTurnOutcome {
                 result: Err(Failure::from(error)),
+                resumable: false,
                 generation: input.binding.as_ref().map_or(1, |b| b.generation),
                 warm_owner: None,
             };
         }
     };
 
-    let mut generation = input.binding.as_ref().map_or(1, |b| b.generation);
-    let mut binding = input.binding.clone();
+    // A target change since the turn was prepared bumps the stored generation: a warm child is
+    // reused, and a remote session loaded, only from the binding as it is stored now.
+    let stored = match input.receipts.acp_binding(input.session_id).await {
+        Ok(stored) => stored,
+        Err(error) => {
+            return AcpTurnOutcome {
+                result: Err(Failure::new(Code::AgentError, error)),
+                resumable: false,
+                generation: input.binding.as_ref().map_or(1, |b| b.generation),
+                warm_owner: None,
+            };
+        }
+    };
+    let mut generation = stored.as_ref().map_or(1, |b| b.generation);
+    // The generation the stored binding holds: persisting this turn's session compares it.
+    let mut expected_generation = stored.as_ref().map(|b| b.generation);
+    let settled_send = stored.as_ref().map_or(0, |b| b.settled_send);
+    let mut binding = stored;
     let prior_sends = input.send.saturating_sub(1);
 
     // Check warm pool for Path A candidate (also retires stale / digest-mismatched child).
     let warm_candidate = match input.pool.take_for_turn(
         input.session_id,
         binding.as_ref(),
+        current_warm_owner,
         &input.launch.spec.id,
         &input.launch.fingerprint.executable_sha256,
         &input.launch.runtime_fingerprint,
@@ -205,6 +318,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
             if digest_mismatch {
                 if let Ok(bumped) = input.receipts.bump_acp_generation(input.session_id).await {
                     generation = bumped;
+                    expected_generation = expected_generation.map(|_| bumped);
                 }
                 binding = None;
             }
@@ -248,15 +362,76 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
                 // refuse session/load, increment generation, and open session/new + Handoff.
                 if let Ok(bumped) = input.receipts.bump_acp_generation(input.session_id).await {
                     generation = bumped;
+                    expected_generation = expected_generation.map(|_| bumped);
                 }
-                binding = None;
             }
             None => {}
         }
     }
 
+    // Reusing a warm child or loading its session needs the binding they come from to be this
+    // turn's: claim its generation first. A target change since the turn read it fails the claim,
+    // so neither is used and the turn opens a session of its own.
+    if child.is_some() || load_remote_id.is_some() {
+        let claimed = match expected_generation {
+            Some(expected) => input
+                .receipts
+                .claim_acp_generation(input.session_id, expected)
+                .await
+                .ok()
+                .flatten(),
+            None => None,
+        };
+        if let Some(claimed) = claimed {
+            generation = claimed;
+            expected_generation = Some(claimed);
+            if let Some(warm) = child.as_mut() {
+                warm.generation = claimed;
+            }
+        } else {
+            if let Some(warm) = child.take() {
+                let _ = warm.terminate().await;
+            }
+            load_remote_id = None;
+            let stored = input
+                .receipts
+                .acp_binding(input.session_id)
+                .await
+                .ok()
+                .flatten();
+            generation = stored.as_ref().map_or(1, |b| b.generation);
+            expected_generation = stored.as_ref().map(|b| b.generation);
+        }
+    }
+
+    let bridge_capability = match agent::uuid() {
+        Ok(token) => token,
+        Err(error) => {
+            if let Some(warm) = child {
+                let _ = warm.terminate().await;
+            }
+            return AcpTurnOutcome {
+                result: Err(Failure::from(error)),
+                resumable: false,
+                generation,
+                warm_owner: None,
+            };
+        }
+    };
+    // Include this turn's one-time Verify bridge capability token in the redactor so an agent
+    // echoing it in streamed output or errors can never persist it unredacted (`C-ACP-EDGE-ISOLATION`).
+    let mut known_secrets = input.launch.spec.known_secrets();
+    known_secrets.push(bridge_capability.clone());
+    let redactor = StreamRedactor::new(known_secrets);
+
     // Open a fresh one-turn Verify MCP bridge (disarmed until `session/prompt`).
-    let bridge = match VerifyBridge::start(stdio_mcp::Server::new(input.tools.verify_only_list())) {
+    let mut bridge = match VerifyBridge::start(
+        input.session_id.clone(),
+        input.send,
+        bridge_capability,
+        redactor.clone(),
+        stdio_mcp::Server::new(input.tools.verify_only_list()),
+    ) {
         Ok(bridge) => bridge,
         Err(error) => {
             if let Some(warm) = child {
@@ -264,6 +439,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
             }
             return AcpTurnOutcome {
                 result: Err(error),
+                resumable: false,
                 generation,
                 warm_owner: None,
             };
@@ -276,19 +452,65 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
         Vec::new()
     };
 
-    // Re-verify executable hash & Workspace Trust right before warm reuse or fresh spawn.
+    // Re-verify executable hash, Workspace Trust, and live quiescence right before warm reuse
+    // or fresh spawn (`C-TRUST-BEFORE-WORKTREE`, `C-ONE-TURN-OWNERSHIP`).
     let (mut child, is_fresh_child) = match child {
         Some(warm) => {
-            if let Err(problem) = input.launch.reverify_before_exec(input.worktree) {
-                let _ = warm.terminate().await;
-                bridge.stop().await;
-                return AcpTurnOutcome {
-                    result: Err(problem.into()),
-                    generation,
-                    warm_owner: None,
+            let (_verified_file, verified_cwd) =
+                match input.launch.open_and_reverify_before_exec(input.worktree) {
+                    Ok(verified) => verified,
+                    Err(problem) => {
+                        let _ = warm.terminate().await;
+                        bridge.stop().await;
+                        return AcpTurnOutcome {
+                            result: Err(problem.into()),
+                            resumable: false,
+                            generation,
+                            warm_owner: None,
+                        };
+                    }
                 };
+            // Confirm both live quiescence AND that `input.worktree` is still the exact directory
+            // inode the warm child entered at spawn (a replaced directory retires the warm child
+            // so native tools never run in an orphaned/renamed directory: `C-CHAT-ACP-UNIFIED`).
+            let same_cwd = platform::file_identity(&verified_cwd)
+                .is_ok_and(|current_id| current_id == warm.cwd_identity);
+            drop(verified_cwd);
+            if warm.connection.is_quiescent() && same_cwd {
+                (warm, false)
+            } else {
+                // Unsolicited frames arrived while the child was parked: retire it and start fresh.
+                let stale_gen = warm.generation;
+                let _ = warm.terminate().await;
+                let _ = input
+                    .receipts
+                    .clear_acp_warm_owner(input.session_id, stale_gen, current_warm_owner)
+                    .await;
+                load_remote_id = None;
+                if let Ok(bumped) = input.receipts.bump_acp_generation(input.session_id).await {
+                    generation = bumped;
+                    expected_generation = expected_generation.map(|_| bumped);
+                }
+                match WarmChild::spawn(
+                    input.session_id.clone(),
+                    &input.launch,
+                    generation,
+                    input.worktree,
+                )
+                .await
+                {
+                    Ok(spawned) => (spawned, true),
+                    Err(problem) => {
+                        bridge.stop().await;
+                        return AcpTurnOutcome {
+                            result: Err(problem.into()),
+                            resumable: false,
+                            generation,
+                            warm_owner: None,
+                        };
+                    }
+                }
             }
-            (warm, false)
         }
         None => {
             match WarmChild::spawn(
@@ -304,6 +526,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
                     bridge.stop().await;
                     return AcpTurnOutcome {
                         result: Err(problem.into()),
+                        resumable: false,
                         generation,
                         warm_owner: None,
                     };
@@ -311,8 +534,6 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
             }
         }
     };
-
-    let redactor = StreamRedactor::new(input.launch.spec.known_secrets());
 
     let turn_res = execute_on_child(
         &input,
@@ -323,7 +544,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
         bridge,
         generation,
         current_warm_owner,
-        binding.as_ref().map(|b| b.generation),
+        (expected_generation, settled_send),
         redactor.clone(),
         recorder,
     )
@@ -337,21 +558,31 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
                 for victim in evicted {
                     let v_id = victim.session_id.clone();
                     let v_gen = victim.generation;
+                    let stayed_quiescent = victim.connection.is_quiescent();
                     let _ = victim.terminate().await;
-                    let _ = input
-                        .receipts
-                        .clear_acp_warm_owner(&v_id, v_gen, current_warm_owner)
-                        .await;
+                    if stayed_quiescent {
+                        let _ = input
+                            .receipts
+                            .clear_acp_warm_owner(&v_id, v_gen, current_warm_owner)
+                            .await;
+                    } else {
+                        let _ = input
+                            .receipts
+                            .invalidate_acp_generation(&v_id, v_gen, current_warm_owner)
+                            .await;
+                    }
                 }
                 AcpTurnOutcome {
                     result: Ok(completed.answer),
                     generation,
                     warm_owner: Some(current_warm_owner),
+                    resumable: true,
                 }
             } else {
                 let _ = child.terminate().await;
                 AcpTurnOutcome {
                     result: Ok(completed.answer),
+                    resumable: false,
                     generation,
                     warm_owner: None,
                 }
@@ -383,6 +614,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
             final_failure.message = redactor.redact_all(&final_failure.message);
             AcpTurnOutcome {
                 result: Err(final_failure),
+                resumable: false,
                 generation,
                 warm_owner: None,
             }
@@ -409,13 +641,50 @@ async fn execute_on_child(
     mut bridge: VerifyBridge,
     generation: u64,
     current_warm_owner: WarmOwner,
-    expected_prev_gen: Option<u64>,
+    (expected_prev_gen, settled_send): (Option<u64>, usize),
+    redactor: StreamRedactor,
+    recorder: &mut Recorder,
+) -> Result<CompletedTurn, (Failure, bool)> {
+    // Always await complete VerifyBridge shutdown on every return path (including setup `?` errors)
+    // so the previous turn's listener and sockets are retired before any next turn can arm
+    // (`C-ONE-TURN-OWNERSHIP`).
+    let result = execute_on_child_inner(
+        input,
+        child,
+        is_fresh_child,
+        load_remote_id,
+        mcp_servers,
+        &mut bridge,
+        generation,
+        current_warm_owner,
+        (expected_prev_gen, settled_send),
+        redactor,
+        recorder,
+    )
+    .await;
+    bridge.stop().await;
+    result
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Turn execution binds the prepared ACP child, bridge, CAS receipts and recorder in one linear lifecycle"
+)]
+async fn execute_on_child_inner(
+    input: &AcpTurnInput<'_>,
+    child: &mut WarmChild,
+    is_fresh_child: bool,
+    load_remote_id: Option<&str>,
+    mcp_servers: &[super::wire::McpServer],
+    bridge: &mut VerifyBridge,
+    generation: u64,
+    current_warm_owner: WarmOwner,
+    (expected_prev_gen, settled_send): (Option<u64>, usize),
     redactor: StreamRedactor,
     recorder: &mut Recorder,
 ) -> Result<CompletedTurn, (Failure, bool)> {
     let cancel = input.turn_cancel;
     if cancel.is_cancelled() {
-        bridge.stop().await;
         return Err((Failure::cancelled(), false));
     }
 
@@ -424,7 +693,6 @@ async fn execute_on_child(
         let init = tokio::select! {
             biased;
             () = cancel.cancelled() => {
-                bridge.stop().await;
                 return Err((Failure::cancelled(), false));
             }
             res = child.connection.initialize() => res.map_err(|p| (Failure::from(p), true))?,
@@ -443,7 +711,6 @@ async fn execute_on_child(
         let attempt = tokio::select! {
             biased;
             () = cancel.cancelled() => {
-                bridge.stop().await;
                 return Err((Failure::cancelled(), false));
             }
             res = child.connection.session_load(remote_id, input.worktree, mcp_servers) => res,
@@ -458,7 +725,6 @@ async fn execute_on_child(
                 | Problem::Quota { .. }
                 | Problem::RateLimit { .. }),
             ) => {
-                bridge.stop().await;
                 return Err((Failure::from(problem), true));
             }
             Err(problem) => {
@@ -470,7 +736,6 @@ async fn execute_on_child(
                 tokio::select! {
                     biased;
                     () = cancel.cancelled() => {
-                        bridge.stop().await;
                         return Err((Failure::cancelled(), false));
                     }
                     res = child.connection.session_new(input.worktree, mcp_servers, sys) => {
@@ -486,7 +751,6 @@ async fn execute_on_child(
         tokio::select! {
             biased;
             () = cancel.cancelled() => {
-                bridge.stop().await;
                 return Err((Failure::cancelled(), false));
             }
             res = child.connection.session_new(input.worktree, mcp_servers, sys) => {
@@ -495,38 +759,58 @@ async fn execute_on_child(
         }
     };
 
-    // Persist `remote_session_id` with `generation` CAS.
+    // Persist `remote_session_id` with `generation` CAS, never storing a session ID that carries
+    // a known secret (`C-ACP-EDGE-ISOLATION`).
+    let persisted_remote_session_id = (redactor.redact_all(&opened.session_id)
+        == opened.session_id)
+        .then(|| opened.session_id.clone());
     let updated_binding = AcpBinding {
         agent_id: input.launch.spec.id.clone(),
         worktree: input.worktree.to_path_buf(),
         checkout: input.identity.clone(),
-        remote_session_id: Some(opened.session_id.clone()),
+        remote_session_id: persisted_remote_session_id,
         generation,
-        settled_send: input.binding.as_ref().map_or(0, |b| b.settled_send),
+        settled_send,
         runtime_fingerprint: input.launch.runtime_fingerprint.clone(),
         warm_owner: Some(current_warm_owner),
     };
-    let _ = input
+    // A failed CAS means the binding changed since this turn read it, a target change among
+    // others: the session it opened is not this Chat's any more, so nothing is prompted on it.
+    match input
         .receipts
         .save_acp_binding_cas(input.session_id, expected_prev_gen, updated_binding)
-        .await;
+        .await
+    {
+        Ok(true) => {}
+        Ok(false) => {
+            return Err((
+                Failure::new(
+                    Code::AgentError,
+                    "This Chat's agent changed while the turn was starting; send the message again."
+                        .to_owned(),
+                ),
+                false,
+            ));
+        }
+        Err(error) => {
+            return Err((Failure::new(Code::AgentError, error), false));
+        }
+    }
 
     // 3. Apply configOptions in dependency order (model -> mode -> thought_level -> rest).
     // Aborts on mode mismatch before `session/prompt` (never silently downgrades approval level).
     let applied = tokio::select! {
         biased;
         () = cancel.cancelled() => {
-            bridge.stop().await;
             return Err((Failure::cancelled(), false));
         }
         res = child.connection.apply_config_options(&opened, input.requested_config) => {
             res.map_err(|p| (Failure::from(p), false))?
         }
     };
+    let mut state = TurnAccumulator::new(input.launch.spec.name.clone());
     for notice in &applied.notices {
-        recorder.event(Kind::Notice {
-            text: notice.clone(),
-        });
+        state.record_config_fallback(recorder, &redactor, notice);
     }
     if let Some(reason) = load_fallback_reason {
         let notice = if input.prior_turns.is_empty() {
@@ -541,27 +825,35 @@ async fn execute_on_child(
                 input.prior_turns.len()
             )
         };
-        recorder.event(Kind::Notice { text: notice });
+        state.record_config_fallback(recorder, &redactor, &notice);
     }
+    let mut live_raw = applied.live_options;
+    let mut chosen = applied.effective_selections;
+    // What the Chat view shows of the agent's options: redacted, as everything it sent is.
+    let mut live_options = redact_options(&live_raw, &redactor);
     let _ = input
         .receipts
         .update_chat_turn_meta(
             input.session_id,
             &input.owner.token,
-            applied.live_options.clone(),
+            live_options.clone(),
             bridge.state(),
         )
         .await;
 
-    // 4. Build prompt: cold starts inject deterministic 128 KiB Handoff (redacted) & record Handoff event.
+    // 4. Build prompt: cold starts inject deterministic 128 KiB Handoff (redacted, then re-bounded
+    //    to 128 KiB so `[REDACTED]` expansions cannot exceed the limit) & record Handoff event.
     let prompt_text = if used_load {
         input.user_text.to_owned()
     } else {
         let handoff_text =
-            handoff::build_handoff(input.prior_turns, input.moved_from, input.worktree)
-                .map(|text| redactor.redact_all(&text));
+            handoff::build_handoff(input.prior_turns, input.moved_from, input.worktree).map(
+                |text| {
+                    let redacted = redactor.redact_all(&text);
+                    bound_text(&redacted, handoff::HANDOFF_MAX_BYTES).0
+                },
+            );
         if let Some(prev_label) = input.previous_engine_label
-            && prev_label != input.launch.spec.name
             && !input.prior_turns.is_empty()
         {
             recorder.event(Kind::Handoff(HandoffEvent {
@@ -581,32 +873,100 @@ async fn execute_on_child(
         )
     };
 
-    // 5. Arm the one-turn Verify bridge and issue `session/prompt`.
-    bridge.arm_turn();
-    let prompt_req_id = match child
-        .connection
-        .start_prompt(&opened.session_id, &prompt_text)
-        .await
+    // 5. Check SQLite Stop FIRST, then drain/reconcile any queued mode or config updates until
+    //    quiescent so NO `.await` sits between the final mode verification and `start_prompt`
+    //    (`C-NO-SILENT-REGRESSION`, `C-ONE-TURN-OWNERSHIP`).
+    if cancel.is_cancelled()
+        || input
+            .receipts
+            .chat_turn_active(input.session_id, input.owner)
+            .await
+            != Ok(true)
     {
-        Ok(id) => id,
-        Err(problem) => {
-            bridge.stop().await;
+        cancel.cancel();
+        return Err((Failure::cancelled(), false));
+    }
+    loop {
+        let drained = tokio::select! {
+            biased;
+            () = cancel.cancelled() => return Err((Failure::cancelled(), false)),
+            res = child.connection.drain_pending_config_updates(&opened.session_id, &mut live_raw) => res,
+        };
+        if let Err(problem) = drained {
             return Err((Failure::from(problem), true));
         }
+        if let Err(problem) = chosen_modes_stand(&chosen, &live_raw) {
+            return Err((Failure::from(problem), false));
+        }
+        let pre_prompt_notices =
+            reconcile_non_mode_options(&input.launch.spec.name, &live_raw, &mut chosen);
+        if pre_prompt_notices.is_empty() {
+            break;
+        }
+        for notice in pre_prompt_notices {
+            state.record_config_fallback(recorder, &redactor, &notice);
+        }
+        live_options = redact_options(&live_raw, &redactor);
+        let _ = input
+            .receipts
+            .update_chat_turn_meta(
+                input.session_id,
+                &input.owner.token,
+                live_options.clone(),
+                bridge.state(),
+            )
+            .await;
+    }
+    // Start the poll timer one full interval in the future so `start_prompt` writes immediately
+    // after the final mode check rather than awaiting a zero-delay SQLite poll tick first.
+    let mut cas_poll = tokio::time::interval_at(
+        tokio::time::Instant::now() + CAS_POLL_INTERVAL,
+        CAS_POLL_INTERVAL,
+    );
+    cas_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut remaining_budget = CHAT_TURN_TIMEOUT;
+    let prompt_started = StdInstant::now();
+    bridge.arm_turn();
+    let prompt_req_id = {
+        let start = child
+            .connection
+            .start_prompt(&opened.session_id, &prompt_text);
+        tokio::pin!(start);
+        let prompt_deadline = tokio::time::sleep(remaining_budget);
+        tokio::pin!(prompt_deadline);
+        loop {
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => {
+                    return Err((Failure::cancelled(), false));
+                }
+                () = &mut prompt_deadline => {
+                    return Err((Failure::timeout(), true));
+                }
+                _ = cas_poll.tick() => {
+                    if input.receipts.chat_stop_requested(input.session_id, input.owner).await == Ok(true) {
+                        cancel.cancel();
+                        return Err((Failure::cancelled(), false));
+                    }
+                }
+                res = &mut start => match res {
+                    Ok(id) => break id,
+                    Err(problem) => {
+                        return Err((Failure::from(problem), true));
+                    }
+                },
+            }
+        }
     };
+    remaining_budget = remaining_budget.saturating_sub(prompt_started.elapsed());
 
     // 6. Main event loop: streams updates, handles VerifyBridge tool calls, handles SQLite
     //    Permission CAS with pauseable TURN_TIMEOUT, and enforces persistence bounds.
     let mut text_redactor = redactor.clone();
     let mut thought_redactor = redactor.clone();
-    let mut state = TurnAccumulator::new(input.launch.spec.name.clone());
     let mut pending_perms: BTreeMap<String, PendingPermissionSlot> = BTreeMap::new();
-    let mut remaining_budget = CHAT_TURN_TIMEOUT;
     let mut budget_started: Option<StdInstant> = Some(StdInstant::now());
-    let mut cas_poll = tokio::time::interval(CAS_POLL_INTERVAL);
-    cas_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_bridge_state = bridge.state();
-    let mut live_options = applied.live_options;
 
     let loop_result: Result<StopReason, Failure> = loop {
         // Pause TURN_TIMEOUT while any PENDING permission row is open.
@@ -638,11 +998,12 @@ async fn execute_on_child(
             () = timeout_fut => {
                 break Err(Failure::timeout());
             }
-            () = input.permission_notify.notified(), if !pending_perms.is_empty() => {
+            () = input.permission_notify.notified(), if !pending_perms.is_empty() && !child.connection.is_prompt_end_queued() => {
                 if let Err(error) = process_pending_permissions(
                     input,
                     &mut child.connection,
                     &mut pending_perms,
+                    &mut state,
                     recorder,
                 ).await {
                     break Err(error);
@@ -654,10 +1015,12 @@ async fn execute_on_child(
                     break Err(Failure::cancelled());
                 }
                 if !pending_perms.is_empty()
+                    && !child.connection.is_prompt_end_queued()
                     && let Err(error) = process_pending_permissions(
                         input,
                         &mut child.connection,
                         &mut pending_perms,
+                        &mut state,
                         recorder,
                     ).await
                 {
@@ -674,40 +1037,30 @@ async fn execute_on_child(
                     ).await;
                 }
             }
-            call = bridge.next() => {
-                match call {
-                    Some(call) => {
-                        let current_bridge_state = bridge.state();
-                        if current_bridge_state != last_bridge_state {
-                            last_bridge_state = current_bridge_state;
-                            let _ = input.receipts.update_chat_turn_meta(
-                                input.session_id,
-                                &input.owner.token,
-                                live_options.clone(),
-                                current_bridge_state,
-                            ).await;
-                        }
-                        if let Err(error) = handle_bridge_call(
-                            input,
-                            call,
-                            &redactor,
-                            &mut state,
-                            recorder,
-                            cancel,
-                        ).await {
-                            break Err(error);
-                        }
-                    }
-                    None => {
-                        break Err(Failure::from("The ACP Verify MCP bridge stopped unexpectedly.".to_owned()));
-                    }
-                }
-            }
             frame = child.connection.next_prompt_frame(prompt_req_id, &opened.session_id) => {
                 match frame {
                     Ok(PromptFrame::Update(event)) => {
+                        // The turn runs under the mode the user chose, or not at all.
+                        let changed = match &event {
+                            SessionEvent::ConfigOptionsUpdated { options } => chosen_modes_stand(&chosen, options),
+                            SessionEvent::ModeChanged { mode_id } => chosen_mode_is(&chosen, mode_id),
+                            _ => Ok(()),
+                        };
+                        if let Err(problem) = changed {
+                            break Err(Failure::from(problem));
+                        }
                         if let SessionEvent::ConfigOptionsUpdated { options } = &event {
-                            live_options = options.clone();
+                            // Config fallback notices use a small reserved bounded allowance so
+                            // real mid-turn fallbacks still surface even after intermediate tool
+                            // output hits the display cap without allowing unbounded growth.
+                            for notice in reconcile_non_mode_options(
+                                &input.launch.spec.name,
+                                options,
+                                &mut chosen,
+                            ) {
+                                state.record_config_fallback(recorder, &redactor, &notice);
+                            }
+                            live_options = redact_options(options, &redactor);
                             let _ = input.receipts.update_chat_turn_meta(
                                 input.session_id,
                                 &input.owner.token,
@@ -730,12 +1083,14 @@ async fn execute_on_child(
                             req,
                             &redactor,
                             &mut pending_perms,
+                            &mut state,
                             recorder,
                         ).await {
                             break Err(error);
                         }
                     }
                     Ok(PromptFrame::Finished(reason)) => {
+                        bridge.disarm_turn();
                         break Ok(reason);
                     }
                     Err(problem) => {
@@ -743,33 +1098,92 @@ async fn execute_on_child(
                     }
                 }
             }
+            call = bridge.next(), if !child.connection.is_prompt_end_queued() => {
+                match call {
+                    Some(call) => {
+                        let current_bridge_state = bridge.state();
+                        if current_bridge_state != last_bridge_state {
+                            last_bridge_state = current_bridge_state;
+                            let _ = input.receipts.update_chat_turn_meta(
+                                input.session_id,
+                                &input.owner.token,
+                                live_options.clone(),
+                                current_bridge_state,
+                            ).await;
+                        }
+                        if let Err(error) = handle_bridge_call(
+                            input,
+                            &child.connection,
+                            call,
+                            &redactor,
+                            &mut state,
+                            recorder,
+                            cancel,
+                        ).await {
+                            break Err(error);
+                        }
+                    }
+                    None => {
+                        break Err(Failure::from("The ACP Verify MCP bridge stopped unexpectedly.".to_owned()));
+                    }
+                }
+            }
         }
     };
+
+    child.connection.clear_active_prompt();
 
     // Flush trailing redactor windows and record final assistant prose in `Kind::Message`.
     state.flush_all(&mut text_redactor, &mut thought_redactor, recorder);
 
-    // Check in-flight bridge calls BEFORE stopping the bridge: if any call is still in flight
-    // when a clean StopReason arrives, treat it as protocol desync and retire the warm child.
-    let in_flight_at_end = bridge.in_flight_calls();
+    // Disarm, then count: a call is counted before it checks the turn (verify_bridge), so one
+    // that got in is counted here and one that did not is refused. Any call still in flight when
+    // a clean StopReason arrives is a protocol desync, and the child is not kept warm.
     bridge.disarm_turn();
+    let in_flight_at_end = bridge.in_flight_calls();
 
-    // Cancel any leftover pending permissions on the wire before draining or stopping.
-    for (_, slot) in std::mem::take(&mut pending_perms) {
-        let _ = child
-            .connection
-            .send_permission_cancelled(slot.rpc_id)
-            .await;
-        recorder.event(Kind::AcpPermission(AcpPermissionEvent {
-            permission_id: slot.permission_id,
-            title: slot.title,
-            tool_kind: slot.tool_kind,
-            summary: slot.summary,
-            detail: slot.detail,
-            options: slot.options,
-            status: PermissionStatus::Cancelled,
-            selected_option_id: None,
-        }));
+    // Cancel any leftover pending permissions before draining or stopping: their rows first,
+    // so no responder can select one the agent is then told was cancelled. Any leftover open
+    // permission at turn end (or a failed SQLite/wire cancellation) means the child is not
+    // quiescent, and a failed SQLite cancellation never sends unserialized wire `cancelled`.
+    let had_leftover_permissions = !pending_perms.is_empty();
+    let mut permissions_quiescent = !had_leftover_permissions;
+    if had_leftover_permissions {
+        match input
+            .receipts
+            .cancel_open_chat_permissions(input.session_id, &input.owner.token)
+            .await
+        {
+            Ok(()) => {
+                for (_, slot) in std::mem::take(&mut pending_perms) {
+                    if child
+                        .connection
+                        .send_permission_cancelled(slot.rpc_id)
+                        .await
+                        .is_err()
+                    {
+                        permissions_quiescent = false;
+                    }
+                    state.record_display(
+                        recorder,
+                        Kind::AcpPermission(AcpPermissionEvent {
+                            permission_id: slot.permission_id,
+                            title: slot.title,
+                            tool_kind: slot.tool_kind,
+                            summary: slot.summary,
+                            detail: slot.detail,
+                            options: slot.options,
+                            status: PermissionStatus::Cancelled,
+                            selected_option_id: None,
+                        }),
+                    );
+                }
+            }
+            Err(_) => {
+                permissions_quiescent = false;
+                pending_perms.clear();
+            }
+        }
     }
 
     // Immediately retire the one-turn bridge listener and token before any next turn can arm.
@@ -786,11 +1200,14 @@ async fn execute_on_child(
                     true,
                 ));
             }
+            // Redacted whole: a secret split across text on either side of a tool call joins
+            // again here.
+            let answer = redactor.redact_all(&state.answer);
+            let (bounded_answer, _) = bound_text(&answer, FINAL_ANSWER_BYTES);
             if let Err(error) = recorder.check_saved() {
                 return Err((Failure::from(error), false));
             }
-            let (bounded_answer, _) = bound_text(&state.answer, FINAL_ANSWER_BYTES);
-            let can_park_warm = in_flight_at_end == 0;
+            let can_park_warm = in_flight_at_end == 0 && permissions_quiescent;
             Ok(CompletedTurn {
                 answer: bounded_answer,
                 remote_session_id: opened.session_id,
@@ -842,6 +1259,8 @@ struct PendingPermissionSlot {
     summary: String,
     detail: Option<String>,
     options: Vec<super::PermissionOption>,
+    /// The ID shown for each option, paired with the agent's own, which only the reply carries.
+    agent_option_ids: Vec<(String, String)>,
 }
 
 async fn admit_permission(
@@ -850,59 +1269,96 @@ async fn admit_permission(
     req: IncomingPermission,
     redactor: &StreamRedactor,
     pending: &mut BTreeMap<String, PendingPermissionSlot>,
+    state: &mut TurnAccumulator,
     recorder: &mut Recorder,
 ) -> Result<(), Failure> {
     let permission_id = agent::uuid()?;
     let title = redactor.redact_all(&req.title);
     let summary = redactor.redact_all(&req.summary);
     let detail = req.detail.as_deref().map(|d| redactor.redact_all(d));
+    // What the transcript and the store keep is redacted, IDs included; an ID that redaction
+    // makes equal to an earlier one gets a unique numeric suffix so displayed IDs never collide
+    // and SQLite CAS always maps back to the exact option the user selected.
+    let mut agent_option_ids: Vec<(String, String)> = Vec::new();
+    let options: Vec<_> = req
+        .options
+        .into_iter()
+        .map(|option| {
+            let base = redactor.redact_all(&option.option_id);
+            let mut shown = base.clone();
+            let mut suffix = 2usize;
+            while agent_option_ids
+                .iter()
+                .any(|(earlier, _)| *earlier == shown)
+            {
+                shown = format!("{base}#{suffix}");
+                suffix += 1;
+            }
+            agent_option_ids.push((shown.clone(), option.option_id.clone()));
+            super::PermissionOption {
+                option_id: shown,
+                name: redactor.redact_all(&option.name),
+                ..option
+            }
+        })
+        .collect();
+    // Redact agent-supplied text RPC IDs before persisting; raw `req.rpc_id` stays in memory
+    // on `PendingPermissionSlot` strictly for sending the ACP JSON-RPC reply.
     let rpc_request_id = match &req.rpc_id {
         RpcId::Number(n) => n.to_string(),
-        RpcId::Text(s) => s.clone(),
+        RpcId::Text(s) => redactor.redact_all(s),
     };
-    let admitted = input
-        .receipts
-        .insert_chat_permission(NewPermission {
-            session_id: input.session_id.clone(),
-            owner_token: input.owner.token.clone(),
-            permission_id: permission_id.clone(),
-            rpc_request_id,
-            title: title.clone(),
-            tool_kind: req.tool_kind,
-            summary: summary.clone(),
-            detail: detail.clone(),
-            options: req.options.clone(),
-            created_at: crate::broker::now(),
-        })
-        .await
-        .map_err(Failure::from)?;
+    // A request with no option left is cancelled at once, with no row to clean up later.
+    let admitted = !options.is_empty()
+        && input
+            .receipts
+            .insert_chat_permission(NewPermission {
+                session_id: input.session_id.clone(),
+                owner_token: input.owner.token.clone(),
+                permission_id: permission_id.clone(),
+                rpc_request_id,
+                title: title.clone(),
+                tool_kind: req.tool_kind,
+                summary: summary.clone(),
+                detail: detail.clone(),
+                options: options.clone(),
+                created_at: crate::broker::now(),
+            })
+            .await
+            .map_err(Failure::from)?;
 
-    if !admitted || req.options.is_empty() {
+    if !admitted {
         let _ = conn.send_permission_cancelled(req.rpc_id).await;
-        recorder.event(Kind::AcpPermission(AcpPermissionEvent {
-            permission_id,
-            title,
-            tool_kind: req.tool_kind,
-            summary,
-            detail,
-            options: req.options,
-            status: PermissionStatus::Cancelled,
-            selected_option_id: None,
-        }));
+        state.record_display(
+            recorder,
+            Kind::AcpPermission(AcpPermissionEvent {
+                permission_id,
+                title,
+                tool_kind: req.tool_kind,
+                summary,
+                detail,
+                options,
+                status: PermissionStatus::Cancelled,
+                selected_option_id: None,
+            }),
+        );
         recorder.notify();
         return Ok(());
     }
 
-    recorder.event(Kind::AcpPermission(AcpPermissionEvent {
-        permission_id: permission_id.clone(),
-        title: title.clone(),
-        tool_kind: req.tool_kind,
-        summary: summary.clone(),
-        detail: detail.clone(),
-        options: req.options.clone(),
-        status: PermissionStatus::Pending,
-        selected_option_id: None,
-    }));
+    state.record_display(
+        recorder,
+        Kind::AcpPermission(AcpPermissionEvent {
+            permission_id: permission_id.clone(),
+            title: title.clone(),
+            tool_kind: req.tool_kind,
+            summary: summary.clone(),
+            detail: detail.clone(),
+            options: options.clone(),
+            status: PermissionStatus::Pending,
+            selected_option_id: None,
+        }),
+    );
     recorder.notify();
 
     pending.insert(
@@ -914,7 +1370,8 @@ async fn admit_permission(
             tool_kind: req.tool_kind,
             summary,
             detail,
-            options: req.options,
+            options,
+            agent_option_ids,
         },
     );
     Ok(())
@@ -924,86 +1381,84 @@ async fn process_pending_permissions(
     input: &AcpTurnInput<'_>,
     conn: &mut super::wire::Connection,
     pending: &mut BTreeMap<String, PendingPermissionSlot>,
+    state: &mut TurnAccumulator,
     recorder: &mut Recorder,
 ) -> Result<(), Failure> {
     let ids: Vec<String> = pending.keys().cloned().collect();
     for perm_id in ids {
-        let claim = input
+        if conn.is_prompt_end_queued() {
+            break;
+        }
+        let Some((rpc_id, agent_ids)) = pending
+            .get(&perm_id)
+            .map(|slot| (slot.rpc_id.clone(), slot.agent_option_ids.clone()))
+        else {
+            continue;
+        };
+        let mut problem = None;
+        let delivery = input
             .receipts
-            .begin_deliver_chat_permission(input.session_id, &input.owner.token, &perm_id)
+            .deliver_chat_permission(
+                input.session_id,
+                &input.owner.token,
+                &perm_id,
+                |option_id| async {
+                    // The agent hears its own ID back for the option the person chose.
+                    let agent_id = agent_ids
+                        .into_iter()
+                        .find(|(shown, _)| *shown == option_id)
+                        .map_or(option_id, |(_, agent)| agent);
+                    match conn.send_permission_selected(rpc_id, &agent_id).await {
+                        Ok(()) => true,
+                        Err(error) => {
+                            problem = Some(error);
+                            false
+                        }
+                    }
+                },
+            )
             .await
             .map_err(Failure::from)?;
-        match claim {
-            DeliverClaim::StillPending => continue,
-            DeliverClaim::Deliver { option_id } => {
-                let Some(slot) = pending.remove(&perm_id) else {
-                    continue;
-                };
-                match conn.send_permission_selected(slot.rpc_id, &option_id).await {
-                    Ok(()) => {
-                        let _ = input
-                            .receipts
-                            .finish_deliver_chat_permission(
-                                input.session_id,
-                                &input.owner.token,
-                                &slot.permission_id,
-                                true,
-                            )
-                            .await;
-                        recorder.event(Kind::AcpPermission(AcpPermissionEvent {
-                            permission_id: slot.permission_id,
-                            title: slot.title,
-                            tool_kind: slot.tool_kind,
-                            summary: slot.summary,
-                            detail: slot.detail,
-                            options: slot.options,
-                            status: PermissionStatus::Delivered,
-                            selected_option_id: Some(option_id),
-                        }));
-                        recorder.notify();
-                    }
-                    Err(problem) => {
-                        let _ = input
-                            .receipts
-                            .finish_deliver_chat_permission(
-                                input.session_id,
-                                &input.owner.token,
-                                &slot.permission_id,
-                                false,
-                            )
-                            .await;
-                        recorder.event(Kind::AcpPermission(AcpPermissionEvent {
-                            permission_id: slot.permission_id,
-                            title: slot.title,
-                            tool_kind: slot.tool_kind,
-                            summary: slot.summary,
-                            detail: slot.detail,
-                            options: slot.options,
-                            status: PermissionStatus::Expired,
-                            selected_option_id: Some(option_id),
-                        }));
-                        recorder.notify();
-                        return Err(Failure::from(problem));
-                    }
-                }
+        let (status, selected_option_id) = match delivery {
+            PermissionDelivery::StillPending => continue,
+            PermissionDelivery::Delivered { option_id } => {
+                (PermissionStatus::Delivered, Some(option_id))
             }
-            DeliverClaim::Cancelled => {
-                let Some(slot) = pending.remove(&perm_id) else {
-                    continue;
-                };
-                let _ = conn.send_permission_cancelled(slot.rpc_id).await;
-                recorder.event(Kind::AcpPermission(AcpPermissionEvent {
-                    permission_id: slot.permission_id,
-                    title: slot.title,
-                    tool_kind: slot.tool_kind,
-                    summary: slot.summary,
-                    detail: slot.detail,
-                    options: slot.options,
-                    status: PermissionStatus::Cancelled,
-                    selected_option_id: None,
-                }));
-                recorder.notify();
+            PermissionDelivery::Expired { option_id } => {
+                (PermissionStatus::Expired, Some(option_id))
             }
+            PermissionDelivery::Cancelled => (PermissionStatus::Cancelled, None),
+        };
+        let Some(slot) = pending.remove(&perm_id) else {
+            continue;
+        };
+        if status == PermissionStatus::Cancelled {
+            let _ = conn.send_permission_cancelled(slot.rpc_id).await;
+        }
+        state.record_display(
+            recorder,
+            Kind::AcpPermission(AcpPermissionEvent {
+                permission_id: slot.permission_id,
+                title: slot.title,
+                tool_kind: slot.tool_kind,
+                summary: slot.summary,
+                detail: slot.detail,
+                options: slot.options,
+                status,
+                selected_option_id,
+            }),
+        );
+        recorder.notify();
+        if status == PermissionStatus::Expired {
+            return Err(problem.map_or_else(
+                || {
+                    Failure::from(format!(
+                        "{} did not take the permission reply in time.",
+                        input.launch.spec.name
+                    ))
+                },
+                Failure::from,
+            ));
         }
     }
     Ok(())
@@ -1011,16 +1466,38 @@ async fn process_pending_permissions(
 
 async fn handle_bridge_call(
     input: &AcpTurnInput<'_>,
+    conn: &super::wire::Connection,
     call: BridgeCall,
     redactor: &StreamRedactor,
     state: &mut TurnAccumulator,
     recorder: &mut Recorder,
     cancel: &CancellationToken,
 ) -> Result<(), Failure> {
+    // Refuse any late Verify call once the stdout reader has already observed the terminal
+    // `session/prompt` response, both before and after awaiting SQLite (`C-ONE-TURN-OWNERSHIP`).
+    if conn.is_prompt_end_queued() {
+        let _ = call.reply.send(BridgeReply::NoActiveTurn);
+        return Ok(());
+    }
+    // Verify active turn ownership and stop state in SQLite at admission so a remote Stop that
+    // committed between polling ticks never admits a new Verify Run (`C-ONE-TURN-OWNERSHIP`).
+    if cancel.is_cancelled()
+        || input
+            .receipts
+            .chat_turn_active(input.session_id, input.owner)
+            .await
+            != Ok(true)
+    {
+        cancel.cancel();
+        let _ = call.reply.send(BridgeReply::NoActiveTurn);
+        return Err(Failure::cancelled());
+    }
+    if conn.is_prompt_end_queued() {
+        let _ = call.reply.send(BridgeReply::NoActiveTurn);
+        return Ok(());
+    }
+
     let call_id = agent::uuid()?;
-    let summary = format!("{} {}", call.name, call.arguments);
-    let summary_short = summary.chars().take(120).collect::<String>();
-    let redacted_args = redactor.redact_all(&call.arguments.to_string());
 
     state.record_display(
         recorder,
@@ -1030,8 +1507,8 @@ async fn handle_bridge_call(
             title: call.name.clone(),
             tool_kind: ToolKind::Verify,
             status: ToolStatus::Running,
-            summary: redactor.redact_all(&summary_short),
-            arguments: redacted_args,
+            summary: call.summary,
+            arguments: call.arguments,
             locations: Vec::new(),
             output: None,
             diff: None,
@@ -1039,35 +1516,39 @@ async fn handle_bridge_call(
         }),
     );
 
-    let durable_start = call.name == "verify_start";
-    let invoke = input.tools.call_acp_verify(
-        input.session_id,
-        input.send,
-        &call.name,
-        call.arguments,
-        if durable_start {
-            CancellationToken::new()
-        } else {
-            cancel.clone()
-        },
-    );
-    let called = if durable_start {
-        // Once Verify admits a Run, Stop must not suppress its durable `RunReference`.
-        invoke.await
-    } else {
-        tokio::select! {
-            biased;
-            () = cancel.cancelled() => return Err(Failure::cancelled()),
-            res = invoke => res,
+    let called = match call.call {
+        Ok(parsed_call) => {
+            let durable_start = parsed_call.started_run();
+            let invoke = input.tools.call_acp_verify(
+                parsed_call,
+                if durable_start {
+                    CancellationToken::new()
+                } else {
+                    cancel.clone()
+                },
+            );
+            if durable_start {
+                // Once Verify admits a Run, Stop must not suppress its durable `RunReference`.
+                invoke.await
+            } else {
+                tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => return Err(Failure::cancelled()),
+                    res = invoke => res,
+                }
+            }
         }
+        Err(error) => crate::tools::ToolResult::error(error).into(),
     };
 
     if let Some(run_id) = called.run {
         recorder.event(Kind::RunReference { run: run_id });
     }
     let failed = called.result.is_error();
-    let result_text = serde_json::to_string(&called.result).unwrap_or_default();
-    let redacted_output = redactor.redact_all(&result_text);
+    let redacted_output = serde_json::to_value(&called.result)
+        .map(|val| redact_json_value(&val, redactor).to_string())
+        .map(|text| redactor.redact_all(&text))
+        .unwrap_or_default();
     let (bounded_output, truncated) = bound_text(&redacted_output, super::wire::TOOL_OUTPUT_BYTES);
 
     state.record_display(
@@ -1091,8 +1572,7 @@ async fn handle_bridge_call(
         }),
     );
 
-    let reply = stdio_mcp::call_reply(&call.id, called.result);
-    let _ = call.reply.send(reply);
+    let _ = call.reply.send(BridgeReply::Result(called.result));
     Ok(())
 }
 
@@ -1102,10 +1582,13 @@ struct TurnAccumulator {
     agent_name: String,
     segment: usize,
     pending_text: String,
+    delivered_prose_for_segment: bool,
+    recorded_prose_bytes: usize,
     answer: String,
     display_events: usize,
     persisted_bytes: usize,
     cap_noticed: bool,
+    config_fallback_notices: usize,
 }
 
 impl TurnAccumulator {
@@ -1114,18 +1597,45 @@ impl TurnAccumulator {
             agent_name,
             segment: 0,
             pending_text: String::new(),
+            delivered_prose_for_segment: false,
+            recorded_prose_bytes: 0,
             answer: String::new(),
             display_events: 0,
             persisted_bytes: 0,
             cap_noticed: false,
+            config_fallback_notices: 0,
         }
+    }
+
+    fn record_config_fallback(
+        &mut self,
+        recorder: &mut Recorder,
+        redactor: &StreamRedactor,
+        notice: &str,
+    ) {
+        if self.config_fallback_notices > MAX_CONFIG_FALLBACK_NOTICES {
+            return;
+        }
+        if self.config_fallback_notices == MAX_CONFIG_FALLBACK_NOTICES {
+            self.config_fallback_notices += 1;
+            recorder.event(Kind::Notice {
+                text: format!(
+                    "{} changed non-mode settings more than {MAX_CONFIG_FALLBACK_NOTICES} times during this turn; further setting-change notices are omitted.",
+                    self.agent_name
+                ),
+            });
+            return;
+        }
+        self.config_fallback_notices += 1;
+        let text = bound_text(&redactor.redact_all(notice), CONFIG_FALLBACK_NOTICE_BYTES).0;
+        recorder.event(Kind::Notice { text });
     }
 
     fn turn_index(&self) -> usize {
         self.segment + 1
     }
 
-    fn record_display(&mut self, recorder: &mut Recorder, kind: Kind) {
+    fn record_display(&mut self, recorder: &mut Recorder, kind: Kind) -> bool {
         let approx_bytes = serde_json::to_string(&kind).map_or(256, |s| s.len());
         if self.display_events >= TURN_DISPLAY_EVENTS
             || self.persisted_bytes + approx_bytes > TURN_PERSISTED_BYTES
@@ -1139,11 +1649,12 @@ impl TurnAccumulator {
                     ),
                 });
             }
-            return;
+            return false;
         }
         self.display_events += 1;
         self.persisted_bytes += approx_bytes;
         recorder.event(kind);
+        true
     }
 
     fn push_text(&mut self, chunk: &str, recorder: &mut Recorder) {
@@ -1155,14 +1666,8 @@ impl TurnAccumulator {
             let (slice, _) = bound_text(chunk, room);
             self.answer.push_str(&slice);
         }
-        let remaining_persisted = TURN_PERSISTED_BYTES
-            .saturating_sub(self.persisted_bytes.saturating_add(self.pending_text.len()));
-        if remaining_persisted > 0 {
-            let (slice, _) = bound_text(chunk, remaining_persisted);
-            self.pending_text.push_str(&slice);
-        }
         let turn = self.turn_index();
-        self.record_display(
+        let delivered = self.record_display(
             recorder,
             Kind::Delivery(Delivery {
                 turn,
@@ -1173,6 +1678,23 @@ impl TurnAccumulator {
                 state: DeliveryState::Delta,
             }),
         );
+        if delivered {
+            self.delivered_prose_for_segment = true;
+        } else if self.delivered_prose_for_segment {
+            // Earlier chunks in this segment were already delivered under `turn`, so `transcript.rs`
+            // skips `Kind::Message` for that `turn`. Flush the already-delivered prefix now and
+            // move to a fresh `turn_index()` so undelivered prose still renders and hands off cleanly
+            // without duplicating the prefix (`C-NO-SILENT-REGRESSION`).
+            self.flush_prose_segment(recorder);
+        }
+        let prose_room = FINAL_ANSWER_BYTES.saturating_sub(
+            self.recorded_prose_bytes
+                .saturating_add(self.pending_text.len()),
+        );
+        if prose_room > 0 {
+            let (slice, _) = bound_text(chunk, prose_room);
+            self.pending_text.push_str(&slice);
+        }
     }
 
     fn push_thought(&mut self, chunk: &str, recorder: &mut Recorder) {
@@ -1196,33 +1718,17 @@ impl TurnAccumulator {
     fn flush_prose_segment(&mut self, recorder: &mut Recorder) {
         if !self.pending_text.is_empty() {
             let text = std::mem::take(&mut self.pending_text);
-            let remaining = TURN_PERSISTED_BYTES.saturating_sub(self.persisted_bytes);
-            if remaining == 0 || self.display_events >= TURN_DISPLAY_EVENTS {
-                if !self.cap_noticed {
-                    self.cap_noticed = true;
-                    recorder.event(Kind::Notice {
-                        text: format!(
-                            "{} exceeded the per-turn display cap ({TURN_DISPLAY_EVENTS} events / 8 MiB); further output is omitted.",
-                            self.agent_name
-                        ),
-                    });
+            let remaining = FINAL_ANSWER_BYTES.saturating_sub(self.recorded_prose_bytes);
+            if remaining > 0 {
+                let (bounded, _) = bound_text(&text, remaining);
+                if !bounded.is_empty() {
+                    self.recorded_prose_bytes =
+                        self.recorded_prose_bytes.saturating_add(bounded.len());
+                    recorder.message(self.turn_index(), &Message::assistant(bounded), false);
                 }
-                return;
-            }
-            let (bounded, truncated) = bound_text(&text, remaining);
-            self.display_events += 1;
-            self.persisted_bytes = self.persisted_bytes.saturating_add(bounded.len());
-            recorder.message(self.turn_index(), &Message::assistant(bounded), false);
-            if truncated && !self.cap_noticed {
-                self.cap_noticed = true;
-                recorder.event(Kind::Notice {
-                    text: format!(
-                        "{} exceeded the per-turn display cap ({TURN_DISPLAY_EVENTS} events / 8 MiB); further output is omitted.",
-                        self.agent_name
-                    ),
-                });
             }
             self.segment += 1;
+            self.delivered_prose_for_segment = false;
         }
     }
 
@@ -1249,7 +1755,7 @@ impl TurnAccumulator {
     ) {
         match event {
             SessionEvent::AgentMessageChunk { text } => {
-                let tail_thought = thought_redactor.flush();
+                let tail_thought = thought_redactor.release();
                 self.push_thought(&tail_thought, recorder);
                 let safe = text_redactor.push(&text);
                 self.push_text(&safe, recorder);
@@ -1269,25 +1775,34 @@ impl TurnAccumulator {
                 diff,
                 output_truncated,
             } => {
-                let tail_text = text_redactor.flush();
+                let tail_text = text_redactor.release();
                 self.push_text(&tail_text, recorder);
                 self.flush_prose_segment(recorder);
                 let redacted_diff = diff.map(|d| redact_diff(d, redactor));
-                let redacted_output = output.as_deref().map(|o| redactor.redact_all(o));
+                let (redacted_output, re_truncated) = match output.as_deref() {
+                    Some(o) => {
+                        let redacted = redactor.redact_all(o);
+                        let (bounded, trunc) =
+                            bound_text(&redacted, super::wire::TOOL_OUTPUT_BYTES);
+                        (Some(bounded), trunc)
+                    }
+                    None => (None, false),
+                };
+                let title = redactor.redact_all(&title);
                 self.record_display(
                     recorder,
                     Kind::AcpToolCall(AcpToolCallEvent {
-                        call_id,
+                        call_id: redactor.redact_all(&call_id),
                         name: title.clone(),
-                        title: redactor.redact_all(&title),
+                        title,
                         tool_kind,
                         status,
                         summary: redactor.redact_all(&summary),
                         arguments: String::new(),
-                        locations,
+                        locations: redact_locations(locations, redactor),
                         output: redacted_output,
                         diff: redacted_diff,
-                        output_truncated,
+                        output_truncated: output_truncated || re_truncated,
                     }),
                 );
             }
@@ -1303,26 +1818,42 @@ impl TurnAccumulator {
                 output_truncated,
             } => {
                 let redacted_diff = diff.map(|d| redact_diff(d, redactor));
-                let redacted_output = output.as_deref().map(|o| redactor.redact_all(o));
+                let (redacted_output, re_truncated) = match output.as_deref() {
+                    Some(o) => {
+                        let redacted = redactor.redact_all(o);
+                        let (bounded, trunc) =
+                            bound_text(&redacted, super::wire::TOOL_OUTPUT_BYTES);
+                        (Some(bounded), trunc)
+                    }
+                    None => (None, false),
+                };
                 let failed = status.map(|s| s == ToolStatus::Failed);
                 self.record_display(
                     recorder,
                     Kind::AcpToolUpdate(AcpToolUpdateEvent {
-                        call_id,
+                        call_id: redactor.redact_all(&call_id),
                         title: title.as_deref().map(|t| redactor.redact_all(t)),
                         tool_kind,
                         status,
                         summary: summary.as_deref().map(|s| redactor.redact_all(s)),
-                        locations,
+                        locations: locations.map(|locations| redact_locations(locations, redactor)),
                         output: redacted_output,
                         diff: redacted_diff,
-                        output_truncated,
+                        output_truncated: output_truncated || re_truncated,
                         failed,
                         exit_code: None,
                     }),
                 );
             }
             SessionEvent::Plan { steps } => {
+                let steps = steps
+                    .into_iter()
+                    .map(|step| PlanStep {
+                        content: redactor.redact_all(&step.content),
+                        priority: step.priority.as_deref().map(|p| redactor.redact_all(p)),
+                        ..step
+                    })
+                    .collect();
                 self.record_display(recorder, Kind::AcpPlan(AcpPlanEvent { steps }));
             }
             SessionEvent::Notice { text } => {
@@ -1338,11 +1869,99 @@ impl TurnAccumulator {
     }
 }
 
+/// The agent's options as the Chat view and the transcript may hold them: every name, value and
+/// description it sent redacted.
+pub(super) fn redact_options(
+    options: &[ConfigOption],
+    redactor: &StreamRedactor,
+) -> Vec<ConfigOption> {
+    options
+        .iter()
+        .map(|option| ConfigOption {
+            id: redactor.redact_all(&option.id),
+            name: redactor.redact_all(&option.name),
+            category: option.category,
+            current_value: redactor.redact_all(&option.current_value),
+            choices: option
+                .choices
+                .iter()
+                .map(|choice| ConfigChoice {
+                    value: redactor.redact_all(&choice.value),
+                    name: redactor.redact_all(&choice.name),
+                    description: choice
+                        .description
+                        .as_deref()
+                        .map(|text| redactor.redact_all(text)),
+                    bypass_warning: choice.bypass_warning,
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+/// The chosen modes, by option ID.
+fn chosen_modes(chosen: &[ConfigSelection]) -> impl Iterator<Item = &ConfigSelection> {
+    chosen
+        .iter()
+        .filter(|selection| selection.category == Some(ConfigCategory::Mode))
+}
+
+/// Whether every mode the user chose is still current in `options`: an agent may drop or change
+/// one mid-turn, and the turn never goes on under another mode.
+fn chosen_modes_stand(chosen: &[ConfigSelection], options: &[ConfigOption]) -> Result<(), Problem> {
+    for selection in chosen_modes(chosen) {
+        let actual = options
+            .iter()
+            .find(|option| option.id == selection.id && option.category == ConfigCategory::Mode)
+            .map(|option| option.current_value.clone());
+        if actual.as_deref() != Some(selection.value.as_str()) {
+            return Err(Problem::ModeMismatch {
+                requested: selection.value.clone(),
+                actual,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Whether the mode the agent reports switching to is the one the user chose, if they chose one.
+fn chosen_mode_is(chosen: &[ConfigSelection], mode_id: &str) -> Result<(), Problem> {
+    match chosen_modes(chosen).next() {
+        Some(selection) if selection.value != mode_id => Err(Problem::ModeMismatch {
+            requested: selection.value.clone(),
+            actual: (!mode_id.is_empty()).then(|| mode_id.to_owned()),
+        }),
+        _ => Ok(()),
+    }
+}
+
+fn redact_locations(locations: Vec<ToolLocation>, redactor: &StreamRedactor) -> Vec<ToolLocation> {
+    locations
+        .into_iter()
+        .map(|location| ToolLocation {
+            path: redactor.redact_all(&location.path),
+            ..location
+        })
+        .collect()
+}
+
 fn redact_diff(diff: ToolDiff, redactor: &StreamRedactor) -> ToolDiff {
+    let half = super::wire::DIFF_BYTES / 2;
+    let (old_text, old_trunc) = match diff.old_text.as_deref() {
+        Some(t) => {
+            let redacted = redactor.redact_all(t);
+            let (bounded, trunc) = bound_text(&redacted, half);
+            (Some(bounded), trunc)
+        }
+        None => (None, false),
+    };
+    let redacted_new = redactor.redact_all(&diff.new_text);
+    let (new_text, new_trunc) =
+        bound_text(&redacted_new, super::wire::DIFF_BYTES.saturating_sub(half));
     ToolDiff {
-        path: diff.path,
-        old_text: diff.old_text.as_deref().map(|t| redactor.redact_all(t)),
-        new_text: redactor.redact_all(&diff.new_text),
-        truncated: diff.truncated,
+        path: redactor.redact_all(&diff.path),
+        old_text,
+        new_text,
+        truncated: diff.truncated || old_trunc || new_trunc,
     }
 }

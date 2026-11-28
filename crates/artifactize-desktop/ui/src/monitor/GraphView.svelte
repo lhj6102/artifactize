@@ -22,13 +22,9 @@
   // whole's top left corner where it was on the screen. `m` does what the button does, for the
   // whole focused on the graph or else the whole whose Detail is open.
   //
-  // A Current is where the branch's Artifacts are defined. There a node, a minimized whole or a
-  // whole's title row is dragged: released in the box it was in it is placed, and the places of
-  // that box (or the top level) are saved in the definitions as shown; over another Artifact,
-  // highlighted while the library would accept it, it becomes its part; out of every box it
-  // leaves its whole. Esc during a drag puts it back. A comment is dragged by its text onto an
-  // Artifact without one; a click on it opens its field. A drag on a whole's face pans, as one on
-  // the background does. A Run's graph is a record: nothing on it moves.
+  // The graph shows what the code declares and is laid out from it: nothing on it moves or
+  // edits, on a Current as on a Run. A drag on a whole's face pans, as one on the background
+  // does.
   import { GraphViewState, setGraphViewState } from "./graph-view-state.svelte";
   import { tick } from "svelte";
   import { SvelteFlow, useSvelteFlow, useViewport, type Edge, type Node } from "@xyflow/svelte";
@@ -36,29 +32,24 @@
   import { PRECEDENCE, type Found, type Light, type Shape, type Source } from "../ipc/client";
   import type { GraphWorkspace } from "./graph-workspace.svelte";
   import { getAppState } from "../shell/app.svelte";
-  import Icon from "../shell/Icon.svelte";
   import GraphTools from "./GraphTools.svelte";
-  import CommentField from "./CommentField.svelte";
   import ArtifactNode from "./ArtifactNode.svelte";
   import GraphFind from "./GraphFind.svelte";
   import Navigator from "./Navigator.svelte";
   import WholeNode from "./WholeNode.svelte";
-  import { boxes, copies, copyEdges, drawings, partsCount, type Copy } from "./parts";
-  import { BLOCKING, NODE, WORDS, ZOOM_STEP, currentWords, tallyWords, type Point } from "./graph";
+  import { boxes, copies, copyEdges, drawings, partsCount } from "./parts";
+  import { BLOCKING, WORDS, ZOOM_STEP, currentWords, tallyWords, type Point } from "./graph";
   import { area, centred, revealed, whole, zoomedAround, type Area, type Fit, type Insets } from "./camera";
-  import { Picture, commentRect, hit, legible, scene, view, within } from "./scene";
+  import { Picture, hit, legible, scene, view, within } from "./scene";
   import { plain } from "../shell/keys";
   import { useCommands } from "../shell/commands.svelte";
-  import { NO_ANNOTATIONS, roomOf, type Annotations } from "./annotations";
-  import { anchor, boxPlaces, canJoin, dropAt, inside, placesOf, topLevel, under, type Drop } from "./placing";
-  import type { BranchKey, EditOperation } from "../ipc/client";
+  import type { BranchKey } from "../ipc/client";
 
   let {
     source,
     graph,
     minimized,
     positions,
-    annotations = NO_ANNOTATIONS,
     branch = null,
     workspace,
     active,
@@ -81,9 +72,7 @@
     minimized: readonly string[];
     /** Where the layout put each copy that is no box, by key. */
     positions: Map<string, Point>;
-    /** The places and comments `positions` was laid out with. */
-    annotations?: Annotations;
-    /** The branch the graph is of: a Current's edits write its definitions. */
+    /** The branch the graph is of: its find field searches it. */
     branch?: BranchKey | null;
     workspace?: GraphWorkspace;
     active?: boolean;
@@ -137,11 +126,8 @@
   const keys = $derived(drawings(drawn));
   /** The copies that show the opened Artifact: its own, and the minimized wholes hiding it. */
   const showing = $derived(new Set(opened === null ? [] : (keys.get(opened) ?? [])));
-  /** Where every copy is, wholes around their parts and their comments. */
-  const rects = $derived(boxes(drawn, positions, roomOf(annotations)));
-  const defs = $derived(branch ? app.definitionsFor(branch) : app.definitions);
-  /** A Current of a branch whose definitions are read: what is on it can be edited. */
-  const editable = $derived(current && branch !== null && defs.of(branch));
+  /** Where every copy is, wholes around their parts. */
+  const rects = $derived(boxes(drawn, positions));
   /** The graph's edges between copies, lit as their edges. */
   const lines = $derived(copyEdges(graph, drawn, current ? PRECEDENCE.current : PRECEDENCE.run).map(({ source, target, edge }) => ({ ...edge, source, target })));
   /** The copies edges reach, and those they leave: each shows its port on that side. */
@@ -154,14 +140,6 @@
       new Map(drawn.map((copy) => [copy.key, copy.node.id])),
     ),
   );
-  /** What the canvas paints from: the layout, with a dragged node and the parts inside it where
-   * the drag has taken them. */
-  let paintedAt = $derived(laid);
-  function dragScene(moved: { key: string; x: number; y: number }) {
-    const inside = (copy: Copy | undefined): boolean => !!copy && (copy.key === moved.key || inside(copy.parent === null ? undefined : byKey.get(copy.parent)));
-    const shifted = new Map([...rects].map(([key, rect]) => [key, inside(byKey.get(key)) ? { ...rect, x: rect.x + moved.x, y: rect.y + moved.y } : rect]));
-    return scene(shifted, new Set(drawn.filter((copy) => copy.parts.length > 0).map((copy) => copy.key)), new Map(drawn.map((copy) => [copy.key, copy.node.id])));
-  }
   /** The whole graph, as Fit View fits it. */
   const bounds = $derived(laid.bounds);
   /** More Artifacts than the window keeps as elements: the canvas draws what they do not. */
@@ -180,10 +158,8 @@
    * elements. */
   const kept = $derived(painted ? "" : large ? inView.join() : null);
 
-  // Lights change in place; positions only come with a new layout, or, after a drag that wrote
-  // nothing, as they were.
+  // Lights change in place; positions only come with a new layout.
   let nodes = $derived.by<Node[]>(() => {
-    void v.epoch;
     // A part kept as an element keeps the wholes around it, which hold it.
     const holding = (key: string): string[] => {
       const parent = byKey.get(key)?.parent ?? null;
@@ -198,8 +174,6 @@
         return {
           id: key,
           type: folded ? "minimized" : box ? "whole" : "artifact",
-          // A whole's box is dragged by its title row; its face pans.
-          dragHandle: box ? ".title" : undefined,
           // A part's place is from its whole's corner.
           position: around ? { x: at.x - around.x, y: at.y - around.y } : { x: at.x, y: at.y },
           parentId: parent ?? undefined,
@@ -220,15 +194,9 @@
             artifact: node.id,
             count,
             onminimize: () => void minimize(key, !folded),
-            comment: annotations.comments.get(node.name) ?? null,
-            editing: editable && defs.field?.name === node.name && keys.get(node.id)?.[0] === key,
-            reset: editable && box && annotations.places.has(node.name),
-            onreset: () => void edit({ kind: "resetPlaces", whole: node.name }),
-            oncomment: editable ? (event: PointerEvent) => grabComment(event, key) : undefined,
-            onfield: (written: string | null) => void closeField(written),
-            onpan: editable ? (event: PointerEvent) => pan(event) : undefined,
+            onpan: (event: PointerEvent) => pan(event),
           },
-          draggable: editable && !painted,
+          draggable: false,
           connectable: false,
           ariaLabel: `${node.name}: ${node.note ?? (current ? currentWords(node.light) : `${WORDS[node.light]}${tallyWords(node.tally)}`)}${folded ? `, minimized, ${partsCount(count)}` : ""}`,
           domAttributes: { "data-light": node.light, "data-artifact": node.id },
@@ -373,9 +341,8 @@
       boxes: painted,
       opened: showing,
       minimized: hidden,
-      comments: annotations.comments,
     };
-    const where = paintedAt;
+    const where = laid;
     let settle: ReturnType<typeof setTimeout> | undefined;
     const show = (sharp: boolean) => {
       const [width, height] = [Math.round(what.width * what.ratio), Math.round(what.height * what.ratio)];
@@ -475,9 +442,6 @@
     return isWhole(focused) ? focused : isWhole(open) ? open : undefined;
   }
 
-  /** The tree id the graph gives the Artifact `name`. */
-  const idOf = (name: string) => graph.nodes.find((node) => node.name === name)?.id;
-
   /** The drawn copy focus is on, kept as focus moves in and out of the canvas. */
   function focusIn(event: FocusEvent) {
     const held = event.target instanceof Element ? event.target.closest<HTMLElement>(".svelte-flow__node") : null;
@@ -505,175 +469,6 @@
   }
 
 
-  /** Write `operation` to the branch's definitions, made on the graph: refused, what was moved
-   * goes back where it was and the Main area's notice says why. Answers whether it was written. */
-  async function edit(operation: EditOperation): Promise<boolean> {
-    if (!branch) return false;
-    const refused = await defs.edit(branch, operation, "graph");
-    // What was dragged goes back where it was drawn.
-    if (refused !== null) v.epoch += 1;
-    return refused === null;
-  }
-
-  /** The point of the graph under the pointer of `event`. */
-  function pointOf(event: MouseEvent | TouchEvent | PointerEvent): Point | null {
-    const at = "clientX" in event ? event : (event.changedTouches[0] ?? null);
-    return at ? flow.screenToFlowPosition({ x: at.clientX, y: at.clientY }) : null;
-  }
-
-
-
-  function dropOf(key: string, event: MouseEvent | TouchEvent): Drop | null {
-    const [copy, at] = [byKey.get(key), pointOf(event)];
-    return copy && at ? dropAt(drawn, rects, copy, at) : null;
-  }
-
-  function dragStart(key: string) {
-    v.dragging = { key, cancelled: false };
-    v.target = null;
-  }
-
-  /** While a node is dragged, the Artifact a release would make its whole is highlighted, but
-   * only while the library would accept it. */
-  function dragMove(key: string, event: MouseEvent | TouchEvent) {
-    if (!v.dragging || v.dragging.cancelled) return;
-    const [from, now] = [v.pressed, pointOf(event)];
-    if (canvased && from && now) paintedAt = dragScene({ key, x: now.x - from.x, y: now.y - from.y });
-    const [copy, drop] = [byKey.get(key), dropOf(key, event)];
-    v.target = branch && defs.of(branch) && copy && drop?.kind === "join"
-      && canJoin((name) => defs.node(name)?.parts, copy.node.name, drop.to) ? drop.key : null;
-  }
-
-  /** A released node: placed, made a part of the Artifact under it, or out of its whole. It is
-   * drawn where it was let go until what was written is laid out, or back where it was when the
-   * edit is refused. */
-  async function dragStop(node: Node, event: MouseEvent | TouchEvent) {
-    try {
-      await release(node, event);
-    } finally {
-      paintedAt = laid;
-    }
-  }
-
-  async function release(node: Node, event: MouseEvent | TouchEvent) {
-    const held = v.dragging;
-    v.dragging = null;
-    v.target = null;
-    const copy = byKey.get(node.id);
-    const drop = held && !held.cancelled ? dropOf(node.id, event) : null;
-    if (!copy || !drop) {
-      v.epoch += 1;
-      return;
-    }
-    const [from, now] = [v.pressed, pointOf(event)];
-    const was = rects.get(copy.key)!;
-    const around = copy.parent === null ? null : rects.get(copy.parent)!;
-    const rect = from && now
-      ? { ...was, x: was.x + now.x - from.x, y: was.y + now.y - from.y }
-      : { ...was, x: node.position.x + (around?.x ?? 0), y: node.position.y + (around?.y ?? 0) };
-    const to = anchor(copy, rect, annotations);
-    const whole = copy.parent === null ? null : byKey.get(copy.parent)!.node.name;
-    if (drop.kind === "place") {
-      await edit({ kind: "savePlaces", places: placesOf(drawn, rects, annotations, copy, to) });
-      return;
-    }
-    if (drop.kind === "leave") {
-      // A top level laid out automatically is placed as shown, with the Artifact where it was dropped.
-      const shown = annotations.at.size === 0 ? topLevel(drawn, rects, annotations, copy.node.name) : {};
-      if (await edit({ kind: "movePart", part: copy.node.name, from: whole, to: null, at: [Math.round(to.x), Math.round(to.y)] })) {
-        if (Object.keys(shown).length > 0) await edit({ kind: "savePlaces", places: shown });
-      }
-      return;
-    }
-    const target = byKey.get(drop.key)!;
-    const box = target.parts.length > 0 && !target.minimized;
-    const targetRect = rects.get(target.key)!;
-    const release = now ?? to;
-    const at: [number, number] = box ? freeIn(target, inside(to, target, targetRect, annotations), was)
-      : [Math.max(0, Math.round(release.x - targetRect.x)), Math.max(0, Math.round(release.y - targetRect.y))];
-    // A box laid out automatically is placed as shown, with the new part where it was dropped.
-    const shown = box && !annotations.places.has(target.node.name) ? boxPlaces(drawn, rects, annotations, target, copy.node.name) : {};
-    if (await edit({ kind: "movePart", part: copy.node.name, from: whole, to: target.node.name, at })) {
-      if (Object.keys(shown).length > 0) await edit({ kind: "savePlaces", places: shown });
-    }
-  }
-
-  /** `at` in the box of `whole` for a dragged Artifact of `size`, or, where it would cover one of
-   * its parts, under them all. */
-  function freeIn(whole: Copy, at: [number, number], size: { width: number; height: number } = NODE): [number, number] {
-    const box = rects.get(whole.key)!;
-    const parts = whole.parts.flatMap((key) => {
-      const rect = rects.get(key);
-      const copy = byKey.get(key);
-      return rect && copy ? [{ at: inside(anchor(copy, rect, annotations), whole, box, annotations), rect }] : [];
-    });
-    const covers = parts.some(({ at: [x, y], rect }) => at[0] < x + rect.width && x < at[0] + size.width && at[1] < y + rect.height && y < at[1] + size.height);
-    if (!covers) return at;
-    return [at[0], Math.max(...parts.map(({ at: [, y], rect }) => y + rect.height)) + 20];
-  }
-
-  /** A press on a comment: moved, the comment is dragged onto an Artifact without one; released
-   * without moving, its field opens (on a Run, its node's Detail does). Esc puts it back. */
-  function grabComment(event: PointerEvent, key: string) {
-    const copy = byKey.get(key);
-    if (event.button !== 0 || !copy) return;
-    event.stopPropagation();
-    event.preventDefault();
-    const start = { x: event.clientX, y: event.clientY };
-    // The text as it is drawn under its node, so it keeps its width and lines while dragged.
-    const zoom = flow.getViewport().zoom;
-    const grabbed = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
-    const shape = {
-      width: (grabbed?.getBoundingClientRect().width ?? NODE.width * zoom) / zoom,
-      padding: grabbed ? getComputedStyle(grabbed).padding : "0px",
-      zoom,
-    };
-    let [moved, cancelled] = [false, false];
-    let intended: Copy | null = null;
-    let checked = 0;
-    const move = (next: PointerEvent) => {
-      if (cancelled || (!moved && Math.hypot(next.clientX - start.x, next.clientY - start.y) < DRAG)) return;
-      moved = true;
-      const box = v.canvas?.getBoundingClientRect();
-      if (box) v.comment = { key, x: next.clientX - box.left, y: next.clientY - box.top, shape };
-      const at = pointOf(next);
-      const target = at ? under(drawn, rects, at) : null;
-      if (intended?.key === target?.key) return;
-      intended = target;
-      const request = ++checked;
-      v.target = null;
-      const owner = branch;
-      if (owner && target) void defs.check(owner, { kind: "moveComment", from: copy.node.name, to: target.node.name }).then((result) => {
-        if (request === checked && result.kind === "checked") v.target = target.key;
-      }, () => {});
-    };
-    const stop = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("keydown", escape, true);
-    };
-    const up = () => {
-      stop();
-      ++checked;
-      const target = intended;
-      [v.comment, v.target] = [null, null];
-      if (cancelled) return;
-      if (!moved) defs.openField(copy.node.name, "graph");
-      else if (target) void edit({ kind: "moveComment", from: copy.node.name, to: target.node.name });
-    };
-    const escape = (next: KeyboardEvent) => {
-      if (!plain(next, "Escape")) return;
-      next.preventDefault();
-      next.stopPropagation();
-      cancelled = true;
-      ++checked;
-      [v.comment, v.target] = [null, null];
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("keydown", escape, true);
-  }
-
   /** A drag on a whole's face pans the camera, as one on the background does. */
   function pan(event: PointerEvent) {
     if (event.button !== 0) return;
@@ -696,88 +491,11 @@
     window.addEventListener("pointerup", up);
   }
 
-  /** The comment's font measured as the canvas draws it, for the room comments take. */
-  const measuring: Attachment<HTMLElement> = (element) => {
-    if (defs.measure) return;
-    const context = document.createElement("canvas").getContext("2d");
-    if (!context) return;
-    const style = getComputedStyle(element);
-    context.font = `400 ${style.getPropertyValue("--text-small").trim()} ${style.getPropertyValue("--font").trim()}`;
-    defs.measure = (text) => context.measureText(text).width;
-  };
-
-  /** Esc reaches a drag before anything else that takes it, the Detail's close included. */
-  const escaping: Attachment<HTMLElement> = () => {
-    window.addEventListener("keydown", cancelDrag, true);
-    return () => window.removeEventListener("keydown", cancelDrag, true);
-  };
-
-  /** Esc during a node's drag puts it back: the drag ends where it is, writing nothing. */
-  function cancelDrag(event: KeyboardEvent) {
-    if (!v.dragging || !plain(event, "Escape")) return;
-    event.preventDefault();
-    event.stopPropagation();
-    v.dragging = { ...v.dragging, cancelled: true };
-    paintedAt = laid;
-    v.target = null;
-    v.epoch += 1;
-    // Svelte Flow's drag ends on the button's release; this release ends it now.
-    window.dispatchEvent(new MouseEvent("mouseup"));
-  }
-
-  /** The comment field of `name`'s first copy closes: written, removed or put back. Focus goes
-   * back where it was opened from. */
-  async function closeField(text: string | null) {
-    const field = defs.field;
-    if (!field) return;
-    if (text !== null && text !== (annotations.comments.get(field.name) ?? "")) {
-      if (!(await edit({ kind: "setComment", name: field.name, text }))) return;
-    }
-    defs.field = null;
-    await tick();
-    if (field.from === "button") m.panes.detail?.querySelector<HTMLElement>("[data-comment-button]")?.focus();
-    else {
-      const first = keys.get(idOf(field.name) ?? "")?.[0];
-      v.canvas?.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${CSS.escape(first ?? "")}"]`)?.focus({ preventScroll: true });
-    }
-  }
-
-  /** At block zoom render only the editor over its Artifact, without moving the camera. */
-  const blockField = $derived.by(() => {
-    const field = editable && painted ? defs.field : null;
-    if (!field) return null;
-    const key = keys.get(idOf(field.name) ?? "")?.[0];
-    const place = key === undefined ? undefined : rects.get(key);
-    const copy = key === undefined ? undefined : byKey.get(key);
-    if (!place || !copy) return null;
-    const { x, y, zoom } = camera.current;
-    return { name: field.name, ...commentRect({
-      x: x + place.x * zoom, y: y + place.y * zoom, width: place.width * zoom, height: place.height * zoom,
-    }, copy.parts.length > 0, zoom) };
-  });
-
-  /** An Artifact just created or renamed: once the scan draws it, its Detail opens; a created
-   * one is brought to the middle of the graph left of the Detail, as a found Artifact is. */
-  const created: Attachment<HTMLElement> = () => {
-    const made = defs.created;
-    const id = made === null ? undefined : idOf(made.name);
-    if (made === null || id === undefined || !keys.has(id)) return;
-    defs.created = null;
-    if (made.centre) void choose({ node: id, tab: null } as Found);
-    else onopen(id);
-  };
-
-  const newArtifact = () => (defs.dialog = { kind: "new" });
-  const resetTop = () => void edit({ kind: "resetPlaces", whole: null });
-  const canResetTop = $derived(editable && annotations.at.size > 0);
-
   useCommands(() => [
     { id: "graph.find", group: "Graph", label: "Find", keys: "Ctrl+F", run: () => (m.finding = true) },
     { id: "graph.zoom-out", group: "Graph", label: "Zoom out", run: () => zoomBy(1 / ZOOM_STEP) },
     { id: "graph.zoom-in", group: "Graph", label: "Zoom in", run: () => zoomBy(ZOOM_STEP) },
     { id: "graph.fit", group: "Graph", label: "Fit", run: fitAll },
-    { id: "graph.new", group: "Graph", label: "New Artifact", enabled: () => editable, run: newArtifact },
-    { id: "graph.reset-layout", group: "Graph", label: "Reset layout", enabled: () => canResetTop, run: resetTop },
     {
       id: "graph.minimize",
       group: "Graph",
@@ -811,18 +529,12 @@
   {#snippet finder()}
     <GraphFind {source} {branch} onchoose={(found) => void choose(found)} onclose={() => (m.finding = false)} />
   {/snippet}
-  {#snippet edits()}
-    <button class="tool" onclick={newArtifact}><Icon name="add" />New Artifact</button>
-    {#if canResetTop}
-      <button class="tool" onclick={resetTop}><Icon name="reset" />Reset layout</button>
-    {/if}
-  {/snippet}
-  <GraphTools zoom={camera.current.zoom} act={{ find: () => (m.finding = true), zoomBy, fit: fitAll }} finder={m.finding ? finder : undefined} children={editable ? edits : undefined} />
+  <GraphTools zoom={camera.current.zoom} act={{ find: () => (m.finding = true), zoomBy, fit: fitAll }} finder={m.finding ? finder : undefined} />
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="canvas"
     class:far={gridSize < GRID_SHOWN}
-    class:empty-run={graph.nodes.length === 0 && !editable}
+    class:empty-run={graph.nodes.length === 0 && !current}
     data-graph-area
     style:--float-inset={bottom > 0 ? `${bottom}px` : null}
     style:background-size="{gridSize}px {gridSize}px"
@@ -830,21 +542,12 @@
     {@attach measure}
     {@attach docked}
     {@attach grid}
-    {@attach created}
-    {@attach escaping}
-    {@attach measuring}
     onkeydown={keydown}
-    onpointerdowncapture={(event) => (v.pressed = pointOf(event))}
     onfocusin={focusIn}
     onfocusout={() => (v.focused = null)}
     tabindex="-1"
   >
     {#if graph.nodes.length === 0}<p class="empty">{empty}</p>{/if}
-    {#if blockField}
-      <div class="block-field" style:left="{blockField.x}px" style:top="{blockField.y}px" style:width="{blockField.width}px">
-        <CommentField name={blockField.name} onclose={(written) => void closeField(written)} />
-      </div>
-    {/if}
     {#if canvased}<canvas class="paint" aria-hidden="true" {@attach draw}></canvas>{/if}
     <SvelteFlow
       bind:nodes
@@ -854,11 +557,7 @@
       {fitViewOptions}
       minZoom={MIN_ZOOM}
       maxZoom={MAX_ZOOM}
-      nodesDraggable={editable && !painted}
-      nodeDragThreshold={DRAG}
-      onnodedragstart={({ targetNode }) => targetNode && dragStart(targetNode.id)}
-      onnodedrag={({ targetNode, event }) => targetNode && dragMove(targetNode.id, event)}
-      onnodedragstop={({ targetNode, event }) => targetNode && void dragStop(targetNode, event)}
+      nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable={false}
       autoPanOnNodeFocus={false}
@@ -878,10 +577,6 @@
       }}
       onpaneclick={({ event }) => background(event)}
     />
-    {#if v.comment}
-      {@const text = annotations.comments.get(byKey.get(v.comment.key)?.node.name ?? "")}
-      <p class="lifted" aria-hidden="true" style:left="{v.comment.x}px" style:top="{v.comment.y}px" style:width="{v.comment.shape.width}px" style:padding={v.comment.shape.padding} style:transform="scale({v.comment.shape.zoom})">{text}</p>
-    {/if}
     {#if !allInView && v.area}
       <Navigator {laid} {lights} viewport={camera.current} width={visible} height={v.area.height} onmove={navigate} />
     {/if}
@@ -889,7 +584,6 @@
 </div>
 
 <style>
-  .block-field { position: absolute; z-index: 2; }
   /* No Artifacts: the sentence stands at the top of the canvas, under the tool strip, which
      acts on the empty canvas as on any. */
   .empty {
@@ -955,34 +649,6 @@
   }
   .canvas :global(.svelte-flow__node) {
     cursor: pointer;
-  }
-  /* A node being dragged floats: raised one step with the faint shadow, its face and strip as
-     they were; a whole's box keeps its face and takes the shadow. */
-  /* Lift the face without replacing its status strip, stack, or current ring. */
-  .canvas :global(.svelte-flow__node.dragging .graph-face) {
-    background: var(--surface-raised);
-    --node-lift: 0 2px 8px var(--scrim);
-  }
-  /* A comment being dragged: its text alone follows the pointer, in the ink, width and lines it
-     has under its node, lifted by a faint shadow on its letters, with no surface or box. */
-  .lifted {
-    position: absolute;
-    z-index: 5;
-    box-sizing: border-box;
-    margin: 0;
-    transform-origin: 0 0;
-    color: var(--ink-2);
-    font-size: var(--text-small);
-    line-height: 1.4;
-    text-shadow: 0 1px 3px var(--scrim);
-    pointer-events: none;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
-    overflow: hidden;
   }
   .canvas :global(.svelte-flow__node:focus-visible) {
     outline: 2px solid var(--focus);

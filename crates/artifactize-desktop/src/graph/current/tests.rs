@@ -1,4 +1,4 @@
-use super::{Currents, Fresh, Request, Stage, view};
+use super::{Currents, Fresh, Request, ScanStatus, Stage, view};
 use crate::{browse::BranchKey, ids::ScanId};
 use artifactize_core::monitor::live::{Current, Place};
 use std::path::PathBuf;
@@ -22,7 +22,10 @@ fn empty() -> Current {
 
 /// Why the branch's last scan failed, as the window reads it.
 fn failure(currents: &Currents) -> Option<String> {
-    view(currents, BranchKey::new(&place())).unwrap().failure
+    match view(currents, BranchKey::new(&place())).unwrap().scan {
+        ScanStatus::Failed { reason } => Some(reason),
+        ScanStatus::Scanning | ScanStatus::Scanned => None,
+    }
 }
 
 /// The scan a request started.
@@ -174,7 +177,9 @@ fn ordinary_completion_and_failure_each_invalidate_the_last_published_scan() {
         ));
         assert_eq!(changes.try_recv().unwrap(), BranchKey::new(&branch));
         let view = view(&currents, BranchKey::new(&branch)).unwrap();
-        assert!(!view.scanning);
-        assert_eq!(view.failure, failure);
+        assert_eq!(
+            view.scan,
+            failure.map_or(ScanStatus::Scanned, |reason| ScanStatus::Failed { reason })
+        );
     }
 }

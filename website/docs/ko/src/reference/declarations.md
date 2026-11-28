@@ -1,110 +1,187 @@
 # 선언(.artf) 레퍼런스 {#declarations-artf-reference}
 
-`.artifactize/`가 들어 있는 폴더를 하나의 프로젝트로 봅니다. `.artifactize/<name>.artf` 파일들이 어떻게 Artifact Graph를 이루는지는 [Artifact와 Artifact Graph](../concepts/artifacts.md)를 보세요.
+`.artifactize/`가 들어 있는 폴더를 하나의 프로젝트로 봅니다. `.artifactize/` 아래 어디에 있든 `.artf` 파일은 모두 `.artf` 언어로 쓴 코드이고, 이 파일들이 모여 하나의 프로그램이 됩니다. 한 파일에서 선언한 것은 다른 파일 어디서나 쓸 수 있습니다. 그 옆의 `.artfprofiles` 파일에는 Agent eval을 어떻게 실행할지 적습니다([Agent profile](#project-settings)). 이렇게 선언한 Artifact들이 어떻게 프로젝트 그래프를 이루는지는 [Artifact와 Artifact Graph](../concepts/artifacts.md)를 보세요.
 
-선언 키는 `snake_case`(`timeout_ms`, `pass_schema`, `input_schema`, `execution_paths`)를 씁니다. JSON Schema 키워드(`minLength`, `additionalProperties`)와 JSON으로 직렬화된 선언 필드(`passSchema`, `timeoutMs`, `agentTools`)는 `camelCase`를 씁니다. 그 외 일부 CLI JSON 출력은 `signed_in`이나 `display_name`처럼 명령별 필드 이름을 씁니다.
+이 언어는 작고 선언적입니다. 읽는다고 해서 무언가 실행되지는 않습니다. Artifact와 그 eval, toolset을 선언할 뿐이고, 반복되는 모양은 `artf!` **매크로**로 한 번만 씁니다. `artifactize config check`가 이 코드를 검사합니다. 오류에는 파일, 줄, 열이 나오고, 매크로가 만든 코드라면 그 매크로를 부른 곳도 함께 나옵니다.
 
-## 최상위 Artifact 필드 {#declaration-validation}
-
-```toml
-# .artifactize/app.artf
-path = "crates/app/"
-select = ["src", "Cargo.toml"]           # 선택: 폴더 대상을 aspect로 지정
-parts = ["app-ui", "app-db"]             # 선택: 명시적 하위 부분 구성
-basis = false                            # 선택: eval이 없을 때만 true 가능
-tags = ["type:code", "tier:core"]        # 선택: 화면 표시용 메타데이터
-fingerprint = { files = ["src"], ignore = ["*.snap"] }  # 선택: 기본값은 artifactsum
-
-[annotations.style]
-at = [120, 40]
-parts = { app-ui = [40, 80] }
-
-[annotations.comment]
-text = "Canvas note shown in the desktop app."
+```rust
+// .artifactize/profiles.artfprofiles
+profile reviewer : agent = { backend = "codex", model = "gpt-6.2-sol", reasoning = "high" }
 ```
 
-| 필드 / 식별자 | 규칙 |
+```rust
+// .artifactize/engine.artf
+// 워크스페이스의 Rust 크레이트: 폴더, 코드 리뷰, 테스트.
+artf! rust-crate(package, dir, extra_evals = {}) : files = {
+  path = "crates/@{param dir}/"
+
+  eval follows-style : reviewer = {
+    title = "The crate follows the code checklist"
+    red_at = "P1"
+    instruction = """
+      Read @{artf rules-code-style} and review @{artf self} against every item. Each item the
+      code does not meet is an issue.
+    """
+  }
+
+  // lockfile과 함께 크레이트의 테스트를 실행합니다.
+  eval tests : runtime(command = "cargo", args = ["test", "--locked", "-p", "@{param package}"], timeout_ms = 1800000) = {
+    title = "The crate's tests pass"
+    deps = [cargo-lock]
+  }
+
+  ...extra_evals
+}
+
+artf cargo-lock = { path = "Cargo.lock", basis = true }
+artf rules-code-style : markdown = { path = "project-rules/DEV-CODING.md", basis = true }
+
+artf core = rust-crate!(package = "app-core", dir = "core")
+artf cli = rust-crate!(
+  package = "app-cli",
+  dir = "cli",
+  extra_evals = {
+    eval packages : runtime(command = "cargo", args = ["package", "--locked", "-p", "app-cli"]) = {
+      title = "The CLI packages"
+    }
+  },
+)
+```
+
+## 문법 {#syntax}
+
+- **주석**은 `//`로 시작해 그 줄 끝까지입니다. 레이아웃과 주석은 의미에 영향을 주지 않습니다.
+- **문자열**은 한 줄에 쓰는 `"…"`이고 JSON과 같은 이스케이프(`\"`, `\\`, `\n`, `\t`, `\uXXXX` 등)를 씁니다. 여러 줄에 걸친 문자열은 `"""…"""`로 씁니다. 여는 따옴표 바로 뒤의 줄바꿈, 닫는 따옴표의 들여쓰기만 있는 마지막 줄, 모든 줄에 공통인 들여쓰기는 빠집니다. 줄 끝의 백슬래시는 다음 줄과 이어 붙입니다. 문자열 안의 `@{…}`는 [slot](#slots)이고, `@{`를 글자 그대로 쓰려면 `@@{`로 씁니다. 그 밖의 중괄호(`{#id}`, `{"json": true}`, `${HOME}`)는 일반 텍스트입니다. `'''…'''`는 이스케이프도 slot도 없는 raw 문자열입니다.
+- **값**은 문자열, 정수, `true`/`false`, 목록 `[a, b]`, 블록 `{ key = value }`(항목은 줄바꿈이나 쉼표로 나눔), 이름(Artifact, toolset, profile, 매개변수), 호출 `name(key = value, …)`, 매크로 호출 `name!(key = value, …)`입니다. 선택 필드는 빈 값을 주지 말고 아예 쓰지 않습니다.
+- Artifact, toolset, profile, 매크로의 **이름**은 글자로 시작하고 글자, 숫자, `-`, `_`로 이루어집니다. 이 이름들은 프로젝트의 모든 파일에 걸쳐 이름 공간 하나를 함께 씁니다. 이름 하나는 Artifact, toolset, 매크로, profile 중 한 번만 선언하고, 대소문자를 무시해도 서로 달라야 합니다. `con`이나 `nul` 같은 Windows 장치 이름은 피하세요. eval ID는 그 Artifact 안에서만 겹치지 않으면 됩니다.
+
+## 선언 {#declarations}
+
+| 선언 | 선언하는 것 |
 |---|---|
-| 식별자 | Artifact 이름은 `.artf` 파일 이름(확장자 제외)으로 정해지며 `.artifactize/` 전체에서 대소문자를 무시하고 비교했을 때 겹칠 수 없습니다(`con`, `nul` 같은 Windows 장치 이름은 피하세요). eval ID는 해당 Artifact 안에서, 도구·세션·대체 실행 프로필 ID는 각 선언 테이블 안에서 겹치지 않아야 합니다. |
-| `path` | **필수.** 프로젝트 루트 기준 상대 경로나 Live URI를 지정합니다. 로컬 경로는 `/`를 쓰며, 폴더는 `"dir/"`나 `"./"`처럼 끝에 `/`를 붙여야 합니다. 일반 파일 하나를 지정할 때는 `"file.ext"`처럼 적습니다. Live 대상은 URI로 적습니다(예: `"https://example.com"`). HTTP(S)만 허용하는 내장 `open` 도구와 달리 Live 대상에는 다른 URI 스킴도 쓸 수 있습니다. |
-| `type` | [Artifact 유형](../guides/viewer-plugins.md)을 지정하는 선택 필드입니다. 내장 유형이나 설치한 유형을 지정합니다. 생략하면 Custom Artifact가 됩니다. |
-| `select` | 폴더 `path` 안에서 고른 상대 경로 배열로 **Aspect**를 정의합니다. 파일이나 Live Artifact에는 쓸 수 없습니다. |
-| `parts` | 상위 Artifact를 구성하는 하위 Artifact의 이름을 배열로 적습니다. 이 Artifact의 이름을 `parts`에 넣을 수 없으며, `parts`만 따라 원래 Artifact로 돌아오는 순환 관계도 만들 수 없습니다. |
-| `basis` | 불리언 값입니다. `true`로 설정하면 이 Artifact 자체는 리뷰하지 않으며, `evals`가 있으면 이 값을 쓸 수 없습니다. |
-| `tags` | 비어 있지 않은 표시용 문자열 배열(`status`와 `config graph`에 표시). |
-| `fingerprint` | 선택:<br>• **폴더**: 생략하거나 `{}`이면 기본 `artifactsum`, `{ files? = [...], ignore? = [...] }`(`files` 기본값은 `["."]`, `ignore` 기본값은 `[]`), `{ script = { command = "...", args = [...], files? = [...], timeout_ms? = N } }`, 또는 `false`.<br>• **Aspect**: 생략하면 `select`에 대한 기본 `artifactsum`, `{ files = [...], ignore? = [...] }`(`files` 필수이며 `select` 범위 안; Aspect에서 `fingerprint = {}`는 거부됨), `{ script = ... }`, 또는 `false`.<br>• **파일**: 생략하거나 `{ files = ["<대상파일이름>"] }`(`ignore` 불가), `{ script = ... }`, 또는 `false`.<br>• **Live**: 생략(스냅샷 없음), `{ script = ... }`, 또는 `false`.<br>자세한 규칙은 [fingerprint와 재사용](../concepts/reuse.md#fingerprints-artifactsum-script-false)을 참고하세요. |
-| `views.agent_tools` | `<tool_id>`별 `{ builtin = "...", args? = [...], description? = "..." }`(`declarations`, `graph`, `help`, `section`에는 `args`가 필수이고 고정 대상 `read`/`list`에는 선택; [내장 도구](../guides/tools.md#builtin-tools) 참고) 또는 `{ description, protocol = "json"\|"plain", command, args, input_schema?, execution_paths?, timeout_ms?, session? }` 매핑. |
-| `views.agent_sessions` | `<session_id>`별 `{ start = { command, args, execution_paths? }, stop = { command, args, execution_paths? } }` 매핑(`start`와 `stop`에는 `timeout_ms`를 쓰지 않으며, 연결된 개별 도구에서 `timeout_ms`를 선언합니다). |
-| `views.human_tools` | `<tool_id>`별 `{ builtin = "...", args = [...], description?, kind? }` 또는 `{ description, kind = "launch"\|"output", command, args, timeout_ms? }` 매핑(`timeout_ms`는 `output` 실행 시간을 제한하며 `launch`에는 적용되지 않음). 뷰어를 제공하는 유형에서는 `{ kind = "viewer", description = "..." }`로 데스크톱 앱에서 Artifact Viewer를 엽니다. CLI에서는 뷰어를 열지 않습니다. |
-| `annotations` | 화면에 표시할 메타데이터(`style.at`, `style.parts`, `comment.text`)를 지정합니다. `artifactsum`이 `.artf` 내용을 정규화할 때와 eval 정의 해시를 계산할 때 제외됩니다. |
+| `artf NAME : TOOLSETS = { … }` | eval을 담은 Artifact. `: TOOLSETS`는 선택입니다. |
+| `artf NAME = macro!(…)` | `artf!` 매크로로 만드는 Artifact. |
+| `artf! macro(params) : TOOLSETS = { … }` | Artifact를 만드는 매크로. |
+| `tool NAME = { … }` | toolset. 이름이 곧 namespace입니다. |
+| `profile NAME : agent = …` | `.artfprofiles` 파일에 쓰는 Agent profile([Agent profile](#project-settings)). |
 
-## eval 필드 (`[evals.<id>]`) {#eval-fields-evalsid}
+## Artifact 필드 {#declaration-validation}
 
-각 `[evals.<id>]` 테이블은 `<artifact>/<id>` eval을 정의합니다.
+```rust
+artf app : files & html = {
+  path = "crates/app/"
+  select = ["src", "Cargo.toml"]          // 선택: 폴더 대상을 aspect로 만듦
+  parts = [app-ui, app-db]                // 선택: 명시적 구성
+  basis = false                           // 선택: eval이 없는 Artifact만 true
+  tags = ["type:code", "tier:core"]       // 선택: 표시용 메타데이터
+  fingerprint = { files = ["src"], ignore = ["*.snap"] }  // 선택: 기본값은 artifactsum
 
-| 필드 | 타입 및 규칙 |
+  eval review : reviewer = { … }
+}
+```
+
+| 필드 | 규칙 |
 |---|---|
-| `title` | **필수.** 통과 조건을 요약하는 문자열. |
-| `profile` | **필수.** 평가자 프로필 테이블(`kind = "runtime"`, `"agent"`, `"human"` 중 하나) 또는 Agent [프로필 별칭](#project-settings)(`!name`이나 `!name(field = value, ...)`):<br>• `runtime`: `{ kind = "runtime", command = "...", args = [...], timeout_ms? = N }`<br>• `agent`: `{ kind = "agent", backend = "...", model = "...", reasoning? = "...", timeout_ms? = N, max_tokens? = N, max_tool_calls? = N }`<br>• `human`: `{ kind = "human" }` |
-| `profile_variants` | 같은 `kind`의 대체 실행 프로필 매핑(`verify --profile NAME` 또는 `status --profile NAME`으로 선택). `agent` eval에서는 인라인 테이블 대신 [프로필 별칭](#project-settings)도 쓸 수 있습니다. 직접 선택했거나 재귀 옵션으로 포함한 eval 중 실행 가능한 eval마다 대체 실행 프로필을 정의해야 합니다. Runtime 대체 실행 프로필의 `args`에 적은 참조 때문에 새로 포함된 선행 eval은 기본 프로필로 실행합니다. |
-| `mutex` | `runtime` 또는 `agent` eval에 지정하는 계층형 잠금 태그 배열(`"use-computer"` 또는 `"use-computer:display"` 같은 하위 경로). 태그가 같거나 상하위 관계에 있으면(`use-computer`는 모든 하위 태그와 충돌) 한 eval이 끝날 때까지 다른 eval은 대기합니다. |
-| `payload.instruction` | **필수.** 평가 기준 문자열. `payload.instruction`이나 Runtime `args`에서 다른 Artifact를 `{name}`으로 참조하면 그 Artifact가 해당 eval의 입력이 됩니다. 해당 eval의 평가 대상 자체를 참조할 때는 의존성을 추가하지 않습니다. |
-| `red_at` | `agent` eval에만 지정하는 선택적 우선순위 기준(`"P0"`, `"P1"`, `"P2"`, `"P3"` 중 하나이며 `P0`이 가장 높음). `red_at` 이상의 지적 사항이 있으면 `RED`로 판정하고, 생략하면 지적 사항이 하나만 있어도 `RED`로 판정합니다. 기준보다 낮은 지적 사항은 `GREEN` 판정에서도 결과에 남습니다. |
-| `pass_schema`, `fail_schema` | `human` eval의 결과 필드를 검증할 JSON Schema로, 필요할 때만 지정합니다(`agent` eval에서는 쓸 수 없습니다). `runtime` 선언에도 적을 수 있으며, 종료 코드 판정은 바꾸지 않고 eval 정의 해시에만 반영됩니다. |
+| `path` | **필수.** 프로젝트 루트 기준 상대 경로로, 구분자는 `/`입니다. 폴더는 `"dir/"`나 `"./"`처럼 끝에 `/`를 붙이고, 일반 파일 하나는 `"file.ext"`로 씁니다. Live URI(예: `"https://example.com"`)도 쓸 수 있습니다. HTTP(S)만 여는 내장 `open` 도구와 달리 Live 대상은 다른 URI 스킴도 받습니다. |
+| `: TOOLSETS` | Artifact가 조합하는 [toolset](../guides/tools.md)으로, `&`로 잇습니다. 내장 toolset(`files`, `markdown`, `artifactize`), 설치한 [플러그인](../guides/viewer-plugins.md)의 toolset, 프로젝트의 `tool` 선언을 쓸 수 있습니다. 조합한 도구 중 정규 이름이 같은 두 도구는 내용도 같아야 합니다. |
+| `select` | 선택. 폴더 `path` 안의 상대 경로 목록으로, **aspect**를 정의합니다. 파일이나 Live Artifact에는 쓸 수 없습니다. |
+| `parts` | 선택. 이 전체를 이루는 Artifact 이름 목록입니다. 자기 자신을 가리키거나 순환을 만들 수 없습니다. |
+| `basis` | 선택. 불리언입니다. `true`는 이 Artifact 자신의 리뷰만 면제하고, eval이 있으면 쓸 수 없습니다. |
+| `tags` | 선택. 비어 있지 않은 표시용 문자열 목록으로, `status`와 `config graph`에 나옵니다. |
+| `fingerprint` | 선택:<br>• **폴더**: 생략하면 기본 `artifactsum`입니다. `{ files? = [...], ignore? = [...] }`(`files` 기본값 `["."]`, `ignore` 기본값 `[]`), `script(command = "...", args = [...], files? = [...], timeout_ms? = N)`, `false`를 쓸 수 있습니다.<br>• **Aspect**: 생략하면 `select`에 대한 기본 `artifactsum`입니다. `{ files = [...], ignore? = [...] }`(`files`는 필수이고 `select` 안에 있어야 함), `script(…)`, `false`를 쓸 수 있습니다.<br>• **파일**: 생략하거나 `{ files = ["<대상 파일 이름>"] }`(`ignore` 없음), `script(…)`, `false`를 씁니다.<br>• **Live**: 생략(스냅샷 없음), `script(…)`, `false`를 씁니다.<br>• **정의**(`.artifactize/` 아래의 대상): 생략하면 의미 기반 정의 fingerprint를 씁니다.<br>[Fingerprint와 재사용](../concepts/reuse.md#fingerprints-artifactsum-script-false)을 보세요. |
+| `eval ID …` | 이 Artifact의 eval로, 쓴 순서를 지킵니다([eval 필드](#eval-fields-evalsid)). `...block`은 매크로 매개변수 같은 `eval` 선언 블록을 펼쳐 넣습니다. |
 
-## 프로젝트 설정 (`.artifactize/settings.toml`) {#project-settings}
+## eval 필드 {#eval-fields-evalsid}
 
-선택 파일인 `.artifactize/settings.toml`에 Agent 평가자 프로필 별칭을 한 번만 정의해 두면 여러 `.artf` 파일에 같은 프로필을 반복해서 적지 않아도 됩니다.
+Artifact 안의 `eval ID : EVALUATOR = { … }`는 `<artifact>/<ID>`를 정의합니다. evaluator는 다음 중 하나입니다.
 
-```toml
-# .artifactize/settings.toml
-[profiles.sol]
-kind = "agent"
-backend = "codex"
-model = "gpt-6.2-sol"
-reasoning = "high"
-timeout_ms = 1800000
+- `runtime(command = "...", args = [...], timeout_ms? = N)`: 종료 코드가 판정이 되는 프로그램.
+- profile 이름: [profile](#project-settings)대로 실행하는 Agent 리뷰.
+- `human`: 사람의 승인.
+
+| 필드 | 규칙 |
+|---|---|
+| `title` | **필수.** 무엇이 통과인지 요약한, 비어 있지 않은 문자열입니다. 그대로 적어야 하고, 매크로 매개변수로 채울 수 없습니다. |
+| `instruction` | Agent와 Human eval에서 **필수**입니다. runtime eval은 종료 코드가 판정을 정하므로 쓸 수 없고, 설명은 `//` 주석으로 남깁니다. 평가 기준을 그대로 적고, 읽는 Artifact는 `@{artf …}` [slot](#slots)으로 가리킵니다. |
+| `deps` | runtime eval 전용. 명령이 읽지만 `args`에서 `@{path …}`로 가리키지 않는 Artifact 목록입니다(lockfile, 공용 검사기 등). 목록의 Artifact는 slot과 마찬가지로 이 eval의 입력이 됩니다. |
+| `red_at` | 선택. Agent eval에만 쓰는 우선순위 기준입니다(`"P0"`, `"P1"`, `"P2"`, `"P3"`, `P0`이 가장 높음). `red_at` 이상인 issue가 하나라도 있으면 `RED`입니다. 생략하면 issue가 하나만 있어도 `RED`입니다. `red_at`보다 낮은 issue는 eval이 `GREEN`이어도 남겨 둡니다. |
+| `mutex` | 선택. runtime이나 Agent eval에 다는 계층형 잠금 태그 목록입니다(`"use-computer"` 또는 `"use-computer:<segment>..."`, 예: `"use-computer:display"`). 두 eval의 태그가 같거나 한쪽이 다른 쪽의 상위이면 충돌합니다(`use-computer`는 모든 하위 태그와 충돌). 충돌하는 eval은 동시에 실행되지 않고 차례를 기다립니다. |
+
+## Slot {#slots}
+
+slot은 문자열 안에서 무언가를 가리킵니다. Artifactize는 slot을 풀어 쓰고, slot이 선언하는 관계를 기록합니다.
+
+| Slot | 쓰는 곳 | 바뀌는 값 |
+|---|---|---|
+| `@{artf NAME}` | Agent와 Human `instruction`, 도구 `description`(`@{artf self}`만) | Artifact 이름. 다른 Artifact를 가리키면 그 Artifact가 eval의 입력이 되고, 그 도구도 리뷰에 들어옵니다. |
+| `@{path NAME}`, `@{path NAME/sub/path}` | runtime `args`, 도구 `args` | Artifact나 그 안 경로의 절대 경로(또는 Live URI). 파일 Artifact의 slot에는 `/sub/path`를 붙일 수 없습니다. 다른 Artifact를 가리키면 입력이 됩니다. |
+| `@{param NAME}` | 매크로 안의 `path`와 인자 | 매크로 매개변수의 값(텍스트). |
+
+`self`는 지금 선언하는 Artifact입니다. toolset이나 매크로 안의 `self`는 나중에 정해집니다. 그 toolset을 조합하는 Artifact, 또는 그 매크로가 만드는 Artifact가 `self`입니다. 없는 Artifact나 매개변수를 가리키는 slot은 그 줄에서 오류가 납니다.
+
+## Toolset {#toolsets}
+
+```rust
+tool review = {
+  agent coverage = command(command = "python3", args = ["coverage.py", "@{path requirements/requirements.md}"], protocol = "json",
+    description = "List the spec.md lines that cite each requirement.", input_schema = { type = "object" })
+  agent section = builtin(op = "section", args = ["spec.md"], description = "Print one section of spec.md.")
+  human notes = builtin(op = "read", args = ["@{path self/notes.md}"], description = "Print the review notes of @{artf self}.")
+  human open = command(command = "open-notes", args = ["@{path self/notes.md}"], kind = "launch", description = "Open the notes.")
+}
 ```
 
-```toml
-# .artifactize/app.artf
-[evals.review]
-title = "The implementation satisfies the spec"
-profile = !sol
-red_at = "P1"
-payload.instruction = "Review {app} against {spec}."
+toolset은 두 대상을 위한 도구와 session을 선언합니다.
 
-[evals.review.profile_variants]
-fast = !sol(reasoning = "low", timeout_ms = 600000)
+- `agent NAME = builtin(op = "...", args? = [...], description? = "...")` 또는 `command(description, protocol = "json"|"plain", command, args, input_schema?, execution_paths?, timeout_ms?, session?)`: Agent 리뷰가 호출하는 도구입니다. 내장 도구 중 `declarations`, `graph`, `help`, `section`은 `args`가 필수이고, 대상이 고정된 `read`/`list`는 선택입니다. [내장 도구](../guides/tools.md#builtin-tools)를 보세요.
+- `human NAME = builtin(op = "...", args = [...], description?, kind?)` 또는 `command(description, kind = "launch"|"output", command, args, timeout_ms?)`(`timeout_ms`는 `output` 명령에만 적용되고 `launch`에는 적용되지 않음), 또는 viewer가 있는 플러그인 안에서 `viewer(description = "...")`. `viewer`는 데스크톱 앱에서 그 플러그인의 Artifact Viewer를 엽니다.
+- `session NAME = session(start = command(command, args, execution_paths?), stop = command(command, args, execution_paths?))`: Agent 도구가 `session = "NAME"`으로 묶는 하네스 session입니다(`start`와 `stop`에는 `timeout_ms`가 없고, 묶인 도구가 각자 선언합니다).
+
+도구의 정규 이름은 `NAMESPACE.TOOL`(`review.coverage`)입니다. Artifact에 조합되면 리뷰어는 점을 `_`로 바꾼 `NAMESPACE_TOOL_ARTIFACT`(`review_coverage_spec`)로 도구를 부릅니다. Artifact는 toolset을 조합해 도구를 얻습니다(`artf spec : files & review`). Agent나 Human eval은 자기 Artifact의 도구와 instruction이 가리키는 모든 Artifact의 도구로 리뷰합니다. 내장 toolset과 같은 도구라면 따로 선언하지 말고 내장 toolset을 조합하세요.
+
+## Agent profile {#project-settings}
+
+profile은 Agent eval을 어떻게 실행할지 정합니다. `.artf` 파일이 아니라 `.artifactize/` 아래의 `.artfprofiles` 파일에 선언하고, profile 하나는 완결된 설정 하나입니다.
+
+```rust
+// .artifactize/profiles.artfprofiles
+profile reviewer : agent = match REVIEW_TIER {
+  default => { backend = "codex", model = "gpt-6-luna", reasoning = "max" },
+  heavy => { backend = "codex", model = "gpt-6.2-sol", reasoning = "high" },
+}
+profile translator : agent = { backend = "codex", model = "gpt-6-luna" }
 ```
 
-- **별칭 정의**: `[profiles.<name>]`에는 `kind = "agent"`인 Agent 프로필만 적을 수 있습니다. 사용할 수 있는 필드는 인라인 Agent 프로필과 같습니다(`backend`, `model`, `reasoning`, `timeout_ms`, `max_tool_calls`, `max_tokens`).
-- **별칭 사용과 필드 재정의**: eval의 `profile`이나 `profile_variants`에 `!name`을 적으면 별칭을 그대로 쓰고, `!name(field = value, ...)`처럼 괄호 안에 필드를 적으면 해당 Agent 필드만 바꿔서 적용합니다(`kind`는 바꿀 수 없습니다). 별칭 표기는 `profile`과 `profile_variants`에서만 쓸 수 있습니다.
-- **재사용과 fingerprint**: 프로필 별칭은 실행 옵션이므로 `.artifactize/settings.toml`을 바꿔도 eval 정의 해시, 재사용 키, 그래프 fingerprint는 달라지지 않습니다. `artifactsum`으로 `.artf` 파일을 해시할 때는 다른 선언 필드와 마찬가지로 별칭의 재정의 항목도 정규화합니다.
+- **필드**: 설정에는 `backend`와 `model`이 들어가고, `reasoning`, `timeout_ms`, `max_tool_calls`, `max_tokens`는 선택입니다. 각 필드는 [Agent eval](../concepts/evals.md#agent-evals)을 보세요. 분기마다 완결된 설정을 쓰고, `default`에서 물려받는 값은 없습니다.
+- **환경에 따라 고르기**: `match VARIABLE { default => { … }, LABEL => { … } }`는 환경 변수 값이 가리키는 분기를 실행합니다. `default`는 꼭 있어야 하고, 변수가 없거나 비어 있을 때, 또는 다른 profile에는 있지만 이 profile에는 없는 이름일 때 실행됩니다. 어떤 profile의 `match`에도 없는 값은 오류이므로, 철자를 틀린 값이 조용히 `default`로 실행되는 일은 없습니다. 지금 고르지 않은 분기까지 모두 검사합니다. Run은 읽은 변수 값을 저장된 그래프에 남깁니다.
+- **쓰는 법**: Agent eval은 profile 이름을 씁니다(`eval review : reviewer = { … }`).
+- **재사용과 fingerprint**: profile은 eval을 어떻게 실행할지 정할 뿐 무엇을 판단할지는 바꾸지 않습니다. 그래서 어떤 profile이나 분기도 Eval 정의 해시, 재사용 키, 정의 fingerprint에 영향을 주지 않습니다.
 
-## 결과 스키마 (`pass_schema`와 `fail_schema`) {#owner-result-schemas}
+## 매크로 {#macros}
 
-Human 결과에는 `"verdict": "GREEN" | "RED"`와 함께 사용자가 선언한 결과 필드가 저장됩니다.
+`artf!`로 Artifact를 만드는 매크로를 선언하고, Artifact를 바인딩하는 자리에서 `name!(…)`으로 부릅니다. 매크로 매개변수는 이름이고, 기본값을 줄 수 있습니다(`extra_evals = {}`). 호출할 때는 매개변수를 이름으로 넘기고, 기본값이 없는 매개변수는 꼭 넘겨야 합니다. 매크로 안에서 매개변수는 값 자리에서는 값으로(`parts = parts`), `path`나 인자 문자열 안에서는 `@{param NAME}`으로 씁니다. `...NAME`은 eval 블록을 Artifact 안에 펼쳐 넣습니다.
 
-- **최상위 객체 규칙**: 최상위 `type = "object"`와 `additionalProperties = false`는 생략해도 자동으로 적용됩니다. 허용할 최상위 결과 필드는 모두 `properties`에 명시해야 합니다. `properties`에 없는 최상위 필드는 `$ref`나 `patternProperties`를 써도 허용할 수 없습니다. `allOf`/`anyOf`/`oneOf`/`not` 같은 스키마 조합 키워드는 최상위와 Human 개별 속성 모두에서 쓸 수 없습니다. 실행 기록에 쓰는 이름(`verdict`, `reference`, `reusedFrom`, `executionProvenance`, `attemptId`, `provider`, `model`, `stdout`, `stderr`, `durationMs`, `exitCode`)은 결과 필드에 사용할 수 없습니다. 특정 판정의 스키마를 생략하면 그 판정의 결과 필드에는 빈 객체(`{}`)만 허용합니다.
-- **Human 양식 형태** (`#human-result-schemas`): 사람은 UI 양식에 결과를 입력하므로 `human` eval의 `pass_schema`와 `fail_schema`에는 화면 양식에서 지원하는 아래 필드 형태만 쓰세요.
-  - `{ type = "string", minLength?, maxLength? }` (텍스트 입력 칸)
-  - `{ type = "integer" | "number", minimum?, maximum?, exclusiveMinimum?, exclusiveMaximum?, multipleOf? }` (숫자 입력 칸)
-  - `{ type = "boolean" }` (참/거짓 선택)
-  - `{ enum = ["a", "b"] }` (문자열 선택지)
-  - `{ const = ... }` (자동으로 채워지는 상수)
-  - `{ type = "array", items = { type = "string" } }` (텍스트 입력 칸 목록)
-  - `{ type = "array", items = { type = "object", properties = { <위의 단일 필드들> } } }` (반복 입력 그룹)
+매크로는 무엇을 검사할지 바꾸는 값만 받습니다. 경로, 패키지, 한도, 추가 eval이 그런 값입니다. title, instruction, 도구 설명은 매크로 안에 그대로 적고 매개변수로 채우지 않습니다. 그래야 매크로를 어디서 부르든 같은 글로 읽힙니다.
 
-## 선언 파일 이전과 Artifact 이름 변경 {#upgrading-an-in-tree-project}
+매크로는 정적으로 펼쳐지고, 직접이든 다른 매크로를 거쳐서든 자기 자신을 부를 수 없습니다. `artifactize config expand ARTIFACT`는 바인딩이 만드는 선언을 모든 매개변수를 채워 보여 주고, `artifactize config symbols`는 모든 전역 이름과 매크로 시그니처를 나열합니다.
 
-- **`artifactize config migrate [--repo PATH]`**: 기존 디렉터리 곳곳에 있던 `index.artf`, 개별 `.artf`, 루트 `.artf` 선언 파일을 `.artifactize/<name>.artf` 형식으로 옮기면서 `path`와 `parts`를 명시합니다. 이때 `agent` eval에 남아 있던 기존 `pass_schema`와 `fail_schema` 선언은 제거하고 Human 스키마는 그대로 유지합니다. `.artfignore`에 따라 변환에서 제외한 하위 프로젝트를 알리고, 새 형식으로 옮긴 선언의 원본 파일과 `.artfignore`를 삭제합니다. 이미 이전한 프로젝트에서도 리뷰에 필요한 도구가 빠진 로컬 Artifact에 `type = "files"`를 추가할 수 있습니다. 기존 사용자 지정 도구가 플러그인 도구와 충돌하면 필요한 도구를 직접 추가하세요.
-- **`artifactize config rename OLD NEW`**: 프로젝트 유효성을 확인한 뒤 `.artifactize/**/<OLD>.artf` 파일 이름을 `<NEW>.artf`로 바꾸고 `parts`, `{OLD}` 참조, `[annotations.style]`에 저장한 하위 Artifact의 위치를 함께 갱신합니다.
+## 결과 {#owner-result-schemas}
 
-## 운영체제별 규칙 {#operating-systems}
+모든 eval 결과는 `{ verdict, kind, issues }` 한 가지 모양이고, `kind`는 `runtime`, `agent`, `human` 중 하나입니다.
 
-논리 경로의 구분자로 `/`를 쓰면 Linux, macOS, Windows, WSL 2에서 같은 선언을 그대로 쓸 수 있습니다.
+- **Agent**: issue마다 `{ priority, reason }`이고, 판정은 `red_at`이 정합니다.
+- **Human**: issue마다 `{ reason }`이고, Artifact에서 고쳐야 할 것 하나를 적습니다. 사람은 issue 없이 `GREEN`으로 답하거나, issue를 하나 이상 적어 `RED`로 답합니다.
+- **Runtime**: `RED`이면 issue 하나 `{ exitCode, reason }`에 명령이 마지막으로 출력한 부분을 남깁니다. 전체 출력은 실행 시도의 로그에 남습니다(`artifactize request logs REQUEST_ID`). runtime 결과에는 `durationMs`도 들어 있습니다.
 
-- **프로그램 탐색**: `python3`, `cargo`처럼 경로 구분자가 없는 실행 파일 이름은 `PATH`에서 찾습니다. Windows에서는 `PATHEXT`도 확인하므로 `npx`를 지정하면 `npx.cmd`도 찾습니다. `/`가 들어 있는 상대 실행 경로(`./tools/check`)는 대상 종류에 따라 탐색 기준이 다릅니다. 폴더와 Aspect에서는 허용된 범위 안에서 찾고, 파일 Artifact에서는 파일이 들어 있는 폴더 아래에서, Live 대상에서는 프로젝트 루트 아래에서 찾습니다. 모든 대상에서 `..`와 심볼릭 링크는 허용하지 않습니다.
-- **경로 대소문자 구분**: 모든 OS에서 논리 경로의 대소문자를 구분하며, 대소문자를 구분하지 않는 macOS·Windows 볼륨에서도 실제 디스크에 저장된 파일 이름의 대소문자가 정확히 일치하는지 확인합니다.
-- **파일 및 브라우저 열기**: `artifactize login codex`를 실행하면 로그인을 마칠 수 있도록 운영체제의 기본 브라우저가 열립니다.
+## 정의 마이그레이션과 이름 바꾸기 {#upgrading-an-in-tree-project}
+
+- **`artifactize config migrate [--repo PATH]`**: 예전 정의를 `.artf` 언어로 바꿉니다. 트리 안의 `index.artf`, 사이드카 `.artf`, 루트 `.artf` 파일, TOML로 쓴 `.artifactize/<name>.artf` 파일, `.artifactize/settings.toml`의 profile이 대상이고, profile은 `profiles.artfprofiles`로 옮깁니다. 내용이 같은 도구 테이블은 어떤 Artifact와도 이름이 겹치지 않는 공유 toolset 하나가 되고, `type = "…"`은 조합한 toolset이 됩니다. `{name}` 참조는 slot이 됩니다. runtime eval의 참조는 `@{path …}` 인자나 `deps`가 되고, instruction은 `//` 주석이 됩니다. 주석은 그대로 옮깁니다. `pass_schema`/`fail_schema`는 안내와 함께 빠집니다. 이제 사람은 `GREEN`으로, 또는 issue를 적어 `RED`로 답하기 때문입니다. 저장된 결과는 이어지지 않으므로 모든 eval이 새 재사용 키로 한 번 더 실행됩니다.
+- **`artifactize config rename OLD NEW`**: 프로젝트를 검사한 뒤, 코드에서 그 Artifact를 가리키는 모든 곳의 이름을 바꿉니다. 바인딩, `parts` 목록, slot, `deps`가 모두 대상입니다. 그 Artifact 하나만 바인딩하고 이름도 같은 파일은 파일 이름도 함께 바뀝니다.
+
+## 운영체제 규칙 {#operating-systems}
+
+선언은 논리 경로에 `/`를 써서 한 번만 쓰면 됩니다. Artifactize는 Linux, macOS, Windows, WSL 2에서 같은 선언을 실행합니다.
+
+- **프로그램 찾기**: 경로 없는 실행 파일 이름(`python3`, `cargo`)은 `PATH`에서 찾습니다(Windows에서는 `PATHEXT`를 써서 `npx`로 `npx.cmd`를 찾습니다). `/`가 들어간 상대 실행 파일(`./tools/check`)은 폴더와 aspect라면 Artifact가 허용한 범위 안에서, 파일 Artifact라면 그 파일이 있는 폴더 아래에서, Live 대상이라면 프로젝트 루트 아래에서 찾습니다. `..`와 심볼릭 링크는 언제나 거부합니다.
+- **경로 대소문자**: 논리 경로는 모든 OS에서 대소문자를 구분해 맞춥니다. 대소문자를 구분하지 않는 macOS와 Windows 볼륨에서는 디스크에 실제로 적힌 철자까지 같은지 확인합니다.
+- **파일과 URL 열기**: `artifactize login codex`는 로그인을 마치도록 시스템 브라우저를 엽니다.

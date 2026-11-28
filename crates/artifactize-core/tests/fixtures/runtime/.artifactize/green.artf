@@ -1,10 +1,9 @@
-fingerprint = false
-path = "review/"
+artf green = {
+  fingerprint = false
+  path = "review/"
 
-[evals.check]
-title = "Check green"
-profile = { kind = "runtime", command = "/bin/sh", args = ["check.sh", "{input}/data.txt"] }
-
-[evals.check.payload]
-instruction = """
-Check runtime."""
+  // Check runtime.
+  eval check : runtime(command = "/bin/sh", args = ["check.sh", "@{path input/data.txt}"]) = {
+    title = "Check green"
+  }
+}

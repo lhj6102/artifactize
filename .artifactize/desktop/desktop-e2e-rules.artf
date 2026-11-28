@@ -1,7 +1,6 @@
-path = "crates/artifactize-desktop/rules/E2E.md"
-# How the desktop app's end-to-end suite is written and run (the E2E- rules): read by the
-# evals of desktop-e2e and of its native text-input device desktop-e2e-input.
-basis = true
-
-[views.agent_tools]
-read_rules = { description = "Print the end-to-end rules E2E.md of {artifactName}.", builtin = "read", args = ["E2E.md"] }
+// How the desktop app's end-to-end suite is written and run (the E2E- rules): read by the
+// evals of desktop-e2e and of its native text-input device desktop-e2e-input.
+artf desktop-e2e-rules : markdown = {
+  basis = true
+  path = "crates/artifactize-desktop/rules/E2E.md"
+}

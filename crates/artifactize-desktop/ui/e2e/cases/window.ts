@@ -60,6 +60,10 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(timeline.entries.map((entry) => entry.id), [newer, worktree], "newest first");
       await app.pane.choose("repo  scope-one", worktree);
       await app.graph.titled(worktree);
+      // The graph drawn is that Run's: its Detail, read from the Run drawn, names it.
+      await app.graph.openRunDetail();
+      await app.detail.until((shown) => shown.title === `Run ${worktree}`, "the main area draws the older Run");
+      await app.graph.closeRunDetail();
       // A worktree added by another process is listed within seconds, and goes when removed.
       addWorktree(fixture, "scope-live");
       await app.pane.branch("repo  scope-live");
@@ -233,25 +237,25 @@ export const scenarios: Scenario[] = [
     prepare: async (own) => {
       const fixture = newFixture(own);
       declareRelease(fixture);
-      return { fixture, args: ["graph", "--repo", fixture.repo], data: { definition: nativePath(fixture.repo, ".artifactize", "docs.artf") } };
+      return { fixture, args: ["graph", "--repo", fixture.repo], data: { definition: nativePath(fixture.repo, ".artifactize", "release.artf") } };
     },
     run: async (app, { data: { definition } }) => {
       await app.chat.createFromDialog("repo / master");
       await app.chat.show("Graph");
-      await app.graph.node("a:docs");
-      await app.graph.open("a:docs", "Artifact docs");
-      await app.detail.openEval("docs/lint");
+      await app.graph.node("a:release");
+      await app.graph.open("a:release", "Artifact release");
+      await app.detail.openEval("release/signoff");
       // Its first scan over, nothing reads the Current's worktree again here but a Refresh.
       await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "the Current scanned");
-      assert.equal((await app.detail.summary()).instruction, "Check docs.");
+      assert.equal((await app.detail.summary()).instruction, "Read the release notes and approve them.");
       // What only a Refresh shows is a change in the Current's worktree. A change of the state
       // or of the branches reaches the open app without a reload too (J-LIVE, J-BRANCHES), so a
       // Run or a branch listed after a Refresh would show nothing of the Refresh itself.
-      writeText(definition, readText(definition).replace('payload.instruction = "Check docs."', 'payload.instruction = "Check the docs again."'));
+      writeText(definition, readText(definition).replace("Read the release notes and approve them.", "Read the release notes again."));
       const title = await app.graph.title();
-      assert.equal((await app.detail.summary()).instruction, "Check docs.", "the change on disk does not show before the Refresh");
+      assert.equal((await app.detail.summary()).instruction, "Read the release notes and approve them.", "the change on disk does not show before the Refresh");
       await app.command("Refresh");
-      await app.detail.summaryUntil((summary) => summary.instruction === "Check the docs again.", "the Refresh read the changed definition");
+      await app.detail.summaryUntil((summary) => summary.instruction === "Read the release notes again.", "the Refresh read the changed definition");
       assert.equal(await app.graph.title(), title, "on the same view");
     },
   }),

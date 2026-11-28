@@ -13,30 +13,26 @@ const KIND_KEY_FORMAT_PREFIX: &[u8] = b"artifactize-kind-key-v1\n";
 const PARTS_KEY_FORMAT_PREFIX: &[u8] = b"artifactize-parts-key-v1\n";
 /// Domain-separate and version the reuse-key hash input, including its terminating newline.
 /// Changing these bytes invalidates existing reuse keys; this is not a config/session/DB version.
-const REUSE_KEY_FORMAT_PREFIX: &str = "artifactize-key-v2\n";
+const REUSE_KEY_FORMAT_PREFIX: &str = "artifactize-key-v3\n";
 
 /// Hash the evaluation criteria: what is asked and how the answer is judged, never how the eval
-/// is executed. Execution options (backend, model, reasoning, limits, the profile variant),
-/// the eval's id and title, and tool views stay out.
+/// is executed. Execution options (backend, model, reasoning, limits, the named profile), the
+/// eval's id and title, a runtime eval's instruction and tool views stay out.
 pub fn eval_definition_hash(eval: &EvalDeclaration) -> crate::types::DefinitionHash {
-    let kind = match &eval.profile() {
-        Profile::Agent { .. } => "agent",
-        Profile::Human {} => "human",
-        Profile::Runtime { .. } => "runtime",
+    let mut criteria = match &eval.profile() {
+        Profile::Agent { .. } => json!({"kind": "agent", "payload": eval.payload()}),
+        Profile::Human {} => json!({"kind": "human", "payload": eval.payload()}),
+        // A runtime eval's verdict is its command's exit code; its prose instruction is not.
+        Profile::Runtime { command, args, .. } => json!({
+            "kind": "runtime",
+            "command": command,
+            "args": args,
+            "inputs": eval.inputs(),
+        }),
     };
-    let mut criteria = json!({
-        "kind": kind,
-        "payload": eval.payload(),
-        "passSchema": eval.pass_schema(),
-        "failSchema": eval.fail_schema(),
-    });
     // Only an Agent eval declares a bar, so other evals keep their criteria hashes.
     if let Some(red_at) = eval.red_at() {
         criteria["redAt"] = json!(red_at);
-    }
-    if let Profile::Runtime { command, args, .. } = &eval.profile() {
-        criteria["command"] = json!(command);
-        criteria["args"] = json!(args);
     }
     criteria.sort_all_objects();
     content::hex(&Sha256::digest(

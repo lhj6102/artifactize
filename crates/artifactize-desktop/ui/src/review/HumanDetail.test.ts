@@ -1,7 +1,7 @@
 // A Human review as a conversation against a mocked command boundary: an explicit claim, the
-// reasons written one at a time as bubbles, the decision bar's claim, verdict and Submit with why
-// Submit waits, a verdict's own fields when the eval asks more, each tool run as its own line,
-// Points inserted into the reasons field, and keys that leave input methods alone.
+// issues written one at a time as bubbles, the decision bar's claim, verdict and Submit with why
+// Submit waits, each tool run as its own line,
+// Points inserted into the issues field, and keys that leave input methods alone.
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/svelte";
@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import HumanDetail from "./HumanDetail.svelte";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "./review.svelte";
-import { draftLibrary, humanView, scoredRed, greenForm } from "./fixtures";
+import { draftLibrary, humanView } from "./fixtures";
 import type { DraftChange, ReviewPoint } from "../ipc/client";
 
 type Call = { cmd: string; args: Record<string, unknown> };
@@ -51,8 +51,8 @@ const changes = (calls: Call[]) => calls.filter((call) => call.cmd === "human_dr
 const bar = () => screen.getByRole("group", { name: "Decision" });
 const submitButton = () => within(bar()).getByRole("button", { name: /^Submit/ }) as HTMLButtonElement;
 const why = () => within(bar()).queryByRole("status")?.textContent ?? "";
-const reasons = () => within(screen.queryByRole("list", { name: "Reasons" }) ?? document.createElement("ol")).queryAllByRole("listitem").map((item) => item.querySelector("p")?.textContent);
-const field = () => screen.getByRole("textbox", { name: "Reason" }) as HTMLTextAreaElement;
+const issues = () => within(screen.queryByRole("list", { name: "Issues" }) ?? document.createElement("ol")).queryAllByRole("listitem").map((item) => item.querySelector("p")?.textContent);
+const field = () => screen.getByRole("textbox", { name: "Issue" }) as HTMLTextAreaElement;
 const submitted = { notice: { text: "Submitted", error: false }, view: humanView("completed", { claim: null, completed: [{ kind: "text", key: "verdict", text: "GREEN" }] }), settled: "published" };
 
 afterEach(() => {
@@ -61,13 +61,13 @@ afterEach(() => {
 });
 
 describe("HumanDetail", () => {
-  it("claims only on an explicit c, before which the bar holds Claim to review and one quiet line stands in the reasons box's place", async () => {
+  it("claims only on an explicit c, before which the bar holds Claim to review and one quiet line stands in the issues box's place", async () => {
     const calls = backend("claim");
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     const region = await screen.findByLabelText("Human review");
     await screen.findByRole("button", { name: "Claim to review (c)" });
-    expect(screen.getByText("Claim it to write reasons and a verdict")).toBeTruthy();
-    expect(screen.queryByRole("textbox", { name: "Reason" })).toBeNull();
+    expect(screen.getByText("Claim it to write issues and a verdict")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Issue" })).toBeNull();
     expect(within(bar()).getByText("Waiting")).toBeTruthy();
     expect(within(bar()).getAllByRole("radio").every((tab) => (tab as HTMLButtonElement).disabled)).toBe(true);
     expect(submitButton().disabled).toBe(true);
@@ -79,47 +79,47 @@ describe("HumanDetail", () => {
     await waitFor(() => expect(calls.some((call) => call.cmd === "human_claim")).toBe(true));
     await within(bar()).findByText("Yours");
     expect(within(bar()).getByRole("button", { name: "Release claim (u)" })).toBeTruthy();
-    expect(screen.queryByText("Claim it to write reasons and a verdict")).toBeNull();
-    await screen.findByRole("textbox", { name: "Reason" });
+    expect(screen.queryByText("Claim it to write issues and a verdict")).toBeNull();
+    await screen.findByRole("textbox", { name: "Issue" });
   });
 
-  it("adds reasons one at a time as bubbles with Enter or Add reason, edits one in place and removes another", async () => {
+  it("adds issues one at a time as bubbles with Enter or Add issue, edits one in place and removes another", async () => {
     const calls = backend("review");
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     await within(await screen.findByRole("group", { name: "Decision" })).findByText("Yours");
-    const add = () => screen.getByRole("button", { name: "Add reason" }) as HTMLButtonElement;
+    const add = () => screen.getByRole("button", { name: "Add issue" }) as HTMLButtonElement;
     expect(add().disabled).toBe(true);
     await user.type(field(), "The notes name 0.21{Shift>}{Enter}{/Shift}twice");
     expect(field().value).toBe("The notes name 0.21\ntwice");
     expect(add().disabled).toBe(false);
     await user.keyboard("{Enter}");
-    await waitFor(() => expect(reasons()).toEqual(["The notes name 0.21\ntwice"]));
+    await waitFor(() => expect(issues()).toEqual(["The notes name 0.21\ntwice"]));
     expect(field().value).toBe("");
     await user.type(field(), "Windows steps are missing");
     await user.click(add());
-    await waitFor(() => expect(reasons()).toEqual(["The notes name 0.21\ntwice", "Windows steps are missing"]));
+    await waitFor(() => expect(issues()).toEqual(["The notes name 0.21\ntwice", "Windows steps are missing"]));
     // Edit turns the bubble into a field in its place: Esc leaves it as it was, Enter keeps.
-    await user.click(screen.getByRole("button", { name: "Edit reason 2" }));
-    const editing = screen.getByRole("textbox", { name: "Edit reason 2" }) as HTMLTextAreaElement;
+    await user.click(screen.getByRole("button", { name: "Edit issue 2" }));
+    const editing = screen.getByRole("textbox", { name: "Edit issue 2" }) as HTMLTextAreaElement;
     expect(document.activeElement).toBe(editing);
     await user.type(editing, " on Windows 11");
     await user.keyboard("{Escape}");
-    expect(reasons()).toEqual(["The notes name 0.21\ntwice", "Windows steps are missing"]);
-    await user.click(screen.getByRole("button", { name: "Edit reason 2" }));
-    await user.type(screen.getByRole("textbox", { name: "Edit reason 2" }), " for uninstall{Enter}");
-    await waitFor(() => expect(reasons()).toEqual(["The notes name 0.21\ntwice", "Windows steps are missing for uninstall"]));
-    await user.click(screen.getByRole("button", { name: "Remove reason 1" }));
-    await waitFor(() => expect(reasons()).toEqual(["Windows steps are missing for uninstall"]));
+    expect(issues()).toEqual(["The notes name 0.21\ntwice", "Windows steps are missing"]);
+    await user.click(screen.getByRole("button", { name: "Edit issue 2" }));
+    await user.type(screen.getByRole("textbox", { name: "Edit issue 2" }), " for uninstall{Enter}");
+    await waitFor(() => expect(issues()).toEqual(["The notes name 0.21\ntwice", "Windows steps are missing for uninstall"]));
+    await user.click(screen.getByRole("button", { name: "Remove issue 1" }));
+    await waitFor(() => expect(issues()).toEqual(["Windows steps are missing for uninstall"]));
     expect(changes(calls)).toEqual([
-      { kind: "addReason", text: "The notes name 0.21\ntwice" },
-      { kind: "addReason", text: "Windows steps are missing" },
-      { kind: "editReason", index: 1, previous: "Windows steps are missing", text: "Windows steps are missing for uninstall" },
-      { kind: "removeReason", index: 0, previous: "The notes name 0.21\ntwice" },
+      { kind: "addIssue", text: "The notes name 0.21\ntwice" },
+      { kind: "addIssue", text: "Windows steps are missing" },
+      { kind: "editIssue", index: 1, previous: "Windows steps are missing", text: "Windows steps are missing for uninstall" },
+      { kind: "removeIssue", index: 0, previous: "The notes name 0.21\ntwice" },
     ]);
   });
 
-  it("says why Submit waits: no verdict, a typed reason not added, then the library's readiness; switching keeps the reasons", async () => {
+  it("says why Submit waits: no verdict, a typed issue not added, then the library's readiness; switching keeps the issues", async () => {
     const calls = backend("review", () => submitted);
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
@@ -129,50 +129,32 @@ describe("HumanDetail", () => {
     expect(why()).toBe("Choose GREEN or RED");
     await user.click(within(bar()).getByRole("radio", { name: "RED (r)" }));
     await waitFor(() => expect(submitButton().textContent).toBe("Submit RED"));
-    expect(why()).toBe("RED needs a reason");
+    expect(why()).toBe("RED needs at least one issue.");
     await user.type(field(), "The notes are wrong");
-    expect(why()).toBe("Add the typed reason first");
+    expect(why()).toBe("Add the typed issue first");
     expect(submitButton().disabled).toBe(true);
     await user.keyboard("{Enter}");
     await waitFor(() => expect(submitButton().disabled).toBe(false));
     expect(why()).toBe("");
     await user.click(within(bar()).getByRole("radio", { name: "GREEN (g)" }));
     await waitFor(() => expect(submitButton().textContent).toBe("Submit GREEN"));
-    expect(reasons()).toEqual(["The notes are wrong"]);
+    expect(issues()).toEqual(["The notes are wrong"]);
     expect(within(bar()).getByRole("radio", { name: "GREEN (g)" }).getAttribute("aria-checked")).toBe("true");
+    expect(why()).toBe("GREEN takes no issues: remove them, or submit RED with them.");
+    expect(submitButton().disabled).toBe(true);
+    await user.click(within(bar()).getByRole("radio", { name: "RED (r)" }));
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
     await user.click(submitButton());
-    const result = await screen.findByRole("group", { name: "Result" });
-    expect(result.textContent).toContain("GREEN");
+    await screen.findByRole("group", { name: "Result" });
+    // The draft submitted holds RED: the verdict was its last change.
+    expect(changes(calls).at(-1)).toEqual({ kind: "verdict", verdict: "RED" });
     expect(screen.queryByRole("group", { name: "Decision" })).toBeNull();
-    expect(screen.queryByRole("textbox", { name: "Reason" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Issue" })).toBeNull();
     expect(calls.filter((call) => call.cmd === "human_draft_submit")).toHaveLength(1);
   });
 
-  it("shows a verdict's own fields only while that verdict is chosen and the eval asks more than reasons", async () => {
-    const kept = draftLibrary(greenForm, scoredRed);
-    backend("review", undefined, kept);
-    const user = userEvent.setup();
-    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
-    await within(await screen.findByRole("group", { name: "Decision" })).findByText("Yours");
-    await user.click(within(bar()).getByRole("radio", { name: "GREEN (g)" }));
-    await waitFor(() => expect(submitButton().textContent).toBe("Submit GREEN"));
-    expect(screen.queryByText(/the eval also asks/)).toBeNull();
-    await user.click(within(bar()).getByRole("radio", { name: "RED (r)" }));
-    const fields = await screen.findByRole("group", { name: "RED's fields" });
-    expect(within(fields).getByText("With RED, the eval also asks")).toBeTruthy();
-    expect(within(fields).getByLabelText("note").getAttribute("placeholder")).toBe("Optional");
-    await user.type(field(), "Off by one{Enter}");
-    await waitFor(() => expect(why()).toBe("score is required"));
-    await user.type(within(fields).getByLabelText(/score/), "2");
-    await waitFor(() => expect(submitButton().disabled).toBe(false));
-    await user.click(within(bar()).getByRole("radio", { name: "GREEN (g)" }));
-    await waitFor(() => expect(screen.queryByRole("group", { name: "RED's fields" })).toBeNull());
-    await user.click(within(bar()).getByRole("radio", { name: "RED (r)" }));
-    expect((within(await screen.findByRole("group", { name: "RED's fields" })).getByLabelText(/score/) as HTMLInputElement).value).toBe("2");
-  });
-
   it("says a library's refusal where why stands, the draft kept", async () => {
-    backend("review", () => { throw { kind: "invalid", message: "reason: too short" }; });
+    backend("review", () => { throw { kind: "invalid", message: "issue: too short" }; });
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     await within(await screen.findByRole("group", { name: "Decision" })).findByText("Yours");
@@ -180,9 +162,9 @@ describe("HumanDetail", () => {
     await user.type(field(), "no{Enter}");
     await waitFor(() => expect(submitButton().disabled).toBe(false));
     await user.click(submitButton());
-    await waitFor(() => expect(why()).toBe("reason: too short"));
+    await waitFor(() => expect(why()).toBe("issue: too short"));
     expect(within(bar()).getByRole("status").classList.contains("failed")).toBe(true);
-    expect(reasons()).toEqual(["no"]);
+    expect(issues()).toEqual(["no"]);
   });
 
   it("shows a review another reviewer holds with only who holds it in the bar", async () => {
@@ -190,8 +172,8 @@ describe("HumanDetail", () => {
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     await waitFor(() => expect(bar().textContent).toBe("Taken by bob"));
     expect(within(bar()).queryAllByRole("button")).toEqual([]);
-    expect(screen.queryByRole("textbox", { name: "Reason" })).toBeNull();
-    expect(screen.queryByText("Claim it to write reasons and a verdict")).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Issue" })).toBeNull();
+    expect(screen.queryByText("Claim it to write issues and a verdict")).toBeNull();
   });
 
   it("says why a submission settled here was not published, under its result bubble", async () => {
@@ -211,7 +193,7 @@ describe("HumanDetail", () => {
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe(failure));
   });
 
-  it("leaves composition keys alone: letters in the reasons field are text, a composing Enter adds nothing, Ctrl+S submits", async () => {
+  it("leaves composition keys alone: letters in the issues field are text, a composing Enter adds nothing, Ctrl+S submits", async () => {
     const calls = backend("review", () => submitted);
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
@@ -226,14 +208,14 @@ describe("HumanDetail", () => {
     expect(document.activeElement).toBe(field());
     await user.clear(field());
     await user.type(field(), "확인{Enter}");
-    await waitFor(() => expect(reasons()).toEqual(["확인"]));
-    await fireEvent.keyDown(screen.getByLabelText("Human review"), { key: "g" });
+    await waitFor(() => expect(issues()).toEqual(["확인"]));
+    await fireEvent.keyDown(screen.getByLabelText("Human review"), { key: "r" });
     await waitFor(() => expect(submitButton().disabled).toBe(false));
     await fireEvent.keyDown(field(), { key: "s", ctrlKey: true });
     await screen.findByRole("group", { name: "Result" });
   });
 
-  it("Esc leaves the reasons field first, then cancels running work, then leaves the review", async () => {
+  it("Esc leaves the issues field first, then cancels running work, then leaves the review", async () => {
     let stop!: () => void;
     backend("review", undefined, draftLibrary(), (cmd) => {
       if (cmd === "human_run") return new Promise((resolve) => (stop = () => resolve({ text: "■ error: cancelled", error: true })));
@@ -309,7 +291,7 @@ describe("HumanDetail", () => {
     expect(screen.queryByRole("log", { name: "Tool log" })).toBeNull();
   });
 
-  it("lists Points after the runs; Insert puts a point into the reasons field at its caret, else at its end; remove goes by point identity", async () => {
+  it("lists Points after the runs; Insert puts a point into the issues field at its caret, else at its end; remove goes by point identity", async () => {
     const old: ReviewPoint = { text: "L2:C9", at: "2026-11-23T00:01:00Z", source: "release · Markdown" };
     const fresh: ReviewPoint = { text: "#checkout .total", at: "2026-11-23T00:02:00Z", source: "checkout · HTML Viewer" };
     const kept = draftLibrary();
@@ -333,7 +315,7 @@ describe("HumanDetail", () => {
     field().setSelectionRange(4, 4);
     await user.click(within(rows[1]).getByRole("button", { name: "Insert" }));
     await waitFor(() => expect(field().value).toBe("See #checkout .totalL2:C9"));
-    expect(kept.draft.reasons).toEqual([]);
+    expect(kept.draft.issues).toEqual([]);
     await user.click(within(points).getByRole("button", { name: "Remove point: L2:C9" }));
     await waitFor(() => expect(within(points).getAllByRole("listitem")).toHaveLength(1));
     expect(calls.find((call) => call.cmd === "human_draft_remove_point")?.args.point).toEqual(old);

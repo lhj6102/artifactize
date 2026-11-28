@@ -20,7 +20,7 @@ pub struct ReleaseNotice {
 pub struct ReleaseView {
     pub notice: Option<ReleaseNotice>,
     /// Milliseconds until the app asks again ([`release::recheck_interval`]).
-    pub recheck_ms: u32,
+    pub recheck_ms: crate::ids::WholeMillis,
 }
 
 /// How to update this install, as [`release::Update`].
@@ -70,10 +70,9 @@ pub async fn release_notice(app: tauri::State<'_, App>) -> Result<ReleaseView, F
         }),
         _ => None,
     };
-    let recheck = release::recheck_interval().as_millis();
     Ok(ReleaseView {
         notice,
-        recheck_ms: u32::try_from(recheck).expect("the recheck interval fits in u32 milliseconds"),
+        recheck_ms: release::recheck_interval().into(),
     })
 }
 

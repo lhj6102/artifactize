@@ -23,9 +23,9 @@ export class Current {
   #branch: BranchKey | null = null;
 
   /** The scan still runs, or its first step has not come yet. */
-  readonly scanning = $derived(this.#asking || (this.view?.scanning ?? false));
+  readonly scanning = $derived(this.#asking || this.view?.scan.state === "scanning");
   /** Why the last request failed, else why the shown scan did. */
-  readonly error = $derived(this.#failed ?? this.view?.failure ?? null);
+  readonly error = $derived(this.#failed ?? (this.view?.scan.state === "failed" ? this.view.scan.reason : null));
 
   /** The scan shown is of `branch`. */
   of(branch: BranchKey): boolean {

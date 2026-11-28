@@ -13,26 +13,31 @@ use std::{
 
 pub(super) fn rename(context: Context, old: ArtifactName, new: ArtifactName) -> Result<u8, String> {
     let repo = context.repo.unwrap_or_else(|| PathBuf::from("."));
-    let config = artifactize_core::config::read_workspace_config(&repo)
+    let renamed = artifactize_core::config::rename::rename(&repo, &old, &new)
         .map_err(|error| error.to_string())?;
-    let artifact = config
-        .artifacts
-        .get(&old)
-        .ok_or_else(|| format!("Unknown Artifact {old}."))?;
-    let destination = artifact
-        .declaration_path()
-        .with_file_name(format!("{new}.artf"));
-    let mut based =
-        artifactize_core::config::edit::read(&repo).map_err(|error| error.to_string())?;
-    based.entry(destination).or_insert(None);
-    let result = artifactize_core::config::edit::apply(
-        &repo,
-        &based,
-        artifactize_core::config::edit::Operation::Rename { old, new },
-    )
-    .map_err(|error| error.to_string())?;
     if context.json {
-        print_json(&result)?;
+        print_json(&renamed)?;
+    } else {
+        let mut output = io::stdout().lock();
+        for (file, names) in &renamed.files {
+            writeln!(
+                output,
+                "{}: {names} {}",
+                artifactize_tools::files::path_text(file),
+                if *names == 1 { "name" } else { "names" }
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        if let Some((from, to)) = &renamed.moved {
+            writeln!(
+                output,
+                "{} -> {}",
+                artifactize_tools::files::path_text(from),
+                artifactize_tools::files::path_text(to)
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        writeln!(output, "Renamed {old} to {new}.").map_err(|error| error.to_string())?;
     }
     Ok(0)
 }
@@ -43,40 +48,103 @@ pub(super) fn migrate(context: Context) -> Result<u8, String> {
         artifactize_core::config::migrate::migrate(&repo).map_err(|error| error.to_string())?;
     if context.json {
         print_json(&report)?;
-    } else {
-        let mut output = io::stdout().lock();
-        for (old, new) in report.files {
-            writeln!(
-                output,
-                "{} -> {}",
-                artifactize_tools::files::path_text(&old),
-                artifactize_tools::files::path_text(&new)
-            )
+        return Ok(0);
+    }
+    let mut output = io::stdout().lock();
+    if report.written.is_empty() && report.removed.is_empty() {
+        writeln!(output, "The definitions are already in the .artf language.")
             .map_err(|error| error.to_string())?;
+        return Ok(0);
+    }
+    for path in &report.written {
+        writeln!(
+            output,
+            "wrote {}",
+            artifactize_tools::files::path_text(path)
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    for path in &report.removed {
+        writeln!(
+            output,
+            "removed {}",
+            artifactize_tools::files::path_text(path)
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    for warning in &report.warnings {
+        writeln!(output, "Note: {warning}").map_err(|error| error.to_string())?;
+    }
+    Ok(0)
+}
+
+/// Print each Artifact's binding as written and the declaration it expands to.
+pub(super) fn expand(context: Context, artifact: Option<ArtifactName>) -> Result<u8, String> {
+    let repo = context.repo.unwrap_or_else(|| PathBuf::from("."));
+    let expansions = artifactize_core::config::expand::expand(&repo, artifact.as_ref())
+        .map_err(|error| error.to_string())?;
+    if context.json {
+        print_json(&expansions)?;
+        return Ok(0);
+    }
+    let mut output = io::stdout().lock();
+    for (index, expansion) in expansions.iter().enumerate() {
+        if index > 0 {
+            writeln!(output).map_err(|error| error.to_string())?;
         }
-        for (whole, parts) in report.explicit_parts {
-            writeln!(
-                output,
-                "{whole}: parts = {}",
-                serde_json::to_string(&parts).map_err(|error| error.to_string())?
-            )
-            .map_err(|error| error.to_string())?;
-        }
-        for name in report.typed {
-            writeln!(output, "{name}: type = \"files\"").map_err(|error| error.to_string())?;
-        }
-        for name in report.ignored {
-            writeln!(output, "{name}: ignore added: .artifactize/")
-                .map_err(|error| error.to_string())?;
-        }
-        for path in report.separate_projects {
-            writeln!(
-                output,
-                "Separate project (run config migrate --repo there): {}",
-                artifactize_tools::files::path_text(&path)
-            )
-            .map_err(|error| error.to_string())?;
-        }
+        writeln!(
+            output,
+            "// {}:{}{}",
+            artifactize_tools::files::path_text(&expansion.file),
+            expansion.line,
+            expansion
+                .macro_name
+                .as_ref()
+                .map_or(String::new(), |name| format!(" (by {name})"))
+        )
+        .map_err(|error| error.to_string())?;
+        write!(output, "{}", expansion.expanded).map_err(|error| error.to_string())?;
+    }
+    Ok(0)
+}
+
+/// Print the global bindings: profiles, tools, evals and Artifacts, and their macros.
+pub(super) fn symbols(context: Context) -> Result<u8, String> {
+    let repo = context.repo.unwrap_or_else(|| PathBuf::from("."));
+    let symbols =
+        artifactize_core::config::expand::symbols(&repo).map_err(|error| error.to_string())?;
+    if context.json {
+        print_json(&symbols)?;
+        return Ok(0);
+    }
+    let mut output = io::stdout().lock();
+    for symbol in &symbols {
+        let params = symbol.params.as_ref().map_or(String::new(), |params| {
+            let params: Vec<_> = params
+                .iter()
+                .map(|param| match &param.default {
+                    Some(default) => format!("{} = {default}", param.name),
+                    None => param.name.clone(),
+                })
+                .collect();
+            format!("({})", params.join(", "))
+        });
+        let place = match &symbol.plugin {
+            Some(plugin) => format!("plugin {plugin}"),
+            None => format!(
+                "{}:{}",
+                artifactize_tools::files::path_text(&symbol.file),
+                symbol.line
+            ),
+        };
+        writeln!(
+            output,
+            "{}{} {}{params}  {place}",
+            symbol.kind,
+            if symbol.is_macro { "!" } else { "" },
+            symbol.name
+        )
+        .map_err(|error| error.to_string())?;
     }
     Ok(0)
 }
@@ -122,13 +190,20 @@ pub(super) fn check(context: Context) -> Result<u8, String> {
 
 #[derive(Debug, Subcommand)]
 pub enum ConfigCommand {
-    /// Convert in-tree declarations to .artifactize/<name>.artf.
+    /// Convert a project from before 0.27 into the .artf language, once.
     Migrate,
-    /// Rename a node, its references and saved layout together.
+    /// Rename an Artifact where it is bound and everywhere a definition names it.
     Rename {
         old: artifactize_core::types::ArtifactName,
         new: artifactize_core::types::ArtifactName,
     },
+    /// Print what each Artifact expands to, macros and toolsets filled in.
+    Expand {
+        /// One Artifact; defaults to all.
+        artifact: Option<artifactize_core::types::ArtifactName>,
+    },
+    /// List the global bindings: Artifacts, tools, profiles, evals and their macros.
+    Symbols,
     /// Validate declarations and unique Artifact/Eval ids.
     Check,
     /// Inspect full static definitions, relations, and cycles.

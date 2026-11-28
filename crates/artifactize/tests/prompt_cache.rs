@@ -109,17 +109,17 @@ fn reply(request: &Request) -> Reply {
     if request.path == "/v1/messages" {
         return anthropic::text(
             request,
-            r#"{"findings":[{"priority":"P2","reason":"R1 holds."}]}"#,
+            r#"{"issues":[{"priority":"P2","reason":"R1 holds."}]}"#,
             10,
             2,
         );
     }
     let output = if repairing(request) {
         vec![openai::message(
-            r#"{"findings":[{"priority":"P2","reason":"R1 holds."}]}"#,
+            r#"{"issues":[{"priority":"P2","reason":"R1 holds."}]}"#,
         )]
     } else if replayed(request) {
-        vec![openai::message(r#"{"findings":[{"priority":"P2"}]}"#)]
+        vec![openai::message(r#"{"issues":[{"priority":"P2"}]}"#)]
     } else {
         let tool = request.body["tools"][0]["name"].as_str().unwrap();
         vec![openai::function_call(
@@ -256,11 +256,12 @@ fn each_review_has_its_own_session_id() {
             assert!(!call.headers.contains_key("session-id"));
             continue;
         }
-        // Its tool, offered or called earlier, names the review's Artifact.
+        // Its tool, offered or called earlier, names the review's Artifact. The three share one
+        // toolset, named after the first but apart from its name.
         let body = call.body.to_string();
         let artifact = ["a", "b", "c"]
             .into_iter()
-            .find(|name| body.contains(&format!("\"read_{name}\"")))
+            .find(|name| body.contains(&format!("\"a-tools_read_{name}\"")))
             .unwrap_or_else(|| panic!("{body}"));
         let session = session_of(artifact);
         assert_eq!(call.body["prompt_cache_key"], session);

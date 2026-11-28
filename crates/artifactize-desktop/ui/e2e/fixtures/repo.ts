@@ -3,7 +3,7 @@
 import { readCandidate } from "../build.ts";
 import { isolatedEnvironment, portablePath, type Environment } from "../platform.ts";
 import { makeDirectory, nativePath, readTextIfExists, removeTree, runProgram, runProgramAsync, runProgramOk, serveLoopbackHttp, updateDatabase, writeText, type NativePath } from "../portable.ts";
-import { check, commandFields, declareArtifact, runtimeProfile, type Operation } from "./declarations.ts";
+import { check, commandFields, declareArtifact, evalBlock, humanEval, indent, runtimeProfile, type Definition, type Operation, writeProfiles } from "./declarations.ts";
 import type { Owned } from "./owned.ts";
 
 /** A scenario's repository and the state folder the app and the CLI share. */
@@ -73,8 +73,12 @@ export function cliJson<T>(fixture: Fixture, args: string[], repo = fixture.repo
   return JSON.parse(result.stdout) as T;
 }
 
-/** A saved request as `request list --json` prints it. */
-export type Saved = { id: string; runId: string; evalId: string; status: string; claim: { reviewer: string } | null; result: Record<string, unknown> | null };
+/** A saved request as `request list --json` prints it; a Human result is its verdict and its
+ * issues, each with its reason. */
+export type Saved = {
+  id: string; runId: string; evalId: string; status: string; claim: { reviewer: string } | null;
+  result: { verdict: string; kind: string; issues: { reason: string }[] } | null;
+};
 
 export function requests(fixture: Fixture): Saved[] {
   return cliJson<Saved[]>(fixture, ["request", "list"]);
@@ -108,10 +112,10 @@ export function cancelRuns(fixture: Fixture): void {
   }
 }
 
-/** Claim the waiting request `id` as `reviewer` and submit `fields` GREEN, as another process. */
-export function signOff(fixture: Fixture, id: string, fields = '{"approved":true,"comment":"ok"}', reviewer = "bob"): void {
+/** Claim the waiting request `id` as `reviewer` and submit GREEN, as another process. */
+export function signOff(fixture: Fixture, id: string, reviewer = "bob"): void {
   cliJson(fixture, ["request", "claim", id, "--reviewer", reviewer]);
-  cliJson(fixture, ["request", "submit", id, "--reviewer", reviewer, "--verdict", "GREEN", "--fields", fields]);
+  cliJson(fixture, ["request", "submit", id, "--reviewer", reviewer, "--verdict", "GREEN"]);
 }
 
 /** Verify every Artifact of `repo` to its end; its Run's ID. `status` is the exit the outcome
@@ -154,49 +158,34 @@ export function orderRuns(fixture: Fixture, runs: readonly string[]): void {
 // The release project: a release with a Human sign-off and its tools, ship that reads it, docs
 
 /** Options of the release's sign-off. */
-export type Signoff = { title?: string; instruction?: string; scalars?: boolean; missing?: boolean; report?: boolean };
+export type Signoff = { title?: string; instruction?: string; missing?: boolean; report?: boolean };
 
-const release = (root: NativePath, signoff: Signoff) => `tags = ["type:release"]
+/** The release's own Human tools, as the `release` toolset declares them. */
+const releaseTools = (root: NativePath, signoff: Signoff) => [
+  `human notes = command(${commandFields("read", "@{path self/notes.md}")}, description = "Print the release notes of @{artf self}.", kind = "output")`,
+  `human open = command(${commandFields("launch", portablePath(nativePath(root, "launched")))}, description = "Open @{artf self}.", kind = "launch")`,
+  `human fail = command(${commandFields("fail")}, description = "Fail on purpose.", kind = "output")`,
+  `human talk = command(${commandFields("talk", portablePath(nativePath(root, "talk.gate")))}, description = "Open a stand-in that prints what the reviewer chose.", kind = "launch")`,
+  `human slow = command(${commandFields("slow", portablePath(nativePath(root, "slow.gate")))}, description = "Run until cancelled.", kind = "output")`,
+  ...(signoff.report ? [`human report = command(${commandFields("report")}, description = "Print long lines on both streams.", kind = "output")`] : []),
+  ...(signoff.missing ? [`human gone = command(command = ${JSON.stringify(portablePath(nativePath(root, "absent", "not-installed")))}, args = [], description = "Run a program that is not installed.", kind = "output")`] : []),
+];
 
-[views.human_tools]
-notes = { description = "Print the release notes of {artifactName}.", kind = "output", ${commandFields("read", "{artifactPath}/notes.md")} }
-open = { description = "Open {artifactName}.", kind = "launch", ${commandFields("launch", portablePath(nativePath(root, "launched")))} }
-fail = { description = "Fail on purpose.", kind = "output", ${commandFields("fail")} }
-talk = { description = "Open a stand-in that prints what the reviewer chose.", kind = "launch", ${commandFields("talk", portablePath(nativePath(root, "talk.gate")))} }
-slow = { description = "Run until cancelled.", kind = "output", ${commandFields("slow", portablePath(nativePath(root, "slow.gate")))} }
-${signoff.report ? `report = { description = "Print long lines on both streams.", kind = "output", ${commandFields("report")} }` : ""}
-${signoff.missing ? `gone = { description = "Run a program that is not installed.", kind = "output", command = ${JSON.stringify(portablePath(nativePath(root, "absent", "not-installed")))}, args = [] }` : ""}
-
-[evals.signoff]
-title = ${JSON.stringify(signoff.title ?? "A person approves the release")}
-profile = { kind = "human" }
-payload.instruction = ${JSON.stringify(signoff.instruction ?? "Read the release notes and approve them.")}
-
-[evals.signoff.pass_schema]
-type = "object"
-properties.approved = { const = true }
-properties.comment = { type = "string", minLength = 1, description = "What you checked." }
-${signoff.scalars ? `properties.score = { type = "number" }
-properties.note = { type = "string" }
-properties.confirmed = { type = "boolean" }
-properties.channel = { enum = ["stable", "preview"] }` : ""}
-required = ["approved", "comment"]
-additionalProperties = false
-
-[evals.signoff.fail_schema]
-type = "object"
-properties.reason = { type = "string", minLength = 3 }
-properties.findings = { type = "array", items = { type = "object", properties = { problem = { type = "string", minLength = 1 }, severity = { enum = ["low", "high"] } }, required = ["problem"], additionalProperties = false } }
-properties.steps = { type = "array", items = { type = "string" } }
-required = ["reason"]
-additionalProperties = false
-`;
+const release = (root: NativePath, signoff: Signoff): Definition => ({
+  tools: "release-tools",
+  beside: `tool release-tools = {\n${releaseTools(root, signoff).map((line) => `  ${line}`).join("\n")}\n}`,
+  body: `tags = ["type:release"]\n${humanEval("signoff", signoff.title ?? "A person approves the release", signoff.instruction ?? "Read the release notes and approve them.")}`,
+});
 
 /** Declare the release project in `repo` (the fixture's by default), a new Git repository. */
 export function declareRelease(fixture: Fixture, signoff: Signoff = {}, repo = fixture.repo, notes = "# Release notes\n- Ready to ship.\n"): void {
   declareArtifact(repo, ["release"], "release", release(fixture.root, signoff));
   declareArtifact(repo, ["ship"], "ship", check("check", "ship", "pass", "Ship {release}."));
-  declareArtifact(repo, ["docs"], "docs", `[views.human_tools]\nreference = { description = "Print documentation review notes.", builtin = "read", args = ["{artifactPath}/notes.md"] }\n${check("lint", "docs")}`);
+  declareArtifact(repo, ["docs"], "docs", {
+    tools: "docs-tools",
+    beside: `tool docs-tools = {\n  human reference = builtin(op = "read", args = ["@{path self/notes.md}"], description = "Print documentation review notes.")\n}`,
+    body: check("lint", "docs"),
+  });
   writeText(nativePath(repo, "release", "notes.md"), notes);
   writeText(nativePath(repo, "docs", "notes.md"), "Documentation checked.\n");
   initRepo(fixture, repo);
@@ -257,7 +246,7 @@ export async function verifyWorktree(fixture: Fixture, name: string): Promise<st
 
 /** A repository of Artifacts `[folders, name, body]`, verified once to `status` unless `verified`
  * is false. */
-export function createProject(own: Owned, artifacts: [string[], string, string][], status: number | false = 0): Fixture {
+export function createProject(own: Owned, artifacts: [string[], string, Definition][], status: number | false = 0): Fixture {
   const fixture = newFixture(own);
   for (const [folders, name, body] of artifacts) declareArtifact(fixture.repo, folders, name, body);
   initRepo(fixture);
@@ -270,10 +259,10 @@ export function createProject(own: Owned, artifacts: [string[], string, string][
 export async function createStates(own: Owned): Promise<Fixture> {
   const fixture = createProject(own, [
     [["red"], "red", check("check", "red", "fail", "Fail.")],
-    [["crash"], "crash", `\n[evals.check]\ntitle = "Check crash"\nprofile = ${runtimeProfile("hold", 1000)}\npayload.instruction = "Exceed the deadline."\n`],
+    [["crash"], "crash", evalBlock("check", runtimeProfile("hold", 1000), ['title = "Check crash"'], "Exceed the deadline.")],
     [["down"], "down", check("check", "down", "pass", "Run after {red}.")],
     [["fine"], "fine", check("check", "fine")],
-    [["gate"], "gate", `type = "files"\n[evals.signoff]\ntitle = "A person approves"\nprofile = { kind = "human" }\npayload.instruction = "Approve."\n`],
+    [["gate"], "gate", { tools: "files", body: humanEval("signoff", "A person approves", "Approve.") }],
     [["later"], "later", check("check", "later", "pass", "Run after {gate}.")],
   ], false);
   await verifyWaiting(fixture);
@@ -289,7 +278,7 @@ export function createParts(own: Owned): Fixture {
     [["suite", "app"], "app", check("check", "app", "pass", "Check app with {site}.")],
     [["suite", "app", "kit"], "kit", check("check", "kit")],
     [["suite", "site"], "site", check("check", "site", "pass", "Check site with {lib}.")],
-    [["docs"], "docs", `parts = ["site"]\n${check("check", "docs", "pass", "Check docs with {lib}.")}`],
+    [["docs"], "docs", `parts = [site]\n${check("check", "docs", "pass", "Check docs with {lib}.")}`],
     [["guide"], "guide", check("check", "guide", "pass", "Check guide with {suite}.")],
   ]);
 }
@@ -310,9 +299,9 @@ export function createChecking(own: Owned): Checking {
   const gate = nativePath(own.root, "fingerprint.gate");
   const runs = nativePath(own.root, "fingerprint.runs");
   const fixture = createProject(own, [
-    [["slow"], "slow", `fingerprint = { script = { ${commandFields("fingerprint", portablePath(gate), portablePath(runs))}, files = [], timeout_ms = 600000 } }\n${check("check", "slow")}`],
+    [["slow"], "slow", `fingerprint = script(${commandFields("fingerprint", portablePath(gate), portablePath(runs))}, files = [], timeout_ms = 600000)\n${check("check", "slow")}`],
     [["quick"], "quick", check("check", "quick", "pass", "Check quick with {slow}.")],
-    [["other"], "other", `type = "files"\n[evals.signoff]\ntitle = "A person approves other"\nprofile = { kind = "human" }\npayload.instruction = "Approve other."\n`],
+    [["other"], "other", { tools: "files", body: humanEval("signoff", "A person approves other", "Approve other.") }],
   ], false);
   return { ...fixture, gate, runs };
 }
@@ -323,7 +312,7 @@ export async function createCheckedOnce(own: Owned): Promise<Checking> {
   const fixture = createChecking(own);
   writeText(fixture.gate, "go");
   const run = await verifyWaiting(fixture);
-  signOff(fixture, request(fixture, "other/signoff").id, "{}");
+  signOff(fixture, request(fixture, "other/signoff").id);
   const ended = await artifactizeAsync(fixture, ["run", "show", run, "--wait", "--json"]);
   if (ended.status !== 0 || (JSON.parse(ended.stdout) as { status: string }).status !== "GREEN") {
     throw new Error(`the seed Run did not end GREEN: ${ended.stdout}${ended.stderr}`);
@@ -334,7 +323,7 @@ export async function createCheckedOnce(own: Owned): Promise<Checking> {
 
 /** Artifact `app` with one runtime eval per name, each saying `checked {name}`. Verified GREEN. */
 export function createEvals(own: Owned, names: string[], operation: Operation = "say"): Fixture {
-  const evals = names.map((name) => `\n[evals.${name}]\ntitle = "Check ${name}"\nprofile = ${runtimeProfile(operation, undefined, `checked ${name}`)}\npayload.instruction = "Check ${name}."\n`).join("");
+  const evals = names.map((name) => evalBlock(name, runtimeProfile(operation, undefined, `checked ${name}`), [`title = "Check ${name}"`])).join("");
   return createProject(own, [[["app"], "app", evals]]);
 }
 
@@ -352,42 +341,39 @@ export function createEmpty(own: Owned): Fixture {
 
 
 // ---------------------------------------------------------------------------------
-// Definitions to edit on a Current
+// Definitions read on a Current
 
-export const APP_NOTE = "Ship the app with its kit.";
-export const CORE_NOTE = "Core stays small.";
-
-/** A branch without a Run whose definitions are one file each in `.artifactize/`: app and
- * bundle each hold kit, core is on its own, docs reads core. With `comments`, app and core
- * carry one; with `placed`, the top level is placed by hand. */
-export function createEditing(own: Owned, { comments = false, placed = false } = {}): Fixture {
+/** A branch without a Run whose definitions, one file of them, bind app (which holds kit) and
+ * kit written out, and core and docs each made by the `crate!` macro. */
+export function createDefinitions(own: Owned): Fixture {
   const fixture = newFixture(own);
-  const note = (text: string) => (comments ? `\n[annotations.comment]\ntext = ${JSON.stringify(text)}\n` : "");
-  const at = (x: number, y: number) => (placed ? `\n[annotations.style]\nat = [${x.toFixed(1)}, ${y.toFixed(1)}]\n` : "");
-  const files: Record<string, string> = {
-    app: `path = "app/"\nparts = ["kit"]\nbasis = true\n${at(0, 0)}${note(APP_NOTE)}`,
-    bundle: `path = "bundle/"\nparts = ["kit"]\nbasis = true\n${at(420, 0)}`,
-    kit: `path = "kit/"\nbasis = true\n`,
-    core: `path = "core/"\nbasis = true\n${at(0, 320)}${note(CORE_NOTE)}`,
-    docs: `path = "docs/"\n${at(420, 320)}${check("check", "docs", "pass", "Check {docs} against {core}.")}`,
-  };
-  const folder = makeDirectory(nativePath(fixture.repo, ".artifactize"));
-  for (const [name, text] of Object.entries(files)) {
-    writeText(nativePath(makeDirectory(nativePath(fixture.repo, name)), "readme.md"), `${name}\n`);
-    writeText(nativePath(folder, `${name}.artf`), text);
+  for (const folders of [["app"], ["app", "kit"], ["core"], ["docs"]]) {
+    writeText(nativePath(makeDirectory(nativePath(fixture.repo, ...folders)), "readme.md"), `${folders.join("/")}\n`);
   }
+  const definitions = makeDirectory(nativePath(fixture.repo, ".artifactize"));
+  writeText(nativePath(definitions, "project.artf"), `// The app, written out: it holds kit.
+artf app : files = {
+  path = "app/"
+  parts = [kit]
+  basis = true
+}
+
+artf kit = {
+  path = "app/kit/"
+  basis = true
+}
+
+// A crate: its folder, checked by the stand-in program.
+artf! crate(dir) : files = {
+  path = "@{param dir}/"
+${indent(check("check", "crate"))}
+}
+
+artf core = crate!(dir = "core")
+artf docs = crate!(dir = "docs")
+`);
   initRepo(fixture);
   return fixture;
-}
-
-/** The definition file of `name` as it is on disk now, or `null` once it is gone. */
-export function definitionText(fixture: Fixture, name: string): string | null {
-  return readTextIfExists(nativePath(fixture.repo, ".artifactize", `${name}.artf`));
-}
-
-/** Replace the definition file of `name`, as another writer would. */
-export function rewriteDefinition(fixture: Fixture, name: string, text: string): void {
-  writeText(nativePath(fixture.repo, ".artifactize", `${name}.artf`), text);
 }
 
 // ---------------------------------------------------------------------------------
@@ -399,7 +385,7 @@ export const REVIEW_FINDING = "The receipt reads right; its date could be cleare
 /** A repository whose Artifact report has an Agent eval, verified GREEN once through a loopback
  * stand-in of the provider that answers with one P2 finding, below the eval's P1 bar. */
 export async function createReviewed(own: Owned, fixture = newFixture(own)): Promise<Fixture> {
-  const answer = JSON.stringify({ findings: [{ priority: "P2", reason: REVIEW_FINDING }] });
+  const answer = JSON.stringify({ issues: [{ priority: "P2", reason: REVIEW_FINDING }] });
   const provider = await serveLoopbackHttp((request, response) => {
     request.resume();
     if (request.method !== "POST" || !request.url?.endsWith("/responses")) {
@@ -415,13 +401,11 @@ export async function createReviewed(own: Owned, fixture = newFixture(own)): Pro
     response.end(`event: ${completed.type}\ndata: ${JSON.stringify(completed)}\n\n`);
   });
   try {
-    declareArtifact(fixture.repo, ["report"], "report", `type = "files"
-[evals.agent]
-title = "Review the receipt"
-profile = { kind = "agent", backend = "openai", model = "${REVIEW_MODEL}", timeout_ms = 60000 }
-payload.instruction = "Review the receipt."
-red_at = "P1"
-`);
+    writeProfiles(fixture.repo, `profile review : agent = { backend = "openai", model = "${REVIEW_MODEL}" }`);
+    declareArtifact(fixture.repo, ["report"], "report", {
+      tools: "files",
+      body: evalBlock("agent", "review", ['title = "Review the receipt"', 'red_at = "P1"', 'instruction = "Review the receipt."']),
+    });
     initRepo(fixture);
     const env = { OPENAI_API_KEY: "fixture-not-a-secret", ARTIFACTIZE_OPENAI_BASE_URL: provider.url };
     const verified = await artifactizeAsync(fixture, ["verify", "--all", "--wait", "--json"], env);

@@ -24,11 +24,11 @@ needs, in their terms, and link the page for the rest.
 
 | Concept, for the user | Page |
 |---|---|
-| An **Artifact** is a part of the project that gets reviewed: a folder, one file, selected paths, or observed external state (a Live URI), declared in `.artifactize/<name>.artf` with an explicit `path`. | [Artifacts and the Graph](https://artifactize.dev/docs/concepts/artifacts.html), [Declarations](https://artifactize.dev/docs/reference/declarations.html) |
+| An **Artifact** is a part of the project that gets reviewed: a folder, one file, selected paths, or observed external state (a Live URI), declared with an `artf` statement in the `.artf` code under `.artifactize/`, with an explicit `path`. | [Artifacts and the Graph](https://artifactize.dev/docs/concepts/artifacts.html), [Declarations](https://artifactize.dev/docs/reference/declarations.html) |
 | An **eval** is one check on an Artifact that ends in a **verdict** recording whether the work met the agreed criteria: `GREEN` means it passed, and `RED` means the check found something that needs attention. The reviewer is a command (runtime), a model (Agent) or a person (Human). | [Evals: Runtime, Agent, and Human](https://artifactize.dev/docs/concepts/evals.html) |
-| An eval names each input it uses as `{name}`: for example, an app review that references `{spec}` tells artifactize which spec it relies on, so a spec change makes the earlier app review stale even if the app itself was not edited, while unrelated checks keep their verdicts. | [Eval dependencies](https://artifactize.dev/docs/concepts/artifacts.html#eval-dependencies), [Fingerprints and Reuse](https://artifactize.dev/docs/concepts/reuse.html) |
+| An eval names each input it uses: for example, an app review whose instruction names `@{artf spec}` tells artifactize which spec it relies on, so a spec change makes the earlier app review stale even if the app itself was not edited, while unrelated checks keep their verdicts. | [Eval dependencies](https://artifactize.dev/docs/concepts/artifacts.html#eval-dependencies), [Fingerprints and Reuse](https://artifactize.dev/docs/concepts/reuse.html) |
 | Running **verify** answers what the developer needs to know: which agreed checks are satisfied, which earlier reviews still count, and what needs attention next. | [Runs and Workflows](https://artifactize.dev/docs/concepts/runs.html) |
-| Agent and Human reviewers inspect the project through declared read-only tools (`views`; a runtime eval runs its declared `command` and `args` directly), and teammates and CI share reusable verdicts through the team review store (`artifactize server` / `remote`) and inspect or run checks through MCP and the CLI. | [Tools](https://artifactize.dev/docs/guides/tools.html), [Team & CI](https://artifactize.dev/docs/guides/team-and-ci.html), [CLI & MCP](https://artifactize.dev/docs/reference/cli-and-mcp.html) |
+| Agent and Human reviewers inspect the project through read-only tools from the toolsets an Artifact composes (a runtime eval runs its declared `command` and `args` directly), and teammates and CI share reusable verdicts through the team review store (`artifactize server` / `remote`) and inspect or run checks through MCP and the CLI. | [Tools](https://artifactize.dev/docs/guides/tools.html), [Team & CI](https://artifactize.dev/docs/guides/team-and-ci.html), [CLI & MCP](https://artifactize.dev/docs/reference/cli-and-mcp.html) |
 
 ## 2. Working with a client
 
@@ -104,8 +104,8 @@ process ends by telling the user what you found or changed.
 5. Write minimal declarations, following
    [Declarations](https://artifactize.dev/docs/reference/declarations.html) and
    section 4's starter.
-6. Validate with `config_check`, then show with `status` what would run and what
-   would be reused.
+6. Validate with `config_check`, then show with `status`, given the same selector as the
+   verification you agreed on, what would run and what would be reused.
 7. Tell the user what changed, then run the first verification with them (below).
 
 **Adopting it gradually in a large repository**: start with the area that hurts most,
@@ -118,15 +118,17 @@ reference, an eval that reads a part without naming it,
 evals with several obligations,
 sign-offs without a reason, criteria copied where a shared rule document belongs.
 Report each finding with its fix, agree, then change only what was agreed, validate
-with `config_check` and check `status` to report what will now be reviewed or reused.
+with `config_check` and check `status`, scoped as the agreed verification will be, to
+report what will now be reviewed or reused.
 
 **The project grew or changed**: for a new component, decide with the user whether it
 is its own Artifact and which evals consume it; for an Artifact that grew, split it
 along what is edited independently. Validate the edited declarations with `config_check`
 and compare `status` before and after: the edited
 input and its real consumers should need review; independent parts should still be
-reused. Changing an eval's instruction, `red_at` threshold, result schema or runtime command changes
-what it judges; a title, tags, execution options or tool declarations do not.
+reused. Changing an Agent or Human eval's instruction or `red_at` threshold, or a runtime
+eval's command, arguments or `deps`, changes what it judges; a title, tags, comments, the
+profile or tool declarations do not.
 
 **"Why did this run again?" or "verify is slow"**: read `status` for what changed and
 which evals it covers. Too much rerunning usually means a boundary is too wide or a
@@ -151,7 +153,7 @@ covers scheduling, unselected obligations, and outcome precedence).
 **Explaining a result**
 
 - **GREEN**: done for this content.
-- **RED**: explain the finding in their terms, propose the fix to the Artifact the eval
+- **RED**: explain the issues in their terms, propose the fix to the Artifact the eval
   judges (wrong docs: fix the docs; wrong criteria: fix the criteria), get the user's
   agreement before editing, and then verify again. Never weaken an eval or bend code to
   match wrong docs.
@@ -202,7 +204,7 @@ ended YELLOW its historical verdict is final; a later sign-off settles its waiti
 request (and any follower requests joined to it, unless a newer Run in the same working
 tree superseded the old request with `ERROR/SUPERSEDED`, in which case the person reviews
 the replacement request). After the person signs off, verify again: when fingerprinting is
-enabled and the Human eval's reuse key (its criteria, result schemas, and covered inputs)
+enabled and the Human eval's reuse key (its instruction and covered inputs)
 still matches, the new Run reuses that sign-off (`fingerprint = false` disables reuse so a
 fresh sign-off is requested whenever that Human eval is selected, its prerequisites pass,
 and the execution policy permits it). No keep-alive turns or polling
@@ -215,19 +217,28 @@ loops.
 - **Boundaries.** Cut where work is edited and judged independently, each Artifact
   with a concrete obligation. Avoid one review over the whole repository. A consumer
   names what it really uses, even in another folder; sharing a repository is not a
-  dependency, and a command does not add the files it reads. Split an Artifact that
+  dependency, and a command does not add the files it reads: a runtime eval names them,
+  `@{path name}` in its arguments, or `deps = [name]` for what its command finds by
+  itself, such as a lockfile, a shared checker or a config file. Split an Artifact that
   grows. Use `basis = true` only for an input the team agrees nobody reviews. Keep
   the default fingerprint.
-- **Definition first.** Create `.artifactize/<name>.artf` with `path` before or after
-  the target exists; the filename is its name, not a `name` key. Definition subfolders
-  organize files only: they create no namespace, composition or inherited rules.
-  Missing local targets do not invalidate definitions; evals that use them cannot run
-  until the target exists. `config migrate` converts an old in-tree setup; `config rename
-  OLD NEW` updates its filename and structural references together.
+- **Definition first.** Declare `artf name = { path = … }` in a `.artf` file under
+  `.artifactize/`, before or after the target exists; the statement names it, not the
+  file. Files and subfolders there organize the code only: they create no namespace,
+  composition or inherited rules. Missing local targets do not invalidate definitions;
+  evals that use them cannot run until the target exists. `config migrate` converts an
+  older setup; `config rename OLD NEW` renames an Artifact wherever the code names it.
+- **Write what repeats once.** When several Artifacts share a shape (crates, posts,
+  rule documents), declare an `artf!` macro with its evals inside and bind each Artifact
+  with a call; `config expand NAME` shows what a call makes. A macro takes only what
+  changes what is checked (a path, a package, a limit); titles and instructions are written
+  out. Declare how Agent evals run once, in a `.artfprofiles` file (`profile reviewer :
+  agent = { … }`), and name the profile in evals; `match REVIEW_TIER { default => { … },
+  heavy => { … } }` lets an environment variable choose a profile's setting for a Run.
 - **Live observations.** Use a URI target for external state you need to observe, not
   for deployment. artifactize does not fetch the URI automatically; a declared command
-  receives the URI in `argv` when its `args` reference `{name}` (or `{name}/subpath`), and a
-  person can open an HTTP(S) Live URI with a declared Human `open` built-in tool. Runtime
+  receives the URI in `argv` when its `args` name `@{path name}` (or `@{path name/subpath}`), and a
+  person can open an HTTP(S) Live URI with a Human `open` built-in tool. Runtime
   evals that cover a Live target have no reuse key and run whenever selected, unblocked and
   permitted by the execution policy. For an Agent or Human judgment that should be reused
   while the observation stands, use a fingerprint script that prints a stable snapshot;
@@ -241,17 +252,17 @@ loops.
   whole's eval reuse keys include all of its parts' fingerprints, changing any part makes
   every eval on the whole need review again even if an eval does not reference that part
   directly; if a check on the whole should stay reusable when unrelated siblings change,
-  keep them as separate Artifacts and use per-eval `{name}` references instead of `parts`.
+  keep them as separate Artifacts and name them as per-eval inputs instead of `parts`.
   A part that is one file is a file Artifact; one whose files lie spread in a larger folder
   is an aspect that selects them.
 - **Evals.** One obligation per eval. Use a runtime eval when a command can check it,
   an Agent eval when it needs judgment, and a Human eval only where a person must add
   judgment or authority; a person is asked only after the Artifact's runtime and
   Agent evals pass (`GREEN` or `PROVISIONAL`). Criteria for one Artifact go inside its eval; rules many
-  Artifacts share go in a rule document their evals read. Agent evals always return the
-  engine's prioritized findings list and derive GREEN or RED from `red_at` (findings below
-  `red_at` stay recorded even on GREEN); keep Human result schemas (`pass_schema`/`fail_schema`)
-  small and form-friendly. Give each Agent reviewer only the
+  Artifacts share go in a rule document their evals read. Every result is a verdict with issues: Agent evals
+  return prioritized issues and derive GREEN or RED from `red_at` (issues below `red_at`
+  stay recorded even on GREEN), and a person answers GREEN, or RED with an issue for each
+  thing to change. Give each Agent reviewer only the
   tools it needs (built-in file tools are confined to the admitted Artifact scope; custom
   command tools and `help` are trusted programs without an OS sandbox).
 - **Steer away from** implicit dependencies, whole-repository reviews, evals added
@@ -265,9 +276,9 @@ Point the user at the example that matches their situation:
 | Situation | Reference |
 |---|---|
 | Content made of part sections, a basis input, references in instructions and arguments | [examples/runtime-relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) |
-| An Agent review with built-in and declared tools returning prioritized findings, and a person's sign-off with result schemas | [examples/agent-tools](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools) |
+| An Agent review with composed toolsets of built-in and declared tools returning prioritized issues, and a person's sign-off | [examples/agent-tools](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools) |
 | A read-only availability check on a URI target that runs every verify | [examples/live](https://github.com/lhj6102/artifactize/tree/main/examples/live) |
-| Many files reviewed one by one, with a shared checker | [examples/posts](https://github.com/lhj6102/artifactize/tree/main/examples/posts) |
+| Many files reviewed one by one, made by one macro, with a shared checker | [examples/posts](https://github.com/lhj6102/artifactize/tree/main/examples/posts) |
 | A consumer checked against what it uses (a web page against the style tokens it uses) and independent parts that reuse | [website/demo/shop](https://github.com/lhj6102/artifactize/tree/main/website/demo/shop) |
 | An asset with a person's sign-off, embedded by a page that references it | [website/demo/brand](https://github.com/lhj6102/artifactize/tree/main/website/demo/brand) |
 | Rule documents with a person's sign-off, read by the evals of the code they govern; an app whose eval runs its E2E suite | [artifactize's own repository](https://github.com/lhj6102/artifactize) (`project-rules/`, `crates/artifactize-desktop/`) |
@@ -284,73 +295,74 @@ specification, and a logo a person signs off. Adapt names and commands; the
 [Declarations](https://artifactize.dev/docs/reference/declarations.html) page has
 the full rules.
 
-`.artifactize/spec.artf`, only if the team agrees nobody reviews it:
+`.artifactize/profiles.artfprofiles`, how the Agent evals run:
 
-```toml
-path = "spec/"
-basis = true
-
-[views.agent_tools]
-read = { builtin = "read" }
+```rust
+profile reviewer : agent = { backend = "codex", model = "YOUR_EXACT_MODEL_ID", reasoning = "high" }
 ```
 
-`.artifactize/app.artf`:
+`.artifactize/project.artf`; `spec` is a basis only if the team agrees nobody reviews it:
 
-```toml
-path = "app/"
-tags = ["type:code"]
+```rust
+artf spec : files = {
+  path = "spec/"
+  basis = true
+}
 
-[views.agent_tools]
-list = { builtin = "list" }
-read = { builtin = "read" }
-grep = { builtin = "grep" }
+artf app : files = {
+  path = "app/"
+  tags = ["type:code"]
 
-[evals.tests]
-title = "The application's tests pass"
-profile = { kind = "runtime", command = "cargo", args = ["test", "--locked"] }
-payload.instruction = "Run the application tests."
+  // Its verdict is the command's exit code.
+  eval tests : runtime(command = "cargo", args = ["test", "--locked"]) = {
+    title = "The application's tests pass"
+  }
 
-[evals.review]
-title = "The app fulfills the requirements"
-profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", reasoning = "high" }
-red_at = "P1"
-payload.instruction = "Review {app} against {spec}; each requirement that is not met is a finding."
+  eval review : reviewer = {
+    title = "The app fulfills the requirements"
+    red_at = "P1"
+    instruction = "Review @{artf self} against @{artf spec}; each requirement that is not met is an issue."
+  }
+}
+
+artf logo : files = {
+  path = "logo.svg"
+
+  eval signoff : human = {
+    title = "The logo is approved for publication"
+    instruction = "Inspect @{artf self} for visual and licensing suitability. A person must sign off."
+  }
+}
 ```
 
-`.artifactize/logo.artf`:
+`files` is the built-in toolset that gives each of them read-only file tools and a viewer;
+the reviewer reads the requirements through `files_read_spec`: a tool is published as
+`<namespace>_<tool>_<artifact>`, and each input composes the tools its reviewers need.
 
-```toml
-path = "logo.svg"
-type = "files"
-
-[evals.signoff]
-title = "The logo is approved for publication"
-profile = { kind = "human" }
-payload.instruction = "Inspect {logo} for visual and licensing suitability. A person must sign off."
-```
-
-The reviewer reads the requirements through `read_spec`: tools are published as
-`<tool>_<artifact>`, and each input declares the views its reviewers need.
-
-When an Agent reviewer must inspect something running, add a session (`views.agent_sessions`)
-and an Agent command tool bound to it, making sure the harness script is covered by the
-Artifact's fingerprint (for example, inside the Artifact and not excluded by `.gitignore`
-or a narrowed `fingerprint.files` list; `execution_paths` records provenance hashes rather
-than adding files to the reuse key); artifactize starts it on the first bound Agent tool
-call, then stops and cleans it up at review end
+When an Agent reviewer must inspect something running, declare a toolset with a session
+and an Agent command tool bound to it, and compose it on the Artifact, making sure the
+harness script is covered by the Artifact's fingerprint (for example, inside the Artifact
+and not excluded by `.gitignore` or a narrowed `fingerprint` `files` list; `execution_paths`
+records provenance hashes rather than adding files to the reuse key); artifactize starts
+it on the first bound Agent tool call, then stops and cleans it up at review end
 ([Tools and Harness Sessions](https://artifactize.dev/docs/guides/tools.html#tool-sessions)):
 
-```toml
-[views.agent_sessions.preview]
-start = { command = "python3", args = ["-I", "{app}/tools/preview.py", "start"], execution_paths = ["app/tools/preview.py"] }
-stop = { command = "python3", args = ["-I", "{app}/tools/preview.py", "stop"], execution_paths = ["app/tools/preview.py"] }
-
-[views.agent_tools.inspect]
-session = "preview"
-description = "Inspect the running preview without modifying reviewed inputs."
-protocol = "json"
-command = "python3"
-args = ["-I", "{app}/tools/preview.py", "inspect"]
-input_schema = { type = "object", additionalProperties = false }
-execution_paths = ["app/tools/preview.py"]
+```rust
+tool preview = {
+  session preview = session(
+    start = command(command = "python3", args = ["-I", "@{path self/tools/preview.py}", "start"], execution_paths = ["app/tools/preview.py"]),
+    stop = command(command = "python3", args = ["-I", "@{path self/tools/preview.py}", "stop"], execution_paths = ["app/tools/preview.py"]),
+  )
+  agent inspect = command(
+    session = "preview",
+    description = "Inspect the running preview without modifying reviewed inputs.",
+    protocol = "json",
+    command = "python3",
+    args = ["-I", "@{path self/tools/preview.py}", "inspect"],
+    input_schema = { type = "object", additionalProperties = false },
+    execution_paths = ["app/tools/preview.py"],
+  )
+}
 ```
+
+Compose it where the review runs: `artf app : files & preview = { … }`.

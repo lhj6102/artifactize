@@ -165,7 +165,9 @@ export const config = {
         owned.push(scope);
         const entry = await (async () => {
           const input = await item.prepare(scope);
-          const env = { ...environment(input.fixture), ...displayEnvironment(), ARTIFACTIZE_NO_UPDATE_CHECK: "1", ...input.env };
+          // An app that quits in order records it there (exitsBy): a crash does not.
+          const exits = makeDirectory(nativePath(scope.root, "app-exits"));
+          const env = { ...environment(input.fixture), ...displayEnvironment(), ARTIFACTIZE_NO_UPDATE_CHECK: "1", ARTIFACTIZE_E2E_EXIT_DIR: exits, ...input.env };
           const app = asNativePath(input.app ?? candidate.app);
           if (!samePath(app, candidate.app)) checkE2eApp(app, scope.root, env);
           return { scope, input, env, app };

@@ -17,8 +17,9 @@ pub(crate) use tempfile::TempDir as PrivateTempDir;
 use tokio::signal::unix::{SignalKind, signal};
 
 pub(crate) use process::{
-    Child, hide_console_window, kill_saved_group, kill_saved_session, process_start_time,
-    running_process_start_time, spawn_detached, spawn_gated, spawn_now, spawn_run, spawn_watched,
+    Child, hide_console_window, kill_saved_group, kill_saved_session, open_verified_executable,
+    open_verified_worktree, process_start_time, running_process_start_time, same_directory,
+    same_file, spawn_detached, spawn_gated, spawn_now, spawn_run, spawn_verified, spawn_watched,
     spawn_windowless,
 };
 

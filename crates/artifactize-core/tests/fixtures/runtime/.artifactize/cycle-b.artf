@@ -1,10 +1,10 @@
-fingerprint = false
-path = "cycle-b/"
+artf cycle-b = {
+  fingerprint = false
+  path = "cycle-b/"
 
-[evals.check]
-title = "Check cycle-b"
-profile = { kind = "runtime", command = "/bin/true", args = [] }
-
-[evals.check.payload]
-instruction = """
-Check {cycle-a}."""
+  // Check cycle-a.
+  eval check : runtime(command = "/bin/true", args = []) = {
+    title = "Check cycle-b"
+    deps = [cycle-a]
+  }
+}

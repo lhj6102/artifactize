@@ -232,19 +232,11 @@ fn runtime_result(
 ) -> Result<crate::store::ExecutionResult, (String, crate::types::FailureCode)> {
     match outcome {
         Outcome::Completed(result) => Ok(crate::store::ExecutionResult::Runtime(
-            crate::store::RuntimeResult {
-                verdict: result.verdict(),
-                exit_code: crate::store::ResultField::Value(result.exit_code),
-                stdout: crate::store::ResultField::Value(
-                    crate::platform::output_text(&result.output.stdout).into_owned(),
-                ),
-                stderr: crate::store::ResultField::Value(
-                    crate::platform::output_text(&result.output.stderr).into_owned(),
-                ),
-                duration: crate::store::ResultField::Value(result.output.duration),
-                truncated: crate::store::ResultField::Value(result.output.truncated),
-                fields: serde_json::Map::new(),
-            },
+            crate::store::RuntimeResult::exited(
+                result.exit_code,
+                || result.output.reason(result.exit_code),
+                result.output.duration,
+            ),
         )),
         Outcome::OperationalError(error) => {
             let code = match &error {

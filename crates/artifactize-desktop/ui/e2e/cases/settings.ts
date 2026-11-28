@@ -1,13 +1,14 @@
 // Settings: the modal and its tabs, each provider's setup (keys, custom providers and their
 // models, the Codex and Claude Code sign-ins), the shared review store and the sign-off grace.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { renameSync } from "node:fs";
-import { antigravity, AGY_ANSWER, AGY_MODELS, AGY_PARTIAL, AGY_PROMPT, SIGN_IN_CODE, SIGN_IN_URL } from "../fixtures/antigravity.ts";
+import { antigravity, AGY_ANSWER, AGY_MODELS, AGY_PARTIAL, AGY_PERMISSION_OPTIONS, AGY_PERMISSION_PROMPT, AGY_PERMISSION_TITLE, AGY_PROMPT, agyChose, SIGN_IN_CODE, SIGN_IN_URL } from "../fixtures/antigravity.ts";
 import { browserHandoffs, standInBrowser } from "../fixtures/browser.ts";
 import { claudeCode } from "../fixtures/claude.ts";
 import { check } from "../fixtures/declarations.ts";
 import { artifactizeAsync, createEmpty, createProject, createRelease, declareRelease, environment, newFixture, signoffGrace, type Fixture } from "../fixtures/repo.ts";
-import { portablePath } from "../platform.ts";
+import { portablePath, registryPlatform } from "../platform.ts";
 import { appendText, exists, fileSha256, nativePath, readText, readTextIfExists, realNativePath, serveLoopbackHttp, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
@@ -38,6 +39,9 @@ function fixtureCodexCallback(authorization: URL): URL {
   }
   return url;
 }
+
+/** The version the Registry stand-in pins. */
+const REGISTRY_VERSION = "2.4.1";
 
 export const scenarios: Scenario[] = [
   scenario({
@@ -223,7 +227,7 @@ export const scenarios: Scenario[] = [
       const fixture = await createRelease(own);
       return { fixture, args: ["--repo", fixture.repo], ...antigravity(fixture, standInBrowser(fixture, environment(fixture))) };
     },
-    run: async (app, { fixture, data: { staged, installed, version, answer } }) => {
+    run: async (app, { fixture, data: { staged, installed, version, answer, prompts } }) => {
       const status = (ok: (text: string) => boolean, what: string) => app.settings.factUntil("antigravity-status", ok, what);
       await app.settings.open();
       await app.settings.tab("Chat Agents");
@@ -264,7 +268,10 @@ export const scenarios: Scenario[] = [
       await app.chat.create();
       await app.chat.model(AGY_MODELS[1].name);
       await app.chat.send(AGY_PROMPT, false);
-      const trust = await app.chat.trustWorkspace();
+      // Until the reviewer trusts the workspace, the agent receives no prompt.
+      const trust = await app.chat.trustWorkspace(async () => {
+        assert.equal(readTextIfExists(prompts), null, "the agent got no prompt while Trust waited");
+      });
       assert.match(trust.agent, /Antigravity.*antigravity/, `trust dialog names the agent: ${trust.agent}`);
       assert.ok(trust.scope.includes(portablePath(realNativePath(fixture.repo))), `trust dialog names the repository scope: ${trust.scope}`);
       assert.equal(trust.executable, portablePath(realNativePath(installed)), "trust dialog names the resolved executable");
@@ -272,8 +279,17 @@ export const scenarios: Scenario[] = [
       await app.chat.says(AGY_PROMPT);
       await app.chat.says(AGY_PARTIAL);
       await app.chat.working();
+      assert.ok((readTextIfExists(prompts) ?? "").includes(AGY_PROMPT), "trusted, the agent got the prompt");
       writeText(answer, "finish the ACP turn");
       await app.chat.says(AGY_ANSWER);
+      await app.chat.finished();
+      // The agent asks before it edits: the card offers its options, and the one chosen reaches it.
+      await app.chat.send(AGY_PERMISSION_PROMPT, false);
+      const asked = await app.chat.permissionUntil(AGY_PERMISSION_TITLE, (card) => card.status === "Waiting", "the permission card waits for an answer");
+      assert.deepEqual(asked.options, AGY_PERMISSION_OPTIONS.map(({ name }) => name));
+      await app.chat.choosePermission(AGY_PERMISSION_TITLE, "Allow once");
+      await app.chat.says(agyChose("allow-once"));
+      await app.chat.permissionUntil(AGY_PERMISSION_TITLE, (card) => card.status === "Chosen: Allow once" && card.options.length === 0, "the card records the choice");
       await app.chat.finished();
       await app.settings.open();
       await app.settings.tab("Chat Agents");
@@ -282,6 +298,55 @@ export const scenarios: Scenario[] = [
       await app.settings.until((each) => /No workspaces trusted for Antigravity yet/.test(each.text), "trusted workspace revoked");
       await app.settings.button("Sign out of Antigravity");
       await status((text) => text === "Not signed in", "Antigravity CLI signed out again");
+    },
+  }),
+
+  scenario({
+    id: "settings-registry",
+    title: "Browse Registry lists the Registry's agents; Install… shows the full pinned spec and downloads nothing until Install, which installs that exact version, named in the agent's setup",
+    journeys: ["J-SET-CHAT-AGENTS"],
+    prepare: async (own) => {
+      const fixture = createEmpty(own);
+      const binary = Buffer.from(`fixture agent ${REGISTRY_VERSION}\n`);
+      const sha = createHash("sha256").update(binary).digest("hex");
+      const downloads = nativePath(own.root, "registry-downloads");
+      writeText(downloads, "");
+      let source = "";
+      const registry = await serveLoopbackHttp((request, response) => {
+        request.resume();
+        if (request.method === "GET" && request.url === "/registry.json") {
+          const agent = {
+            id: "fixture-agent", name: "Fixture Agent", version: REGISTRY_VERSION, description: "A Registry stand-in.",
+            distribution: { binary: { [registryPlatform()]: { archive: source, sha256: sha } } },
+          };
+          return response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ agents: [agent] }));
+        }
+        if (request.method === "GET" && request.url === "/fixture-agent") {
+          appendText(downloads, "download\n");
+          return response.writeHead(200, { "content-type": "application/octet-stream" }).end(binary);
+        }
+        return response.writeHead(404).end();
+      });
+      own.defer(() => registry.close());
+      source = `${registry.url}/fixture-agent`;
+      const env = { ...environment(fixture), ARTIFACTIZE_ACP_REGISTRY_URL: `${registry.url}/registry.json` };
+      return { fixture, env, data: { downloads, sha, source } };
+    },
+    run: async (app, { data: { downloads, sha, source } }) => {
+      await app.settings.open();
+      await app.settings.tab("Chat Agents");
+      await app.settings.chatAgent("Browse Registry");
+      await app.settings.until((shown) => shown.text.includes(`Fixture Agent ${REGISTRY_VERSION}`), "the Registry lists its agent and version");
+      const consent = await app.settings.registryInstall("Fixture Agent");
+      assert.deepEqual(consent, {
+        Agent: "Fixture Agent (fixture-agent)", "Pinned version": REGISTRY_VERSION, Platform: registryPlatform(),
+        Distribution: "binary", Source: source, Environment: "None", "SHA-256": sha,
+      });
+      assert.equal(readText(downloads), "", "nothing is downloaded before consent");
+      await app.settings.confirmRegistryInstall();
+      assert.equal(readText(downloads), "download\n", "the pinned binary downloaded once, after consent");
+      const installed = await app.settings.until((shown) => shown.chatAgents.some((agent) => agent.name.includes("Fixture Agent") && agent.chosen), "the installed agent is listed and shown");
+      assert.ok(installed.text.includes(`Pinned version ${REGISTRY_VERSION} (binary)`), `the agent's setup names its pinned version: ${installed.text}`);
     },
   }),
 

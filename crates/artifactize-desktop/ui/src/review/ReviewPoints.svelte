@@ -7,7 +7,7 @@
   let { review, insert, ready, compact = false, limited = false }: {
     review: Review;
     insert: (text: string) => void;
-    /** A reasons field is there to take an Insert. */
+    /** A issues field is there to take an Insert. */
     ready: boolean;
     compact?: boolean;
     limited?: boolean;

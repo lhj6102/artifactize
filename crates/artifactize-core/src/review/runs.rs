@@ -203,11 +203,21 @@ impl Target {
 }
 
 /// A builtin target as a repository-relative path, or an opaque Live address.
+/// Where an argument points: a `@{path name/rest}` slot in `name`, any other text in `owner`.
 fn logical(place: &dyn Fn(&str) -> Option<Place>, owner: &ArtifactName, arg: &str) -> Target {
-    let (id, rest) = match arg.strip_prefix('{').and_then(|arg| arg.split_once('}')) {
-        Some(("artifactPath", rest)) => (owner.as_str(), rest),
-        Some((name, rest)) => (name, rest),
-        None => (owner.as_str(), arg),
+    let literal;
+    let (id, rest) = match arg
+        .strip_prefix(crate::scope::PATH_SLOT)
+        .and_then(|slot| slot.strip_suffix('}'))
+    {
+        Some(slot) => match slot.split_once('/').unwrap_or((slot, "")) {
+            ("self", rest) => (owner.as_str(), rest),
+            reference => reference,
+        },
+        None => {
+            literal = arg.replace("@@{", "@{");
+            (owner.as_str(), literal.as_str())
+        }
     };
     let rest = rest.strip_prefix('/').unwrap_or(rest);
     let Some(artifact) = place(id) else {

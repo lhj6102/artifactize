@@ -81,6 +81,7 @@ pub(super) fn graph(view: &artifactize_core::query::GraphView<'_>) -> io::Result
                 name,
                 path,
             } => format!("argv eval={eval_id} index={index} name={name} path={path}"),
+            RelationKind::Input { eval_id, name } => format!("input eval={eval_id} name={name}"),
         };
         writeln!(
             out,

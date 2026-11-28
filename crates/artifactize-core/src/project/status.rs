@@ -16,7 +16,7 @@ use crate::{
     cache,
     config::{Profile, read_workspace_config},
     graph::{Evidence, Graph, Readiness},
-    project::{VerifyOptions, selection::select_profiles},
+    project::VerifyOptions,
     remote::Session,
     store::{self, Claim, LastRequest},
 };
@@ -159,12 +159,6 @@ pub(crate) async fn scan(
     publish: Option<Publish<'_>>,
 ) -> Result<(StatusView, BTreeMap<crate::config::EvalId, Claim>), String> {
     let parallelism = super::fingerprint_parallelism(options)?;
-    let config = select_profiles(
-        config,
-        selection,
-        options.profile.as_ref(),
-        options.recursive,
-    )?;
     let graph = Graph::new(&config).map_err(|error| error.to_string())?;
     let selected = selection.resolve(&config)?;
     let required: BTreeSet<_> = graph

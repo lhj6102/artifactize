@@ -10,6 +10,12 @@ export const AGY_PROMPT = "Tell me which fixture model is answering.";
 export const AGY_PARTIAL = "Fixture Pro is answering";
 export const AGY_ANSWER = `${AGY_PARTIAL} over ACP.`;
 export const AGY_MODELS = [{ value: "fixture-flash", name: "Fixture Flash" }, { value: "fixture-pro", name: "Fixture Pro" }];
+/** A prompt the stand-in answers only after asking to edit a file, as a tool call does. */
+export const AGY_PERMISSION_PROMPT = "Fix the release notes.";
+export const AGY_PERMISSION_TITLE = "Edit RELEASE.md";
+export const AGY_PERMISSION_OPTIONS = [{ optionId: "allow-once", name: "Allow once", kind: "allow_once" }, { optionId: "reject-once", name: "Reject", kind: "reject_once" }];
+/** What the stand-in answers once the reviewer chose `optionId`. */
+export const agyChose = (optionId: string) => `The agent got ${optionId}.`;
 
 export function antigravity(fixture: Pick<Fixture, "root">, env: Environment) {
   const bin = makeDirectory(nativePath(fixture.root, "agy-bin"));
@@ -18,6 +24,8 @@ export function antigravity(fixture: Pick<Fixture, "root">, env: Environment) {
   const version = nativePath(fixture.root, "agy-version");
   writeText(version, "1.5.0");
   const answer = nativePath(fixture.root, "agy-answer");
+  // Each prompt the stand-in receives, one line each: none may arrive before Trust.
+  const prompts = nativePath(fixture.root, "agy-prompts");
   return {
     env: {
       ...withPathFirst(env, [bin], (folder) => !folderHoldsCommand(folder, "agy")),
@@ -25,10 +33,11 @@ export function antigravity(fixture: Pick<Fixture, "root">, env: Environment) {
       DESKTOP_TEST_AGY_PROGRAM: suitePath("fixtures", "agy.ts"),
       DESKTOP_TEST_AGY_VERSION: version,
       DESKTOP_TEST_AGY_ANSWER: answer,
+      DESKTOP_TEST_AGY_PROMPTS: prompts,
       DESKTOP_TEST_AGY_SIGNED_IN: nativePath(fixture.root, "agy-signed-in"),
       // The engine checks the URL's shape; the stand-in browser never contacts Google.
       DESKTOP_TEST_BROWSER_RECORD_ONLY: SIGN_IN_URL,
     },
-    data: { staged: nativePath(staged, command), installed: nativePath(bin, command), version, answer },
+    data: { staged: nativePath(staged, command), installed: nativePath(bin, command), version, answer, prompts },
   };
 }

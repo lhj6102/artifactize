@@ -148,7 +148,7 @@ fn a_command_agent_tool_runs_in_the_authors_environment() {
         "--audience",
         "agent",
         "--tool",
-        "probe",
+        "app-tools_probe",
     ]);
     check_succeeded(&output);
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();

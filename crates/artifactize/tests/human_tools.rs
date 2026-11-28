@@ -51,7 +51,10 @@ async fn call(repo: &Path) -> ToolResult {
     let config = read_workspace_config(repo).unwrap();
     Registry::new(&config, &"a/review".parse().unwrap())
         .unwrap()
-        .call(&"inspect_a".parse().unwrap(), CancellationToken::new())
+        .call(
+            &"a-tools_inspect_a".parse().unwrap(),
+            CancellationToken::new(),
+        )
         .await
 }
 
@@ -60,7 +63,7 @@ async fn call_launch(launched: &Launched) -> ToolResult {
     Registry::new(&config, &"a/review".parse().unwrap())
         .unwrap()
         .call_logged(
-            &"inspect_a".parse().unwrap(),
+            &"a-tools_inspect_a".parse().unwrap(),
             CancellationToken::new(),
             launched.observe(artifactize_core::review::log::Run::unwatched()),
         )
@@ -78,7 +81,7 @@ fn text(result: &ToolResult) -> &str {
 fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
     let parse = |tool| {
         parse_declaration(
-            &support::declaration::to_toml(
+            &support::declaration::to_artf(
                 json!({"name":"a","views":{"human_tools":{"inspect":tool}}}),
             )
             .expect("Test builder must be TOML-compatible; use raw TOML for invalid syntax."),
@@ -89,17 +92,11 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
     for (key, value) in [
         ("kind", json!("shell")),
         ("description", json!(" ")),
-        ("description", json!("Open {unknown}")),
         ("input_schema", json!({"type":"object"})),
         ("protocol", json!("plain")),
         ("execution_paths", json!([])),
         ("args", json!([{"path":"free"}])),
         ("args", json!(["{artifactPath}/../outside"])),
-        ("args", json!(["{bad.name}"])),
-        ("args", json!(["{unclosed"])),
-        ("args", json!(["${ARTIFACTIZE_TEST_ARGUMENT}"])),
-        ("args", json!(["prefix{artifactPath}"])),
-        ("command", json!("{artifactPath}/tool")),
         ("timeout_ms", json!(0)),
         ("timeout_ms", json!(2_147_483_648u64)),
     ] {
@@ -107,6 +104,36 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
         invalid[key] = value;
         assert!(parse(invalid.clone()).is_err(), "{invalid}");
     }
+    // Slots are `@{…}`: an unknown or malformed one is refused, and so is one anywhere but a
+    // whole argument (after an optional `--flag=`). Old `{…}` text is only text.
+    for (field, value) in [
+        ("description", r#""Open @{artf unknown}""#),
+        ("args", r#"["@{path bad.name}"]"#),
+        ("args", r#"["@{unclosed"]"#),
+        ("args", r#"["prefix@{path self}"]"#),
+        ("command", r#""@{path self}/tool""#),
+    ] {
+        let mut fields = vec![
+            ("command", r#""missing-program""#),
+            ("args", r#"["@{path self}"]"#),
+            ("description", r#""Inspect @{artf self}""#),
+        ];
+        fields.retain(|(key, _)| *key != field);
+        fields.push((field, value));
+        let fields: Vec<_> = fields
+            .iter()
+            .map(|(key, value)| format!("{key} = {value}"))
+            .collect();
+        let text = format!(
+            "tool t = {{\n  human inspect = command(kind = \"launch\", {})\n}}\nartf a : t = {{ path = \"./\" }}\n",
+            fields.join(", ")
+        );
+        assert!(parse_declaration(&text).is_err(), "{text}");
+    }
+    assert!(
+        parse_declaration("tool t = {\n  human inspect = command(kind = \"launch\", command = \"missing-program\", args = [\"{bad.name}\", \"${HOME}\"], description = \"Inspect\")\n}\nartf a : t = { path = \"./\" }\n")
+            .is_ok()
+    );
     assert!(
         parse(
             json!({"metadata":{"description":"Old"},"script":{"command":"noop-fixture","args":[]}})
@@ -125,7 +152,7 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
         read_workspace_config(repo.path())
             .unwrap_err()
             .to_string()
-            .contains("Unknown Artifact reference")
+            .contains("Unknown Artifact")
     );
     write_artifact(
         repo.path(),
@@ -188,7 +215,9 @@ async fn catalog_is_human_only_scoped_and_collision_checked() {
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>(),
         // `child` is nested in b's folder, which makes it no part of b's scope.
-        ["inspect_a", "inspect_b"]
+        // Identical tools are one toolset, named after the first Artifact with them but apart
+        // from every Artifact's name.
+        ["a-tools_inspect_a", "a-tools_inspect_b"]
     );
     assert_eq!(registry.list().next().unwrap().description, "Inspect a");
     assert_eq!(
@@ -208,33 +237,22 @@ async fn catalog_is_human_only_scoped_and_collision_checked() {
                 .is_error()
         );
     }
-    write_artifact(
-        repo.path(),
-        &repo.path().join("a"),
-        "a",
-        json!({"inspect_b":command}),
-        "Review.",
-    );
-    write_artifact(
-        repo.path(),
-        &repo.path().join("b"),
-        "b_a",
-        json!({"inspect":command}),
-        "Review.",
-    );
-    write_artifact(
-        repo.path(),
-        repo.path(),
-        "root",
-        json!({}),
-        "Review {a} and {b_a}.",
-    );
-    let config = read_workspace_config(repo.path()).unwrap();
+    // Published names are checked when the definitions are read: toolsets `x` and `x_y` both
+    // offer `x_y_b_collide`.
+    let program = support::os::printf_program();
+    fs::write(
+        repo.path().join(".artifactize/collide.artf"),
+        format!(
+            "tool x = {{ human y_b = command(kind = \"output\", command = {program:?}, args = [\"ok\"], description = \"Y\") }}\n\
+             tool x_y = {{ human b = command(kind = \"output\", command = {program:?}, args = [\"ok\"], description = \"B\") }}\n\
+             artf collide : x & x_y = {{ path = \"c/\" }}\n"
+        ),
+    )
+    .unwrap();
+    let error = read_workspace_config(repo.path()).unwrap_err().to_string();
     assert!(
-        Registry::new(&config, &"root/review".parse().unwrap())
-            .err()
-            .unwrap()
-            .contains("collide")
+        error.contains("are both offered as x_y_b_collide"),
+        "{error}"
     );
 }
 
@@ -298,7 +316,10 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
     support::os::link_dir(&support::os::temp_root(), &input);
     assert!(
         registry
-            .call(&"inspect_a".parse().unwrap(), CancellationToken::new())
+            .call(
+                &"a-tools_inspect_a".parse().unwrap(),
+                CancellationToken::new()
+            )
             .await
             .is_error()
     );
@@ -421,7 +442,7 @@ async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_pro
     let config = read_workspace_config(repo.path()).unwrap();
     let (sink, mut events) = channel();
     let request = "run-1-1".parse().unwrap();
-    let name = "inspect_a".parse().unwrap();
+    let name = "a-tools_inspect_a".parse().unwrap();
     let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     let result = registry
         .call_logged(
@@ -539,7 +560,7 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
     assert!(
         Registry::new(&config, &"a/review".parse().unwrap())
             .unwrap()
-            .call(&"inspect_a".parse().unwrap(), cancellation)
+            .call(&"a-tools_inspect_a".parse().unwrap(), cancellation)
             .await
             .is_error()
     );
@@ -754,7 +775,7 @@ async fn human_environment_and_launch_probe() {
     let result = tools::Registry::new(&config, &"a/agent".parse().unwrap())
         .unwrap()
         .call(
-            "inspect_a",
+            "a-tools_inspect_a",
             json!({}),
             output.path(),
             CancellationToken::new(),

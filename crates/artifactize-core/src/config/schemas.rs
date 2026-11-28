@@ -5,13 +5,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 /// The schemas of one read, by their JSON text, and what checking each found.
 #[derive(Default)]
 pub(crate) struct Schemas {
     tools: HashMap<String, Arc<Value>>,
-    verdicts: HashMap<String, Arc<Map<String, Value>>>,
     /// Each kept schema by its address, which stays its own while this read keeps it, with
     /// what checking it found once checked.
     checked: HashMap<usize, Option<Result<(), String>>>,
@@ -21,13 +20,6 @@ impl Schemas {
     /// The schema equal to `schema` that this read keeps.
     pub(super) fn tool(&mut self, schema: &Arc<Value>) -> Arc<Value> {
         let kept = shared(&mut self.tools, schema);
-        self.checked.entry(address(&kept)).or_default();
-        kept
-    }
-
-    /// The verdict schema equal to `schema` that this read keeps.
-    pub(super) fn verdict(&mut self, schema: &Arc<Map<String, Value>>) -> Arc<Map<String, Value>> {
-        let kept = shared(&mut self.verdicts, schema);
         self.checked.entry(address(&kept)).or_default();
         kept
     }

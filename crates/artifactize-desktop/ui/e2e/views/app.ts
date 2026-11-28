@@ -1,7 +1,7 @@
 // The app's window as a person sees it: its header, the command palette, Help, the dialogs it
 // opens over the screen, and its parts (the pane, the main area's graph, the Detail, a Human
 // review, Settings). Cases reach the window only through these views (E2E-REAL-APP).
-import { callWindow, type NativePath } from "../portable.ts";
+import { asNativePath, callWindow, exists, readJson, type NativePath } from "../portable.ts";
 import { isPid, waitForProcessExit } from "../platform.ts";
 import { pointerGapClick } from "../input.ts";
 import { fill, press, typeText } from "../keys.ts";
@@ -287,12 +287,16 @@ export class App {
     await callWindow(this.browser, "close");
   }
 
-  /** Do `action`, then confirm the exact app that was in this session exited. The command's
-   * own response may be lost on exit, but a failed native observation is never success. */
+  /** Do `action`, then confirm the exact app that was in this session quit in order. The
+   * command's own response may be lost on exit, but a failed native observation is never
+   * success, and neither is an exit the app did not record as orderly: a crash also ends it. */
   async exitsBy(action: () => Promise<unknown>): Promise<void> {
-    const pid = await this.browser.execute(() =>
-      (window as Window & { __ARTIFACTIZE_E2E_PROCESS__?: { pid: number } }).__ARTIFACTIZE_E2E_PROCESS__?.pid);
+    const shown = await this.browser.execute(() =>
+      (window as Window & { __ARTIFACTIZE_E2E_PROCESS__?: { pid: number; exitReceipt: string | null } }).__ARTIFACTIZE_E2E_PROCESS__);
+    const pid = shown?.pid;
     if (!isPid(pid)) throw new Error("the app did not provide its native process ID before the close action");
+    if (typeof shown?.exitReceipt !== "string") throw new Error("the app did not say where it records an orderly quit");
+    const receipt = asNativePath(shown.exitReceipt);
     if (this.lastWindow) await this.browser.saveScreenshot(this.lastWindow).catch(() => undefined);
     const failures: unknown[] = [];
     try { await action(); } catch (error) { failures.push(error); }
@@ -302,5 +306,9 @@ export class App {
       throw error;
     }
     Reflect.set(this.browser, "sessionId", undefined);
+    const recorded = exists(receipt) ? (readJson(receipt) as { pid?: unknown }) : null;
+    if (recorded?.pid !== pid) {
+      throw new AggregateError(failures, `app PID ${pid} exited without recording an orderly quit, as a crash does`);
+    }
   }
 }

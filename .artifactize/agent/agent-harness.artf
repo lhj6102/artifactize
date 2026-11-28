@@ -1,22 +1,21 @@
-tags = ["type:harness"]
-path = "harness/hey-arti/"
-type = "files"
+artf agent-harness : files = {
+  path = "harness/hey-arti/"
+  tags = ["type:harness"]
 
-[evals.deterministic]
-title = "The fixture driver checks pass without a live builder"
-profile = { kind = "runtime", command = "python3", args = ["-I", "{agent-harness}/driver.py", "check"], timeout_ms = 180000 }
-payload.instruction = "Run deterministic fixture, private materialization, live-run cleanup and canonical TOML example checks for {agent-hey-arti}. These tests do not prove live skill quality."
+  // Run deterministic fixture, private materialization, live-run cleanup and canonical TOML
+  // example checks for agent-hey-arti. These tests do not prove live skill quality.
+  eval deterministic : runtime(
+      command = "python3",
+      args = ["-I", "@{path agent-harness/driver.py}", "check"],
+      timeout_ms = 180000,
+    ) = {
+    title = "The fixture driver checks pass without a live builder"
+    deps = [agent-hey-arti]
+  }
 
-[evals.follows-test-rules]
-title = "The Python driver tests and harness lifecycle follow the test rules"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
-
-[evals.follows-test-rules.payload]
-instruction = """
-Read the TEST- rules of {rules-code-style}. Review the Python tests and harness \
-helpers of {agent-harness}. The fixture projects are \
-test inputs, not another copy of the code review. Check every TEST- rule: exact async states, \
-controlled ordering or expiry times, read-only observations, owned processes/connections/temporary \
-files and cleanup, declared executables and inputs, and observable seams without over-verification. \
-Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding."""
+  eval follows-test-rules : reviewer = {
+    title = "The Python driver tests and harness lifecycle follow the test rules"
+    red_at = "P1"
+    instruction = "Read the TEST- rules of @{artf rules-code-style}. Review the Python tests and harness helpers of @{artf agent-harness}. The fixture projects are test inputs, not another copy of the code review. Check every TEST- rule: exact async states, controlled ordering or expiry times, read-only observations, owned processes/connections/temporary files and cleanup, declared executables and inputs, and observable seams without over-verification. Report only what a rule item states: each issue names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not an issue."
+  }
+}

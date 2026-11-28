@@ -29,6 +29,13 @@ impl Definitions {
     pub fn from_view(view: &crate::query::GraphView<'_>) -> Result<Self, serde_json::Error> {
         serde_json::from_value(serde_json::to_value(view)?)
     }
+    /// The environment values the project's profiles read when these definitions were saved.
+    pub fn environment(&self) -> BTreeMap<String, Option<String>> {
+        self.graph()
+            .and_then(|graph| graph.extra.get("environment"))
+            .and_then(|environment| serde_json::from_value(environment.clone()).ok())
+            .unwrap_or_default()
+    }
 }
 impl Serialize for Definitions {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -183,9 +190,9 @@ pub(super) fn artifact_targets<'de, D: Deserializer<'de>>(
 #[serde(rename_all = "camelCase")]
 pub struct Views {
     #[serde(default, skip_serializing_if = "missing")]
-    pub agent_tools: Field<BTreeMap<config::ToolOperationName, AgentTool>>,
+    pub agent_tools: Field<BTreeMap<config::ToolFqn, AgentTool>>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub human_tools: Field<BTreeMap<config::ToolOperationName, HumanTool>>,
+    pub human_tools: Field<BTreeMap<config::ToolFqn, HumanTool>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -235,7 +242,17 @@ pub struct BuiltinTool {
 pub enum HumanTool {
     Command(HumanCommandTool),
     Builtin(HumanBuiltinTool),
-    Viewer(config::HumanViewerTool),
+    Viewer(HumanViewerTool),
+}
+/// A viewer tool as a Run saved it. Runs saved before viewer tools named their plugin have
+/// none: only what the tool is and says is read back, and a viewer opens from the current
+/// declarations.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HumanViewerTool {
+    pub kind: config::ViewerKind,
+    pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin: Option<config::PluginName>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -306,12 +323,20 @@ pub struct Declaration {
     pub title: Field<String>,
     #[serde(default, skip_serializing_if = "missing")]
     pub profile: Field<Profile>,
+    /// The named profile it referred to; absent before 0.27.
     #[serde(default, skip_serializing_if = "missing")]
-    pub profile_variants: Field<BTreeMap<config::ProfileVariantName, Profile>>,
+    pub profile_name: Field<String>,
+    /// Variants saved before 0.27, read for history only.
+    #[serde(default, skip_serializing_if = "missing")]
+    pub profile_variants: Field<BTreeMap<String, Profile>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub payload: Field<StoredPayload>,
+    /// A runtime eval's inputs; absent before 0.27.
+    #[serde(default, skip_serializing_if = "missing")]
+    pub inputs: Field<Vec<config::ArtifactName>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub red_at: Field<config::Priority>,
+    /// Human result schemas saved before 0.27, read for history only.
     #[serde(default, skip_serializing_if = "missing")]
     pub pass_schema: Field<Map<String, Value>>,
     #[serde(default, skip_serializing_if = "missing")]

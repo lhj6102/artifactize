@@ -188,7 +188,7 @@ impl Currents {
         }
         let mut shown = self.shown.lock().expect("currents lock");
         let shape = match shown.get(place) {
-            Some(before) if same_shape(&before.current, &current) => before.shape,
+            Some(before) if before.current.same_shape(&current) => before.shape,
             _ => self.shapes.lock().expect("shapes lock").next(),
         };
         shown.insert(
@@ -296,17 +296,26 @@ pub fn forward<R: tauri::Runtime>(
 pub struct CurrentView {
     pub branch: BranchKey,
     /// When this step was scanned, at milliseconds since the Unix epoch.
-    pub scanned_at: f64,
+    pub scanned_at: crate::ids::EpochMillis,
     pub fingerprint: crate::ids::FingerprintKey,
     /// Grows with each step: the graph and an open Detail read again when it does.
     pub revision: crate::ids::ScanId,
-    /// The branch's scan is still running.
-    pub scanning: bool,
+    pub scan: ScanStatus,
     /// How many Artifacts are still being checked, of how many.
     pub checking: u32,
     pub artifacts: u32,
-    /// Why the branch's last scan failed; what it published before stays shown.
-    pub failure: Option<String>,
+}
+
+/// How the branch's scan is doing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "state", rename_all = "camelCase")]
+pub enum ScanStatus {
+    /// It still runs.
+    Scanning,
+    /// It ended; its last step is shown.
+    Scanned,
+    /// It failed, and why; what it published before stays shown.
+    Failed { reason: String },
 }
 
 fn segment(text: String, tone: Tone) -> Vec<Segment> {
@@ -373,27 +382,31 @@ fn view(currents: &Currents, branch: BranchKey) -> Result<CurrentView, Failure> 
     let shown = currents.shown(&place)?;
     let current = &shown.current;
     let count = |artifacts: usize| u32::try_from(artifacts).unwrap_or(u32::MAX);
-    let (scanning, failure) = {
-        let running = currents.running.lock().expect("scans lock");
-        let scanning = running.contains_key(&place);
-        let failure = if scanning {
-            None
-        } else {
-            currents
-                .failed
-                .lock()
-                .expect("failures lock")
-                .get(&place)
-                .cloned()
-        };
-        (scanning, failure)
+    let scan = if currents
+        .running
+        .lock()
+        .expect("scans lock")
+        .contains_key(&place)
+    {
+        ScanStatus::Scanning
+    } else {
+        match currents
+            .failed
+            .lock()
+            .expect("failures lock")
+            .get(&place)
+            .cloned()
+        {
+            Some(reason) => ScanStatus::Failed { reason },
+            None => ScanStatus::Scanned,
+        }
     };
     Ok(CurrentView {
         branch,
-        scanned_at: (current.scanned_at.unix_timestamp_nanos() / 1_000_000) as f64,
+        scanned_at: current.scanned_at.into(),
         fingerprint: current.fingerprint.clone().into(),
         revision: shown.revision,
-        scanning,
+        scan,
         checking: count(
             current
                 .artifacts
@@ -402,25 +415,7 @@ fn view(currents: &Currents, branch: BranchKey) -> Result<CurrentView, Failure> 
                 .count(),
         ),
         artifacts: count(current.artifacts.len()),
-        failure,
     })
-}
-
-/// The same Artifacts, parts and edges in the same order, whatever they would do.
-fn same_shape(before: &Current, after: &Current) -> bool {
-    before
-        .artifacts
-        .iter()
-        .map(|artifact| (&artifact.name, &artifact.parts))
-        .eq(after
-            .artifacts
-            .iter()
-            .map(|artifact| (&artifact.name, &artifact.parts)))
-        && before
-            .edges
-            .iter()
-            .map(|edge| (&edge.from, &edge.to))
-            .eq(after.edges.iter().map(|edge| (&edge.from, &edge.to)))
 }
 
 /// The graph of `current`, every Artifact lit and noted by what verify would do.

@@ -16,8 +16,9 @@
 //! | `status:` | the request status; `waiting_human` includes `deferred` sign-offs |
 //! | `is:` | `mine`, `claimed` or `unclaimed` (claims exist only on waiting Human requests) |
 //!
-//! The bare term `waiting` matches unclaimed waiting Human requests, including deferred
-//! sign-offs. It is the short spelling of `is:unclaimed`.
+//! The bare term `waiting` matches the Human requests waiting for a person, claimed or not,
+//! including deferred sign-offs: a claim names who answers, and the request waits until they
+//! submit. It is the short spelling of `status:waiting_human`.
 //!
 //! Values with spaces are quoted: `repo:"/work/my repo"`. A quoted word is always free text, so
 //! `"type:style"` searches for that text rather than naming a key.
@@ -274,7 +275,7 @@ impl std::str::FromStr for Query {
             .into_iter()
             .map(|(word, quoted)| {
                 if !quoted && word.eq_ignore_ascii_case(WAITING) {
-                    return Ok(Term::Is(Is::Unclaimed));
+                    return Ok(Term::Status(RequestStatus::WaitingHuman));
                 }
                 let Some((name, value)) = word.split_once(':').filter(|_| !quoted) else {
                     return Ok(Term::Text(word.to_lowercase()));

@@ -1,0 +1,70 @@
+// The project's rule documents under project-rules/. Each is read by the Agent evals that
+// check against it, opened by its owner, and approved by the owner before it is the standard.
+
+// A rule document project-rules/FILE.
+artf! rule(file, extra_evals = {}) : markdown = {
+  path = "project-rules/@{param file}"
+
+  eval approved : human = {
+    title = "The owner approves the rule document"
+    instruction = """
+      Open @{artf self}. Submit GREEN when every item is a rule this project should follow; \
+      otherwise submit RED with an issue for each item to change.
+    """
+  }
+
+  ...extra_evals
+}
+
+artf rules-code-style = rule!(file = "DEV-CODING.md")
+
+artf rules-frontend-style = rule!(file = "DEV-FRONTEND.md")
+
+artf rules-platform = rule!(
+  file = "DEV-PLATFORM.md",
+  extra_evals = {
+    eval serves-purpose : reviewer = {
+      title = "Every platform rule serves the checklist's purpose, and none overlap or contradict"
+      red_at = "P1"
+      instruction = """
+        Read the platform checklist @{artf self}. Its purpose: code that passes its checks on \
+        one operating system very likely behaves the same on the others; to that end, \
+        everything that differs between operating systems goes through one platform layer, and \
+        tests cover every OS. Review the rules themselves, rule by rule (P- items), \
+        and report: a rule that does not serve the purpose (for example a style preference with \
+        no cross-platform or reliability effect); two rules that overlap or contradict each \
+        other; a known way Linux, macOS and Windows differ (files, paths, programs, processes, \
+        environment, terminals, IPC, desktop integration, text and time) that no rule governs, \
+        but report such a missing rule only when the code shows that difference actually \
+        occurring (cite path:line); differences the code never meets are out of scope. Report \
+        only what a rule item states or omits against this purpose: each issue names the item \
+        (or the pair of items, or the missing difference) and points to the concrete text that \
+        does not meet the purpose. A rewording, a further split or an extra example the purpose \
+        does not require is not an issue.
+      """
+    }
+  },
+)
+
+artf rules-chat-acp = rule!(file = "CHAT-ACP.md")
+
+artf rules-write-in-korean = rule!(
+  file = "WRITE-IN-KOREAN.md",
+  extra_evals = {
+    eval follows-itself : reviewer = {
+      title = "The Korean writing rules follow themselves"
+      red_at = "P1"
+      instruction = """
+        Read the Korean writing rules @{artf self}. It states rules for Korean writing and is \
+        itself written in Korean. Read every Korean sentence of it, including the examples, and \
+        check it against every K- item of the same document. \
+        The item ids, the English words quoted as examples and the phrases quoted in '…' as what \
+        not to write are not prose to judge.
+      """
+    }
+  },
+)
+
+artf rules-writer-introduction = rule!(file = "WRITER-INTRODUCTION.md")
+
+artf rules-writer-readme = rule!(file = "WRITER-README.md")

@@ -1,7 +1,7 @@
 //! Reviews and follow-ups on the `claude-agent` backend. Claude Code runs the conversation
 //! with the user's own login; artifactize runs every tool call through the eval's registry,
 //! enforces the budgets and the deadline, records the conversation and its live text, and
-//! validates the findings, with the same one format repair as every backend. Claude Code
+//! validates the issues, with the same one format repair as every backend. Claude Code
 //! retries failed requests itself, so nothing here retries.
 
 mod conversation;
@@ -20,12 +20,11 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    Continuation, DEFAULT_TIMEOUT, FOLLOW_UP, Prompt, Review, StartedFollowUp, Toolset,
-    definitions,
+    Continuation, FOLLOW_UP, Prompt, Review, StartedFollowUp, Toolset, definitions,
     error::{Code, Failure},
     prompt_text,
     session::{self, Recorder},
-    verdict::{Findings, ValidatedResult},
+    verdict::{Issues, ValidatedResult},
 };
 use crate::{
     config::{Eval, ModelId, Profile, RepoConfig},
@@ -102,18 +101,18 @@ async fn run_review(
     else {
         unreachable!("Agent executor requires an Agent profile")
     };
-    let timeout = timeout_ms.unwrap_or(DEFAULT_TIMEOUT);
+    let timeout = super::timeout(*timeout_ms)?;
     let limits = Limits {
         deadline: Instant::now() + timeout,
         max_tokens: *max_tokens,
         max_tool_calls: *max_tool_calls,
     };
     let registry = Registry::new(config, &eval.id)?.with_sessions(tools);
-    let findings = Findings::new(eval.declaration.red_at());
+    let issues = Issues::new(eval.declaration.red_at());
     let Prompt { system, text } = prompt_text(eval, &registry);
     let effort = reasoning.map(crate::config::Reasoning::as_str);
     let mut parameters = Client::parameters(Api::ClaudeAgent, effort, recorder.id())?;
-    Client::output_format(Api::ClaudeAgent, &mut parameters, findings.schema.clone());
+    Client::output_format(Api::ClaudeAgent, &mut parameters, issues.schema.clone());
     let definitions = definitions(registry.list());
     recorder.start(session::Header {
         backend: Some(backend.clone()),
@@ -136,7 +135,7 @@ async fn run_review(
         effort,
         system: Some(&system),
         tools: definitions.iter().map(|tool| tool.name.as_str()).collect(),
-        schema: Some(&findings.schema),
+        schema: Some(&issues.schema),
     };
     let server = Server::new(registry.list());
     let session = Session {
@@ -150,24 +149,24 @@ async fn run_review(
         attempts,
     };
     let (mut conversation, running) = session.open(&launch).await?;
-    let result = judge(&mut conversation, &text, &findings).await;
+    let result = judge(&mut conversation, &text, &issues).await;
     close(conversation, running, result).await
 }
 
-/// Ask for the findings and validate them, with one format repair: tools are then refused.
+/// Ask for the issues and validate them, with one format repair: tools are then refused.
 async fn judge<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     conversation: &mut Conversation<'_, '_, R, W>,
     prompt: &str,
-    findings: &Findings,
+    issues: &Issues,
 ) -> Result<ValidatedResult, Failure> {
     let answer = conversation.ask(prompt).await?;
-    let error = match findings.parse_model(&answer) {
+    let error = match issues.parse_model(&answer) {
         Ok(result) => return Ok(result),
         Err(error) => error,
     };
     let repair = Message::user(format!(
         "Your final response did not match the required schema: {}\nReturn only one JSON object matching the schema.",
-        Findings::repair_detail(error)
+        Issues::repair_detail(error)
     ));
     conversation
         .session
@@ -175,7 +174,7 @@ async fn judge<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
         .message(conversation.turn + 1, &repair, true);
     conversation.tools_open = false;
     let answer = conversation.ask(&message_text(&repair)).await?;
-    findings.parse_model(&answer).map_err(|error| {
+    issues.parse_model(&answer).map_err(|error| {
         Failure::new(
             Code::InvalidResult,
             format!("Invalid final Agent result after one format repair: {error}."),
@@ -272,6 +271,7 @@ pub(super) async fn follow_up(
         text: Some(message.into()),
         framing: Some(framing),
         files_changed: continuation.files_changed,
+        engine: None,
         tools: Some(
             definitions
                 .iter()
@@ -301,7 +301,7 @@ pub(super) async fn follow_up(
         output: continuation.output,
         model,
         limits: Limits {
-            deadline: Instant::now() + budgets.timeout_ms.unwrap_or(DEFAULT_TIMEOUT),
+            deadline: Instant::now() + super::timeout(budgets.timeout_ms)?,
             max_tokens: budgets.max_tokens,
             max_tool_calls: budgets.max_tool_calls,
         },
@@ -340,12 +340,38 @@ struct Session<'a, 'r> {
 type Started<'a, 'r> = Conversation<'a, 'r, ChildStdout, ChildStdin>;
 
 impl<'a, 'r> Session<'a, 'r> {
-    /// Start Claude Code and its session. Claude Code runs in the temporary directory, which
-    /// holds nothing of the review: it reads files only through the offered tools.
+    /// Start Claude Code and its session. Claude Code runs in an isolated empty private temporary
+    /// directory outside both the reviewed workspace and any Git checkout so it holds nothing of
+    /// the review and reads files only through the offered tools (`C-EVAL-ARTIFACTIZE-DRIVEN`).
     async fn open(self, launch: &Launch<'_>) -> Result<(Started<'a, 'r>, Running), Failure> {
-        let cwd = crate::platform::temporary_directory();
-        let (channel, running) =
-            channel::start(launch, &cwd, self.limits.deadline, self.cancellation).await?;
+        let cwd_dir = crate::platform::private_tempdir_in(
+            "artifactize-claude-",
+            &crate::platform::temporary_directory(),
+        )
+        .map_err(|error| {
+            Failure::new(
+                Code::AgentError,
+                format!("Cannot create isolated directory for claude-agent eval: {error}."),
+            )
+        })?;
+        let workspace_root = self.registry.workspace_root();
+        crate::acp::catalog::check_probe_dir_isolated(cwd_dir.path(), Some(workspace_root))
+            .map_err(|error| {
+                Failure::new(
+                    Code::AgentError,
+                    format!(
+                        "Refusing to launch isolated claude-agent eval inside a workspace: {error}"
+                    ),
+                )
+            })?;
+        let (channel, running) = channel::start(
+            launch,
+            cwd_dir.path(),
+            self.limits.deadline,
+            self.cancellation,
+        )
+        .await?;
+        let running = running.with_tempdir(cwd_dir);
         let mut conversation = Conversation::new(self, channel);
         match conversation.initialize().await {
             Ok(()) => Ok((conversation, running)),

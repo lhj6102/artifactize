@@ -169,7 +169,7 @@ fn replayed(request: &Request) -> bool {
 
 /// Pass after one `read` tool call, in the requested backend's wire format.
 fn pass(request: &Request) -> Reply {
-    let verdict = r#"{"findings":[]}"#;
+    let verdict = r#"{"issues":[]}"#;
     match request.path.as_str() {
         "/v1/messages" => anthropic::text(request, verdict, 10, 2),
         path => {
@@ -496,7 +496,7 @@ fn attempt_events(project: &Project, review: &Value) -> Vec<Value> {
 fn a_response_rejected_after_delivery_fails_its_billed_attempts_with_their_counters() {
     let project = Project::new(&CAPPED.map(|(name, backend)| (name, agent(backend))));
     let provider =
-        FakeProvider::start(|request| capped(request, &[r#"{"findings":[{"prio"#.to_owned()], 128));
+        FakeProvider::start(|request| capped(request, &[r#"{"issues":[{"prio"#.to_owned()], 128));
     let run = project.run(&provider, &["--all"], 2);
     for (name, backend) in CAPPED {
         let review = request(&run, &format!("{name}/review"));
@@ -527,7 +527,7 @@ fn a_response_rejected_after_delivery_fails_its_billed_attempts_with_their_count
 
 /// An unfinished result, then whitespace in deltas that pass the stop point together.
 fn degenerate_deltas() -> Vec<String> {
-    let mut deltas = vec![r#"{"findings":["#.to_owned()];
+    let mut deltas = vec![r#"{"issues":["#.to_owned()];
     deltas.extend(std::iter::repeat_n(" \n\t ".repeat(256), 5));
     deltas
 }
@@ -574,7 +574,7 @@ fn interrupted(request: &Request) -> Reply {
             "item":{"type":"message","id":"msg_fake","role":"assistant","status":"in_progress",
                 "content":[]}}),
         json!({"type":"response.output_text.delta","item_id":"msg_fake","output_index":0,
-            "content_index":0,"delta":r#"{"findings":"#}),
+            "content_index":0,"delta":r#"{"issues":"#}),
         json!({"type":"error","code":"server_is_overloaded",
             "message":"Our servers are currently overloaded. Please try again later.",
             "param":null}),
@@ -599,7 +599,7 @@ fn a_failed_provider_output_sends_its_turn_again_from_the_last_tool_results() {
             "DEGENERATE_OUTPUT",
         ),
         (
-            |request| capped(request, &[r#"{"findings":[{"prio"#.to_owned()], 128),
+            |request| capped(request, &[r#"{"issues":[{"prio"#.to_owned()], 128),
             "PROVIDER_ERROR",
         ),
         (interrupted, "TRANSIENT"),

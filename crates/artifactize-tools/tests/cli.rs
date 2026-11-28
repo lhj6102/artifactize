@@ -161,6 +161,65 @@ async fn help_timeout_ends_the_program_and_the_children_it_starts_at_once() {
     );
 }
 
+// A closing terminal sends SIGHUP: the launch stops and its program goes with it, long before
+// the help timeout would end it.
+#[cfg(unix)]
+#[test]
+fn a_terminal_hang_up_stops_the_launch_and_its_program() {
+    use rustix::process::{Pid, Signal, kill_process, test_kill_process};
+    use std::time::{Duration, Instant};
+
+    let root = os::tempdir();
+    let started = root.path().join("started");
+    os::compile(
+        root.path(),
+        "stub",
+        &format!(
+            r#"fn main() {{
+        std::fs::write({started:?}, std::process::id().to_string()).unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    }}"#
+        ),
+    );
+    let mut cli = std::process::Command::new(env!("CARGO_BIN_EXE_artifactize-tools"))
+        .current_dir(root.path())
+        .env("PATH", root.path())
+        .args(["help", "stub", "sub"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let program = loop {
+        if let Some(pid) = fs::read_to_string(&started)
+            .ok()
+            .and_then(|text| text.parse().ok())
+        {
+            break Pid::from_raw(pid).unwrap();
+        }
+        assert!(Instant::now() < deadline, "the program did not start");
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let hung_up = Instant::now();
+    kill_process(Pid::from_child(&cli), Signal::HUP).unwrap();
+    // Well under the 10 s help timeout, which would otherwise be what ends it.
+    let bound = Duration::from_secs(5);
+    while cli.try_wait().unwrap().is_none() {
+        assert!(
+            hung_up.elapsed() < bound,
+            "the CLI kept running after SIGHUP"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    while test_kill_process(program).is_ok() {
+        assert!(
+            hung_up.elapsed() < bound,
+            "the launched program outlived the hang-up"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 #[tokio::test]
 async fn help_tree_fixture_cleans_up_when_its_caller_unwinds() {
     let root = os::tempdir();

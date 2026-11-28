@@ -44,9 +44,30 @@ pub struct Probe {
 /// Open a Claude Code session and read its `initialize` answer; no tokens are used.
 pub async fn probe(cancellation: &CancellationToken) -> Result<Probe, Failure> {
     let deadline = Instant::now() + PROBE_TIMEOUT;
-    let cwd = crate::platform::temporary_directory();
-    let (mut channel, running) =
-        channel::start(&command::Launch::default(), &cwd, deadline, cancellation).await?;
+    let cwd_dir = crate::platform::private_tempdir_in(
+        "artifactize-claude-probe-",
+        &crate::platform::temporary_directory(),
+    )
+    .map_err(|error| {
+        Failure::new(
+            crate::agent::error::Code::AgentError,
+            format!("Cannot create isolated directory for Claude Code probe: {error}."),
+        )
+    })?;
+    crate::acp::catalog::check_probe_dir_isolated(cwd_dir.path(), None).map_err(|error| {
+        Failure::new(
+            crate::agent::error::Code::AgentError,
+            format!("Refusing to probe Claude Code inside a workspace: {error}"),
+        )
+    })?;
+    let (mut channel, running) = channel::start(
+        &command::Launch::default(),
+        cwd_dir.path(),
+        deadline,
+        cancellation,
+    )
+    .await?;
+    let running = running.with_tempdir(cwd_dir);
     let initialized = tokio::select! {
         biased;
         _ = cancellation.cancelled() => Err(Failure::cancelled()),

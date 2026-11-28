@@ -149,14 +149,14 @@ fn reviewer(request: &Request) -> Reply {
     match request.path.as_str() {
         "/backend-api/codex/responses" if replayed(request) => codex::completed(
             request,
-            vec![openai::message(r#"{"findings":[]}"#)],
+            vec![openai::message(r#"{"issues":[]}"#)],
             openai::usage(40, 8),
         ),
         "/backend-api/codex/responses" => codex::completed(
             request,
             vec![openai::function_call(
                 "call_1",
-                "read_spec",
+                "spec-tools_read_spec",
                 &json!({"path":"spec.md"}),
             )],
             openai::usage(30, 5),
@@ -224,14 +224,14 @@ fn a_review_calls_tools_with_codex_headers_and_exact_max_reasoning() {
         assert_eq!(body["stream"], true);
         assert_eq!(body["include"], json!(["reasoning.encrypted_content"]));
         assert_eq!(body["tools"][0]["type"], "function");
-        assert_eq!(body["tools"][0]["name"], "read_spec");
+        assert_eq!(body["tools"][0]["name"], "spec-tools_read_spec");
         let instructions = body["instructions"].as_str().unwrap();
         assert!(instructions.starts_with("You are an artifactize evaluator."));
         assert_eq!(body["text"]["format"]["type"], "json_schema");
         assert_eq!(body["text"]["format"]["strict"], true);
         let schema = &body["text"]["format"]["schema"];
         assert_eq!(schema["type"], "object");
-        assert_eq!(schema["required"], json!(["findings"]));
+        assert_eq!(schema["required"], json!(["issues"]));
         assert!(schema.get("anyOf").is_none());
         assert!(instructions.contains(
             "If a person later asks a follow-up question about this review, answer that question in plain text instead"
@@ -738,11 +738,12 @@ fn sign_in_endpoints_are_loopback_only_and_guard_the_review_store() {
 #[test]
 fn removed_backend_messages_name_codex_without_a_version() {
     let project = Project::new();
-    let path = project.repo.join("spec/index.artf");
-    let declaration = support::declaration::read_text(&path)
+    // Profiles are declared once for the project.
+    let path = project.repo.join(".artifactize/profiles.artfprofiles");
+    let profiles = std::fs::read_to_string(&path)
         .unwrap()
-        .replace("\"codex\"", "\"chatgpt\"");
-    support::declaration::write(&(project.repo), &path, declaration).unwrap();
+        .replace("backend = \"codex\"", "backend = \"chatgpt\"");
+    std::fs::write(&path, profiles).unwrap();
     let failure = parsed(
         project
             .command(&["config", "check"])
@@ -768,7 +769,7 @@ fn codex_and_openai_results_for_the_same_key_reuse_each_other() {
         codex::VALID_EXPIRY,
     );
     let provider = FakeProvider::start(|request| {
-        let pass = vec![openai::message(r#"{"findings":[]}"#)];
+        let pass = vec![openai::message(r#"{"issues":[]}"#)];
         match request.path.as_str() {
             "/backend-api/codex/responses" => codex::completed(request, pass, openai::usage(30, 5)),
             "/v1/responses" => openai::completed(request, pass, openai::usage(20, 4)),

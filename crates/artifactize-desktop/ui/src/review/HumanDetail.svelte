@@ -1,10 +1,9 @@
 <script lang="ts">
   // A Human review as a conversation (D-REV-1, J-HUMAN-LAYOUT), the same in Review's main area
   // and on a Human eval's tab in the Detail: the head line; the request, unboxed as Chat's agent
-  // text is (its instruction, its tools, the chosen verdict's own fields when the eval asks more,
-  // and Debug folded); each tool's run and each point, newest last; the reviewer's reasons as
+  // text is (its instruction, its tools and Debug folded); each tool's run and each point, newest last; the reviewer's issues as
   // bubbles at the bottom, or the submitted result as the last bubble; then, where Chat's composer
-  // stands, the reasons box and under it the decision bar.
+  // stands, the issues box and under it the decision bar.
   import { HumanDetailState, setHumanDetailState } from "./human-detail-state.svelte";
   import { onMount, tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
@@ -14,11 +13,10 @@
   import Tools from "./Tools.svelte";
   import ToolRuns from "./ToolRuns.svelte";
   import ReviewPoints from "./ReviewPoints.svelte";
-  import Reasons from "./Reasons.svelte";
-  import ReasonsBox from "./ReasonsBox.svelte";
+  import Issues from "./Issues.svelte";
+  import IssuesBox from "./IssuesBox.svelte";
   import DecisionBar from "./DecisionBar.svelte";
-  import VerdictForm from "./VerdictForm.svelte";
-  import { ReasonsCaret } from "./reasons-caret.svelte";
+  import { IssuesCaret } from "./issues-caret.svelte";
   import ResultEntries from "../monitor/ResultEntries.svelte";
   import { getAppState } from "../shell/app.svelte";
   import Reference from "../shell/Reference.svelte";
@@ -52,7 +50,7 @@
   const { sections } = app;
   const h = new HumanDetailState();
   setHumanDetailState(h);
-  const caret = new ReasonsCaret();
+  const caret = new IssuesCaret();
 
   const view = $derived(review.view);
   const debugOpen = $derived(sections.open("Debug"));
@@ -97,7 +95,7 @@
     if (!settled) return;
     onsubmitted?.(settled);
     await tick();
-    // Submission removes the reasons box and the bar. Keep Esc reachable, without taking focus
+    // Submission removes the issues box and the bar. Keep Esc reachable, without taking focus
     // back if the person moved to another control or screen while it ran.
     if (active && h.root?.isConnected && document.activeElement === document.body) h.root.focus();
   }
@@ -175,14 +173,11 @@
             {#if onopenreview}<Reference onclick={onopenreview}>Open in Review</Reference>{/if}
           </div>
         {/if}
-        <!-- The request asks, unboxed: the instruction, the tools, the verdict's own fields, Debug. -->
+        <!-- The request asks, unboxed: the instruction, the tools, Debug. -->
         <div class="request" role="region" aria-label="Instruction" onfocusin={() => (review.area = "tools")}>
           <p class="text">{view.instruction}</p>
           {#if view.shared}<p class="shared">{view.shared}</p>{/if}
           {#if view.tools.length > 0}<Tools {review} />{/if}
-          {#if review.form}
-            {#key review.form}<VerdictForm form={review.form} />{/key}
-          {/if}
           <div class="debug">
             <button class="fold" aria-expanded={debugOpen} aria-label="Debug (t)" aria-keyshortcuts="t" onclick={() => sections.toggle("Debug")}>
               <span class="icon"><Icon name={debugOpen ? "unfold" : "fold"} /></span>Debug
@@ -200,11 +195,11 @@
           </div>
         </div>
         <!-- Newest last as they happen: each tool's run, then each point. -->
-        <ToolRuns {review} />
+        <ToolRuns log={review.log} tools={review.view?.tools ?? []} cancel={review.busy?.tool ? () => review.cancel() : null} />
         {#if pointed}
           <ReviewPoints {review} ready={caret.ready} insert={(text) => caret.insert(text)} />
         {/if}
-        <!-- The reasons, pushed to the conversation's bottom; once submitted, the result as the
+        <!-- The issues, pushed to the conversation's bottom; once submitted, the result as the
              reviewer's last bubble. -->
         <div class="answers">
           {#if review.settled}
@@ -214,7 +209,7 @@
             <!-- Settled here but not published: what failed, so it is pushed again, not resubmitted. -->
             {#if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
           {:else}
-            <Reasons {review} onleave={refocus} />
+            <Issues {review} onleave={refocus} />
           {/if}
         </div>
       </div>
@@ -222,9 +217,9 @@
     {#if !review.settled}
       <div class="bottom">
         {#if review.owned}
-          <ReasonsBox {review} {caret} bind:typed={h.typed} onleave={refocus} />
+          <IssuesBox {review} {caret} bind:typed={h.typed} onleave={refocus} />
         {:else if review.claimable}
-          <p class="quiet">Claim it to write reasons and a verdict</p>
+          <p class="quiet">Claim it to write issues and a verdict</p>
         {/if}
         <DecisionBar {review} typed={h.typed} onsubmit={() => void submit()} />
       </div>
@@ -233,7 +228,7 @@
 </section>
 
 <style>
-  /* The conversation scrolls on its own; the reasons box and the bar stand under it. */
+  /* The conversation scrolls on its own; the issues box and the bar stand under it. */
   .human {
     display: flex;
     flex-direction: column;

@@ -1,0 +1,8 @@
+// How the Agent evals run. REVIEW_TIER chooses: unset, the everyday reviewer; `cheap`, the
+// same at the least cost; `heavy`, the strongest reviewer for a review of a whole Run. A
+// profile is how an eval runs, not what it asks, so no choice changes a reuse key.
+profile reviewer : agent = match REVIEW_TIER {
+  default => { backend = "codex", model = "gpt-6-luna", reasoning = "max" },
+  cheap => { backend = "codex", model = "gpt-6-luna", reasoning = "max" },
+  heavy => { backend = "codex", model = "gpt-6.2-sol", reasoning = "high" },
+}

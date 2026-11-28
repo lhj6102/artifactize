@@ -1,5 +1,5 @@
 //! The review conversation against a scripted Claude Code on the other end of the channel:
-//! what artifactize writes to Claude Code, and the findings, verdict, failures, attempts and saved
+//! what artifactize writes to Claude Code, and the issues, verdict, failures, attempts and saved
 //! conversation it makes of what Claude Code writes back.
 
 use std::{path::PathBuf, time::Duration};
@@ -255,7 +255,7 @@ where
     let fixture = Fixture::new();
     let eval = &fixture.config.evals[0];
     let registry = Registry::new(&fixture.config, &eval.id).unwrap();
-    let findings = Findings::new(eval.declaration.red_at());
+    let findings = Issues::new(eval.declaration.red_at());
     let server = Server::new(registry.list());
     let mut recorder = Recorder::test(&fixture.state, SESSION);
     recorder.start(session::Header::default());
@@ -299,13 +299,12 @@ where
 }
 
 #[tokio::test]
-async fn a_review_runs_its_tools_in_artifactize_and_returns_the_findings_with_the_derived_verdict()
-{
+async fn a_review_runs_its_tools_in_artifactize_and_returns_the_issues_with_the_derived_verdict() {
     let outcome = review(limits(None), |mut claude| async move {
-        assert_eq!(claude.start(VERSION).await, ["read_a"]);
+        assert_eq!(claude.start(VERSION).await, ["a-tools_read_a"]);
         assert!(claude.prompt().await.starts_with("Review a."));
         let result = claude
-            .call("toolu_1", "read_a", json!({"path": "notes.txt"}))
+            .call("toolu_1", "a-tools_read_a", json!({"path": "notes.txt"}))
             .await;
         assert_eq!(result["isError"], false);
         assert!(
@@ -325,7 +324,7 @@ async fn a_review_runs_its_tools_in_artifactize_and_returns_the_findings_with_th
         claude
             .verdict(
                 "msg-verdict",
-                json!({"findings": [{"priority": "P2", "reason": "Read it."}]}),
+                json!({"issues": [{"priority": "P2", "reason": "Read it."}]}),
             )
             .await;
     })
@@ -333,7 +332,7 @@ async fn a_review_runs_its_tools_in_artifactize_and_returns_the_findings_with_th
     let result = outcome.result.as_ref().unwrap();
     assert_eq!(
         serde_json::to_value(result).unwrap(),
-        json!({"verdict": "GREEN", "findings": [{"priority": "P2", "reason": "Read it."}]})
+        json!({"verdict": "GREEN", "issues": [{"priority": "P2", "reason": "Read it."}]})
     );
     // One attempt per response, with the highest usage Claude Code reported for it.
     let turns: Vec<_> = outcome
@@ -352,7 +351,7 @@ async fn a_review_runs_its_tools_in_artifactize_and_returns_the_findings_with_th
         }),
         _ => None,
     });
-    assert_eq!(call.as_deref(), Some("read_a"));
+    assert_eq!(call.as_deref(), Some("a-tools_read_a"));
     let delivered = saved
         .wire_events()
         .iter()
@@ -366,7 +365,7 @@ async fn a_tool_call_past_the_budget_is_refused_and_ends_the_review() {
         claude.start(VERSION).await;
         claude.prompt().await;
         let result = claude
-            .call("toolu_1", "read_a", json!({"path": "notes.txt"}))
+            .call("toolu_1", "a-tools_read_a", json!({"path": "notes.txt"}))
             .await;
         assert_eq!(result["isError"], true);
     })
@@ -433,7 +432,7 @@ async fn an_invalid_answer_gets_one_repair_without_tools() {
         claude.start(VERSION).await;
         claude.prompt().await;
         claude
-            .verdict("msg-1", json!({"verdict": "GREEN", "findings": []}))
+            .verdict("msg-1", json!({"verdict": "GREEN", "issues": []}))
             .await;
         let repair = claude.prompt().await;
         assert!(
@@ -441,7 +440,7 @@ async fn an_invalid_answer_gets_one_repair_without_tools() {
             "{repair}"
         );
         let result = claude
-            .call("toolu_2", "read_a", json!({"path": "notes.txt"}))
+            .call("toolu_2", "a-tools_read_a", json!({"path": "notes.txt"}))
             .await;
         assert_eq!(result["isError"], true);
     })
@@ -457,20 +456,20 @@ async fn a_repaired_answer_completes_the_review() {
         claude.start(VERSION).await;
         claude.prompt().await;
         claude
-            .verdict("msg-1", json!({"verdict": "GREEN", "findings": []}))
+            .verdict("msg-1", json!({"verdict": "GREEN", "issues": []}))
             .await;
         claude.prompt().await;
         claude
             .verdict(
                 "msg-2",
-                json!({"findings": [{"priority": "P1", "reason": "Fixed."}]}),
+                json!({"issues": [{"priority": "P1", "reason": "Fixed."}]}),
             )
             .await;
     })
     .await;
     assert_eq!(
         serde_json::to_value(outcome.result.unwrap()).unwrap(),
-        json!({"verdict": "RED", "findings": [{"priority": "P1", "reason": "Fixed."}]})
+        json!({"verdict": "RED", "issues": [{"priority": "P1", "reason": "Fixed."}]})
     );
 }
 

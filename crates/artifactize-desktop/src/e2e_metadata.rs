@@ -165,8 +165,17 @@ pub fn init<R: tauri::Runtime>()
         serde_json::to_writer(file, &identity)
             .map_err(|error| format!("cannot record native app ownership: {error}"))?;
     }
+    // Beside the owner file; or, for the journey runner, which starts an app again with the
+    // same variables, in its folder under this app's own identity.
+    let file = owner
+        .map(|path| path.with_extension("exit.json"))
+        .or_else(|| {
+            artifactize_core::platform::environment::var("ARTIFACTIZE_E2E_EXIT_DIR").map(|folder| {
+                std::path::PathBuf::from(folder).join(format!("{pid}-{start_time}.exit.json"))
+            })
+        });
     let exit = ExitReceipt {
-        file: owner.map(|path| path.with_extension("exit.json")),
+        file,
         identity: identity.clone(),
     };
     let receipt = serde_json::json!(

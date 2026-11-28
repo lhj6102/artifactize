@@ -18,7 +18,6 @@
   import { relight } from "./graph";
   import { keyOf } from "./monitor-state.svelte";
   import type { GraphWorkspace } from "./graph-workspace.svelte";
-  import { NO_ANNOTATIONS } from "./annotations";
 
   let {
     source,
@@ -50,9 +49,6 @@
   const commands = useIpc();
   const app = getAppState();
   const m = $derived(workspace ?? app.monitor);
-  const definitions = $derived(branch ? app.definitionsFor(branch) : app.definitions);
-  /** The places and comments of the branch's definitions as they are now; none until read. */
-  const annotations = $derived(definitions.of(branch) ? definitions.annotations : NO_ANNOTATIONS);
   const g = untrack(() => m.graph);
   setSourceGraphState(g);
   const current = $derived(source.kind === "current");
@@ -75,12 +71,7 @@
           return;
         }
         const graph = { nodes: next.update.nodes, edges: next.update.edges };
-        // The first layout waits for the branch's places, so that it shows where they are.
-        // Places that cannot be read leave the graph laid out automatically.
-        Promise.resolve()
-          .then(() => app.prepareDefinitions(branch).ready(branch))
-          .catch(() => {})
-          .then(() => lay(next.source, next.shape, graph, () => read === g.reads, () => graph))
+        lay(next.source, next.shape, graph, () => read === g.reads, () => graph)
           .then(() => {
             if (read === g.reads) g.drawn = atRevision;
           })
@@ -94,29 +85,16 @@
     );
   };
 
-  /** Lay `graph` out with the wholes minimized on the branch now and the branch's places and
-   * comments, and show it lit as `lit` says once laid out, while `still` holds; again if they
-   * changed meanwhile. */
+  /** Lay `graph` out with the wholes minimized on the branch now, and show it lit as `lit`
+   * says once laid out, while `still` holds; again if they changed meanwhile. */
   function lay(at: Source, shape: ShapeKey, graph: Shape, still: () => boolean, lit: () => Shape): Promise<void> {
-    const [minimized, placed] = untrack(() => [app.monitor.minimizedOn(branch), annotations] as const);
-    return g.positions(at, shape, graph, minimized, placed).then((positions) => {
+    const minimized = untrack(() => app.monitor.minimizedOn(branch));
+    return g.positions(at, shape, graph, minimized).then((positions) => {
       if (!still()) return;
-      if (untrack(() => app.monitor.minimizedOn(branch) !== minimized || annotations !== placed)) return lay(at, shape, graph, still, lit);
-      g.shown = { source: at, shape, graph: lit(), minimized, positions, annotations: placed };
+      if (untrack(() => app.monitor.minimizedOn(branch) !== minimized)) return lay(at, shape, graph, still, lit);
+      g.shown = { source: at, shape, graph: lit(), minimized, positions };
     });
   }
-
-  /** The graph shown is laid out again whenever the branch's places or comments change: an edit
-   * wrote them, or they were read again. */
-  const replace: Attachment<HTMLElement> = () => {
-    const placed = annotations;
-    const held = untrack(() => g.shown);
-    if (!held || held.annotations === placed) return;
-    const still = () => g.shown !== null && keyOf(g.shown.source) === keyOf(held.source) && g.shown.shape === held.shape;
-    lay(held.source, held.shape, held.graph, still, () => g.shown!.graph).catch((failure) => {
-      if (still()) g.error = message(failure);
-    });
-  };
 
   /** Minimize the whole `id` on the branch's graphs, or expand it; done once the graph shown is
    * laid out again for it. */
@@ -134,7 +112,7 @@
 </script>
 
 <!-- The revision the graph was read at, and the one drawn: equal once the newest read shows. -->
-<div class="host" data-read={revision} data-drawn={g.drawn} {@attach reread} {@attach replace}>
+<div class="host" data-read={revision} data-drawn={g.drawn} {@attach reread}>
 {#if g.error}
   <!-- Why stands in the header's notice; the graph's place says only that it is not drawn. -->
   <div class="pending"><GraphTools /><p class="note">The graph could not be read.</p></div>
@@ -148,7 +126,6 @@
         graph={g.shown.graph}
         minimized={g.shown.minimized}
         positions={g.shown.positions}
-        annotations={g.shown.annotations}
         {branch}
         {current}
         {workspace}

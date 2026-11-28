@@ -117,6 +117,10 @@ pub struct Registry<'a> {
 }
 
 impl<'a> Registry<'a> {
+    pub(crate) fn root(&self) -> &Path {
+        &self.config.root
+    }
+
     pub fn new(config: &'a RepoConfig, eval_id: &crate::types::EvalId) -> Result<Self, String> {
         let eval = config
             .evals
@@ -159,9 +163,7 @@ impl<'a> Registry<'a> {
                         return Err(format!("Artifact tool session names collide: {key}"));
                     }
                 }
-                let name: crate::config::ToolName = format!("{operation}_{}", id)
-                    .parse()
-                    .expect("validated tool and Artifact names");
+                let name = operation.published(id.as_str());
                 let description = match declaration {
                     AgentTool::Command(tool) => tool.description.clone(),
                     AgentTool::Builtin(tool) => {

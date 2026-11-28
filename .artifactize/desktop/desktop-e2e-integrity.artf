@@ -1,11 +1,15 @@
-path = "crates/artifactize-desktop/ui/lint/"
-type = "files"
-select = ["e2e-integrity.ts", "e2e-integrity.test.js"]
-# The source-integrity checker of the end-to-end suite and its tests: the suite's lint runs
-# it over the suite and the provider, desktop-e2e-input/no-injection over the device; a part
-# of desktop-e2e.
+// The source-integrity checker of the end-to-end suite and its tests: the suite's lint runs
+// it over the suite and the provider, desktop-e2e-input/no-injection over the device; a part
+// of desktop-e2e.
+artf desktop-e2e-integrity : files = {
+  path = "crates/artifactize-desktop/ui/lint/"
+  select = ["e2e-integrity.ts", "e2e-integrity.test.js"]
 
-[evals.tests]
-title = "The integrity checker's tests pass"
-profile = { kind = "runtime", command = "node", args = ["--test", "e2e-integrity.test.js"], timeout_ms = 60000 }
-payload.instruction = "Run the tests of the integrity checker {desktop-e2e-integrity}, which pin each mechanical part of E2E-INPUT of {desktop-e2e-rules} that it checks: no injection API and an unmodified provider. The checker uses filesystem helpers from {desktop-e2e-infra}."
+  // Run the tests of the integrity checker desktop-e2e-integrity, which pin each mechanical
+  // part of E2E-INPUT of desktop-e2e-rules that it checks: no injection API and an unmodified
+  // provider. The checker uses filesystem helpers from desktop-e2e-infra.
+  eval tests : runtime(command = "node", args = ["--test", "e2e-integrity.test.js"], timeout_ms = 60000) = {
+    title = "The integrity checker's tests pass"
+    deps = [desktop-e2e-infra, desktop-e2e-rules]
+  }
+}

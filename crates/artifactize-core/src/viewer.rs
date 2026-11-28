@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use crate::{
     config::{
-        self, Artifact, ArtifactKind, ArtifactType, RepoConfig,
+        self, Artifact, ArtifactKind, PluginName, RepoConfig,
         plugins::{BuiltinViewer, ViewerEntry},
     },
     graph_structure, platform, repository,
@@ -24,6 +24,10 @@ pub struct Session {
     root: PathBuf,
     checkout: repository::Identity,
     artifact: Artifact,
+    /// The viewer tool that opened it, and the plugin whose page it shows.
+    tool: config::ToolFqn,
+    plugin: PluginName,
+    title: String,
     entry: ViewerEntry,
 }
 
@@ -45,7 +49,7 @@ pub struct Review {
 pub struct Context<'a> {
     pub artifact: &'a ArtifactName,
     #[serde(rename = "type")]
-    pub type_name: &'a ArtifactType,
+    pub type_name: &'a PluginName,
     pub title: &'a str,
     pub target: &'a config::Target,
     pub target_kind: ArtifactKind,
@@ -67,43 +71,54 @@ pub struct FileEntry {
 }
 
 impl Session {
-    pub fn open(repo: &Path, artifact: &ArtifactName) -> Result<Self, String> {
+    pub fn open(
+        repo: &Path,
+        artifact: &ArtifactName,
+        tool: &config::ToolFqn,
+    ) -> Result<Self, String> {
         let config = config::read_workspace_config(repo).map_err(|error| error.to_string())?;
-        Self::from_config(&config, artifact)
+        Self::from_config(&config, artifact, tool)
     }
 
     pub(crate) fn from_config(
         config: &RepoConfig,
         artifact: &ArtifactName,
+        tool: &config::ToolFqn,
     ) -> Result<Self, String> {
         let artifact = config
             .artifacts
             .get(artifact)
             .ok_or_else(|| format!("Unknown Artifact {artifact}."))?;
-        let entry = artifact
-            .plugin
-            .as_ref()
-            .and_then(|plugin| plugin.viewer.clone())
-            .ok_or_else(|| format!("Artifact {} does not declare a viewer.", artifact.name))?;
-        if !artifact
-            .views
-            .human_tools
-            .values()
-            .any(|tool| tool.kind() == config::HumanToolKind::Viewer)
-        {
+        let Some(config::HumanTool::Viewer(viewer)) = artifact.views.human_tools.get(tool) else {
             return Err(format!(
-                "Artifact {} has no viewer Human tool.",
+                "Artifact {} has no viewer tool {tool}.",
                 artifact.name
             ));
-        }
+        };
+        let plugin = config
+            .plugins
+            .get(&viewer.plugin)
+            .ok_or_else(|| format!("Plugin {} is not installed.", viewer.plugin))?;
+        let entry = plugin
+            .viewer
+            .clone()
+            .ok_or_else(|| format!("Plugin {} has no viewer.", viewer.plugin))?;
         crate::scope::validate_file_target(&config.root, artifact)
             .map_err(|error| error.to_string())?;
         Ok(Self {
             root: config.root.clone(),
             checkout: repository::identify(&config.root),
             artifact: artifact.clone(),
+            tool: tool.clone(),
+            plugin: plugin.info.name.clone(),
+            title: plugin.info.title.clone(),
             entry,
         })
+    }
+
+    /// The viewer tool that opened it.
+    pub fn tool(&self) -> &config::ToolFqn {
+        &self.tool
     }
 
     pub fn scope(&self) -> Scope {
@@ -136,7 +151,10 @@ impl Session {
             .get(&self.artifact.name)
             .is_some_and(|current| {
                 current.path == self.artifact.path
-                    && current.type_name == self.artifact.type_name
+                    && matches!(
+                        current.views.human_tools.get(&self.tool),
+                        Some(config::HumanTool::Viewer(viewer)) if viewer.plugin == self.plugin
+                    )
                     && current.nested == self.artifact.nested
                     && current.covering_part == self.artifact.covering_part
             })
@@ -152,11 +170,10 @@ impl Session {
     }
 
     pub fn context<'a>(&'a self, review: Option<&'a Review>) -> Context<'a> {
-        let plugin = self.artifact.plugin.as_ref().expect("viewer has a plugin");
         Context {
             artifact: &self.artifact.name,
-            type_name: &plugin.info.name,
-            title: &plugin.info.title,
+            type_name: &self.plugin,
+            title: &self.title,
             target: &self.artifact.path,
             target_kind: self.artifact.kind(),
             review: review.map(|review| &review.id),

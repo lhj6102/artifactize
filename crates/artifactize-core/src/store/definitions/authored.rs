@@ -17,21 +17,13 @@ impl From<&config::EvalDeclaration> for Declaration {
             id: Field::Value(source.id.clone()),
             title: Field::Value(source.title.clone()),
             profile: Field::Value(source.profile().into()),
-            profile_variants: if source.profile_variants().is_empty() {
-                Field::Missing
-            } else {
-                Field::Value(
-                    source
-                        .profile_variants()
-                        .iter()
-                        .map(|(name, profile)| (name.clone(), profile.into()))
-                        .collect(),
-                )
-            },
+            profile_name: optional(source.profile_name().map(str::to_owned)),
+            profile_variants: Field::Missing,
             payload: Field::Value(source.payload().into()),
+            inputs: nonempty(source.inputs()),
             red_at: optional(source.red_at()),
-            pass_schema: source.pass_schema().cloned().into(),
-            fail_schema: source.fail_schema().cloned().into(),
+            pass_schema: Field::Missing,
+            fail_schema: Field::Missing,
             extra: Map::new(),
         }
     }
@@ -129,7 +121,11 @@ impl From<&config::AgentTool> for AgentTool {
 impl From<&config::HumanTool> for HumanTool {
     fn from(source: &config::HumanTool) -> Self {
         match source {
-            config::HumanTool::Viewer(tool) => Self::Viewer(tool.clone()),
+            config::HumanTool::Viewer(tool) => Self::Viewer(super::HumanViewerTool {
+                kind: tool.kind,
+                description: tool.description.clone(),
+                plugin: Some(tool.plugin.clone()),
+            }),
             config::HumanTool::Builtin(tool) => Self::Builtin(HumanBuiltinTool {
                 builtin: tool.builtin,
                 description: tool.description.clone(),

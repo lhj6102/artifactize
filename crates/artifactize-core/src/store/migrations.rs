@@ -96,6 +96,11 @@ pub(super) fn apply(transaction: &Transaction<'_>) -> Result<(), Error> {
                 transaction.execute_batch(CHAT_PERMISSIONS)?;
                 version += 1;
             }
+            12 => {
+                // Results are saved as `{ verdict, kind, issues }` from now on; earlier rows keep
+                // their untagged form, which readers decode for history only.
+                version += 1;
+            }
             version => return Err(Error::Invalid(super::schema_error(version))),
         }
         transaction.pragma_update(None, "user_version", version)?;

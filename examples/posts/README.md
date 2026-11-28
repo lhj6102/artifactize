@@ -1,16 +1,15 @@
 # Posts as file Artifacts
 
-Three blog posts share one style checker. Each post has a named definition in
-`.artifactize/`, a file target, an eval and a reusable result. No Artifact needs
-to target the example root.
+Three blog posts share one style checker. One macro makes each post an Artifact
+with a file target, an eval and a reusable result. No Artifact needs to target the
+example root.
 
 ```text
 posts/
 ├── .artifactize/
 │   ├── house-style.artf    basis: path = "house-style/"
-│   ├── welcome.artf        file: path = "welcome.md", 120-word limit
-│   ├── release-notes.artf  file: path = "release-notes.md", 120-word limit
-│   └── tip.artf            file: path = "tip.md", 40-word limit
+│   └── posts.artf          the post! macro; welcome and release-notes (120 words)
+│                           and tip (40 words), each made by it
 ├── house-style/
 │   ├── check.py
 │   └── banned.txt
@@ -21,42 +20,57 @@ posts/
 
 What it demonstrates:
 
-- **One file, one declaration.** `.artifactize/tip.artf` declares `path = "tip.md"`.
-  Its filename supplies the name, and `[evals.style]` becomes `tip/style`. The other posts
-  have separate declarations; their word limits and titles are ordinary TOML,
-  not template parameters. Projects that want templates generate `.artf` files
-  themselves and commit them.
+- **One macro, three posts.** `posts.artf` declares `artf! post(file, words = "120")`
+  once, and `artf tip = post!(file = "tip.md", words = "40")` binds `tip`, whose
+  `style` eval is `tip/style`. The other posts call the macro with its defaults.
+  `artifactize config expand tip` prints the declaration the call makes, every
+  parameter filled in. A macro takes only what changes what is checked, here the file
+  and its word limit; the title is written out once in the macro.
 - **Default artifactsum.** Each declaration omits `fingerprint`, so a post hashes
   only its own file. A change to `tip.md` reviews only `tip/style`; sibling posts,
-  the README and `.artf` declarations are not part of that file's artifactsum.
-  Changing an eval's instruction or runtime argv still changes its definition
-  hash. `fingerprint = false` would disable reuse.
-- **A shared basis.** Every post's eval names the `house-style` basis Artifact as
-  `{house-style}`, because it uses the checker and banned words. That reference
-  makes `house-style` its dependency. The basis has no evals and uses default folder
+  the README and the definitions are not part of that file's artifactsum.
+  Changing a runtime eval's argv still changes its definition hash; its `//`
+  comment does not. `fingerprint = false` would disable reuse.
+- **A shared basis.** Every post's eval names the `house-style` basis Artifact in its
+  arguments, `@{path house-style/check.py}` and `@{path house-style/banned.txt}`,
+  because it runs the checker with the banned words. That makes `house-style` its
+  dependency. The basis has no evals and uses default folder
   artifactsum. Each post's reuse key therefore covers both its file and the checker
   and banned words, including each covered Artifact's kind (`file` or `folder`), never
   its physical path. Changing `house-style/check.py` or `house-style/banned.txt`
   reviews all three posts.
-- **File references and cwd.** Runtime argv resolves `{tip}` to the absolute
-  file path and `{house-style}/check.py` to the shared checker. File references never
-  take a `/path` suffix. The process runs in `examples/posts`, the file's
+- **File references and cwd.** Runtime argv resolves `@{path self}` to the absolute
+  path of the post's file and `@{path house-style/check.py}` to the shared checker. A
+  File Artifact's slot never takes a `/path` suffix. The process runs in `examples/posts`, the file's
   containing folder, with the author's environment. The checker reads its
   arguments without writing into the workspace.
-- **Tags.** `type:post` and `length:brief` appear in status and graph output.
+- **Tags.** `type:post` appears in status and graph output.
   They do not change fingerprints, relations or reuse keys.
 
-For example, `.artifactize/tip.artf` contains:
+`.artifactize/posts.artf` holds the macro and the three posts:
 
-```toml
-# .artifactize/tip.artf
-path = "tip.md"
-tags = ["type:post", "length:brief"]
+```rust
+// .artifactize/posts.artf
+// A post: one Markdown file that starts with a title, stays within `words` words and avoids
+// every word the house style bans, as house-style/check.py checks.
+artf! post(file, words = "120") = {
+  path = "@{param file}"
+  tags = ["type:post"]
 
-[evals.style]
-title = "The brief post fits in 40 words and follows the house style"
-profile = { kind = "runtime", command = "python3", args = ["{house-style}/check.py", "{tip}", "{house-style}/banned.txt", "40"], timeout_ms = 10000 }
-payload.instruction = "Check that {tip} starts with a title, stays within 40 words, and avoids every word banned in {house-style}."
+  // Check that the post starts with a title, stays within its word limit, and avoids every
+  // word the house style bans.
+  eval style : runtime(
+    command = "python3",
+    args = ["@{path house-style/check.py}", "@{path self}", "@{path house-style/banned.txt}", "@{param words}"],
+    timeout_ms = 10000,
+  ) = {
+    title = "The post fits its word limit and follows the house style"
+  }
+}
+
+artf welcome = post!(file = "welcome.md")
+artf release-notes = post!(file = "release-notes.md")
+artf tip = post!(file = "tip.md", words = "40")
 ```
 
 ## Run it
@@ -70,6 +84,7 @@ export ARTIFACTIZE_STATE_HOME=$(mktemp -d)   # outside this checkout
 cd examples/posts
 artifactize config check   # four Artifacts, three evals; runs no owner code
 artifactize config graph   # each post is [file], referencing house-style
+artifactize config expand tip   # the declaration post! makes for tip
 artifactize status         # exit 1: all three evals would execute
 artifactize verify --all   # three GREEN results, exit 0
 artifactize verify --all   # nothing executes; all three results are reused
@@ -79,7 +94,7 @@ artifactize run show RUN_ID
 
 ## Select posts
 
-Select declared Artifact names, not filenames or a template name:
+Select declared Artifact names, not filenames or the macro's name:
 
 ```sh
 artifactize verify tip                            # just tip/style, reused

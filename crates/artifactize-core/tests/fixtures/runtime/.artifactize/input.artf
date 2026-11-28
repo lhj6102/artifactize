@@ -1,2 +1,4 @@
-basis = true
-path = "input/"
+artf input = {
+  basis = true
+  path = "input/"
+}

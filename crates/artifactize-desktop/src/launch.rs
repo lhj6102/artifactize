@@ -108,7 +108,7 @@ impl Launch {
 #[serde(rename_all = "camelCase")]
 pub struct LaunchView {
     pub mode: Mode,
-    pub state: String,
+    pub state: crate::browse::PathKey,
     pub reviewer: String,
     pub request: Option<crate::ids::RequestKey>,
     /// The recorded branch for a Graph launch on a checkout that no longer exists.
@@ -130,7 +130,7 @@ pub async fn launch(app: tauri::State<'_, App>) -> Result<LaunchView, Failure> {
     };
     Ok(LaunchView {
         mode: launch.mode,
-        state: artifactize_tools::files::path_text(&launch.state),
+        state: crate::browse::PathKey::new(&launch.state),
         reviewer: launch.reviewer.to_string(),
         request: launch.request.clone().map(Into::into),
         graph_branch,

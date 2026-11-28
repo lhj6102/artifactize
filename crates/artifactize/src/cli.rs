@@ -49,7 +49,6 @@ use clap::{Args, Parser, Subcommand};
 
 use artifactize_core::{
     config::ProfileKind,
-    project::selection::ProfileSelection,
     types::{RequestId, RunId},
 };
 
@@ -159,7 +158,7 @@ pub enum Command {
         #[command(subcommand)]
         command: chat_agent::ChatAgentCommand,
     },
-    /// Add, remove, or list Artifact type plugins for this project.
+    /// Add, remove, or list this project's plugins.
     Plugin {
         #[command(subcommand)]
         command: plugin::PluginCommand,
@@ -280,9 +279,6 @@ pub enum Command {
 
 #[derive(Debug, Args)]
 pub struct PolicyArgs {
-    /// Use a declared profile variant for every included Eval.
-    #[arg(long, value_name = "NAME")]
-    profile: Option<artifactize_core::config::ProfileVariantName>,
     /// Include all Evals in the required dependency scope, including cycle peers.
     #[arg(long)]
     recursive: bool,
@@ -297,7 +293,6 @@ pub struct PolicyArgs {
 impl PolicyArgs {
     fn options(self) -> artifactize_core::project::VerifyOptions {
         artifactize_core::project::VerifyOptions {
-            profile: self.profile.map(ProfileSelection::Named),
             recursive: self.recursive,
             force: self.force,
             fingerprint_jobs: self.fingerprint_jobs.map(|jobs| jobs.get() as usize),

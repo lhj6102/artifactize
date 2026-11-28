@@ -1,1037 +1,527 @@
-use serde_json::{Value, json};
+//! The `.artf` language at its seam: definition files in, the project or a located error out.
+
+use std::fs;
 
 use super::*;
 
-fn eval(profile: Value) -> Value {
-    json!({
-        "id": "check",
-        "title": "Check the artifact",
-        "profile": profile,
-        "payload": {
-            "instruction": "Inspect {input}.",
-            "ownerData": [true, "literal", {"value": 42}],
-        },
-    })
-}
+struct Project(tempfile::TempDir);
 
-fn parse(value: Value) -> Result<ArtifactDeclaration, String> {
-    parse_declaration(
-        &crate::test_declaration::to_toml(value)
-            .expect("Test builder must be TOML-compatible; use raw TOML for invalid syntax."),
-    )
-}
+impl Project {
+    fn new(files: &[(&str, &str)]) -> Self {
+        let directory = crate::test_os::tempdir();
+        for folder in ["crates/core", "crates/cli", "rules", "docs"] {
+            fs::create_dir_all(directory.path().join(folder)).unwrap();
+        }
+        fs::write(directory.path().join("README.md"), "# Readme\n").unwrap();
+        let project = Self(directory);
+        for (file, text) in files {
+            project.write(file, text);
+        }
+        project
+    }
 
-#[test]
-fn editor_path_operations_validate_the_target_at_the_wire_boundary() {
-    for kind in ["create", "setPath"] {
-        for target in [
-            "./",
-            "future/",
-            "future/file.txt",
-            "https://example.invalid/path/",
-        ] {
-            let wire = json!({"kind":kind,"name":"node","path":target});
-            let operation: edit::Operation = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(operation).unwrap(), wire);
-        }
-        for target in ["", "../outside", "folder//", "https://example.invalid/a b"] {
-            let wire = json!({"kind":kind,"name":"node","path":target});
-            assert!(
-                serde_json::from_value::<edit::Operation>(wire).is_err(),
-                "accepted {target:?}"
-            );
-        }
+    fn write(&self, file: &str, text: &str) {
+        let path = self.0.path().join(".artifactize").join(file);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    }
+
+    fn read(&self) -> RepoConfig {
+        read_workspace_config(self.0.path()).unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    fn error(&self) -> String {
+        read_workspace_config(self.0.path())
+            .unwrap_err()
+            .to_string()
     }
 }
 
+fn name(text: &str) -> ArtifactName {
+    text.parse().unwrap()
+}
+
+const PROFILES: &str = r#"profile reviewer : agent = { backend = "openai", model = "fixture" }
+"#;
+
+const SHARED: &str = r#"
+tool cargo = {
+  agent test = command(
+    protocol = "json",
+    command = "cargo",
+    args = ["test", "--manifest-path=@{path self/Cargo.toml}"],
+    description = "Test @{artf self}.",
+    input_schema = { type = "object" },
+  )
+}
+
+artf! crate(dir, extra_evals = {}) : files & cargo = {
+  path = "crates/@{param dir}/"
+  eval style : reviewer = {
+    title = "Follows the rules"
+    instruction = "Check @{artf self} against @{artf rules}."
+    red_at = "P1"
+  }
+  ...extra_evals
+}
+
+artf rules : files = { path = "rules/", basis = true }
+"#;
+
 #[test]
-fn editor_view_preserves_authored_path_as_well_as_resolved_target_kind() {
-    let root = crate::test_os::tempdir();
-    let directory = root.path().join(discovery::DEFINITION_DIR);
-    std::fs::create_dir(&directory).unwrap();
-    for (name, target, kind) in [
-        ("root", "./", ArtifactKind::Folder),
-        ("missing", "future/", ArtifactKind::Folder),
+fn macros_expand_with_defaults_spreads_and_a_late_bound_self() {
+    let project = Project::new(&[
+        ("profiles.artfprofiles", PROFILES),
+        ("shared.artf", SHARED),
         (
-            "observed",
-            "HtTpS://example.invalid/detail/",
-            ArtifactKind::Live,
+            "crates.artf",
+            r#"artf core = crate!(dir = "core")
+artf cli = crate!(
+  dir = "cli",
+  extra_evals = {
+    eval docs : human = { title = "Docs read well", instruction = "Read @{artf self}." }
+  },
+)
+"#,
         ),
-    ] {
-        std::fs::write(
-            directory.join(format!("{name}.artf")),
-            format!("path = '{target}'\nbasis = true\n"),
-        )
-        .unwrap();
-        let project = edit::read_project(root.path()).unwrap();
-        let node = &project.nodes[&name.parse::<ArtifactName>().unwrap()];
-        assert_eq!(node.target, target);
-        assert_eq!(node.kind, kind);
-        assert_eq!(node.target_missing, name == "missing");
-    }
-}
-
-#[test]
-fn editor_removing_the_last_part_preserves_unrelated_toml_comments() {
-    let root = crate::test_os::tempdir();
-    let directory = root.path().join(discovery::DEFINITION_DIR);
-    std::fs::create_dir(&directory).unwrap();
-    std::fs::write(directory.join("kit.artf"), "path = 'kit/'\nbasis = true\n").unwrap();
-    let file = directory.join("core.artf");
-    std::fs::write(
-        &file,
-        "# Core header\npath = 'core/'\n\n# Basis note\nbasis = true\n# reviewed\nparts = [\"kit\"]\n\n# End of file\n",
-    )
-    .unwrap();
-
-    let based_on = edit::read(root.path()).unwrap();
-    edit::apply(
-        root.path(),
-        &based_on,
-        edit::Operation::RemovePart {
-            whole: "core".parse().unwrap(),
-            part: "kit".parse().unwrap(),
-        },
-    )
-    .unwrap();
-
-    // `# reviewed` leads the `parts` key and goes with it when the last part is removed.
+    ]);
+    let config = project.read();
+    let core = &config.artifacts[&name("core")];
+    assert_eq!(core.path.local(), Some(std::path::Path::new("crates/core")));
+    assert_eq!(core.toolsets, ["files", "cargo"]);
+    let binding = core.binding.as_ref().unwrap();
     assert_eq!(
-        std::fs::read_to_string(file).unwrap(),
-        "# Core header\npath = 'core/'\n\n# Basis note\nbasis = true\n\n# End of file\n",
+        (binding.line, binding.macro_name.as_deref()),
+        (1, Some("crate!"))
+    );
+    let eval = |id: &str| {
+        config
+            .evals
+            .iter()
+            .find(|eval| eval.id.as_str() == id)
+            .unwrap()
+    };
+    assert_eq!(
+        eval("core/style").declaration.instruction(),
+        Some("Check core against rules.")
+    );
+    assert_eq!(
+        eval("cli/docs").declaration.instruction(),
+        Some("Read cli.")
+    );
+    // `self` in a shared toolset is the Artifact composing it.
+    let crate::config::AgentTool::Command(test) = &config.artifacts[&name("cli")].views.agent_tools
+        [&"cargo.test".parse::<ToolFqn>().unwrap()]
+    else {
+        panic!("a command tool");
+    };
+    assert_eq!(
+        test.args[1].to_string(),
+        "--manifest-path=@{path cli/Cargo.toml}"
+    );
+    assert_eq!(config.profiles.len(), 1);
+    assert!(
+        config
+            .evals
+            .iter()
+            .all(|eval| eval.id.as_str() != "core/docs")
     );
 }
 
 #[test]
-fn eval_mutex_declarations_are_typed_and_excluded_from_criteria() {
-    let declared = eval(json!({"kind":"agent","backend":"openai","model":"fixture"}));
-    let baseline = parse(json!({"name":"a","evals":[declared.clone()]})).unwrap();
-    for tags in [
-        json!([]),
-        json!(["use-computer"]),
-        json!(["use-computer:db:users", "use-computer:browser"]),
-    ] {
-        let mut changed = declared.clone();
-        changed["mutex"] = tags.clone();
-        let parsed = parse(json!({"name":"a","evals":[changed]})).unwrap();
-        assert_eq!(serde_json::to_value(&parsed.evals[0].mutex).unwrap(), tags);
-        assert_eq!(
-            crate::cache::eval_definition_hash(&parsed.evals[0]),
-            crate::cache::eval_definition_hash(&baseline.evals[0])
-        );
-    }
-    for tags in [
-        json!("use-computer"),
-        json!([7]),
-        json!(["other"]),
-        json!([""]),
-        json!(["use-computer:"]),
-        json!(["use-computer::db"]),
-        json!(["use-computer:db:"]),
-        json!(["use-computer:bad segment"]),
-        json!(["use-computer:db/users"]),
-        json!(["use-computer", "use-computer"]),
-        json!(vec!["use-computer:db"; 65]),
-    ] {
-        let mut changed = declared.clone();
-        changed["mutex"] = tags.clone();
-        assert!(
-            parse(json!({"name":"a","evals":[changed]})).is_err(),
-            "accepted {tags}"
-        );
-    }
-    let mut changed = eval(json!({"kind":"human"}));
-    changed["mutex"] = json!([]);
-    let error = parse(json!({"name":"a","evals":[changed]})).unwrap_err();
+fn errors_name_the_line_and_the_macro_call_that_made_it() {
+    let project = Project::new(&[
+        ("profiles.artfprofiles", PROFILES),
+        ("shared.artf", SHARED),
+        (
+            "crates.artf",
+            "artf core = crate!(dir = \"core\", extra_evals = { eval x : human = { title = \"X\" } })\n",
+        ),
+    ]);
+    let error = project.error();
+    assert!(error.contains("crates.artf"), "{error}");
+    assert!(error.contains("Eval `x` needs an `instruction`"), "{error}");
+    let project = Project::new(&[
+        ("profiles.artfprofiles", PROFILES),
+        ("shared.artf", SHARED),
+        (
+            "crates.artf",
+            "artf core = crate!(dir = \"core\", colour = \"red\")\n",
+        ),
+    ]);
+    let error = project.error();
     assert!(
-        error.contains("mutex is supported only on runtime and agent"),
+        error.contains("line 1") && error.contains("colour"),
+        "{error}"
+    );
+    assert!(
+        error.contains("note:") && error.contains("shared.artf"),
         "{error}"
     );
 }
 
 #[test]
-fn defaults_and_payload_are_preserved_without_interpolation() {
-    let empty = parse(json!({ "name": "input" })).unwrap();
-    assert!(empty.evals.is_empty());
-    assert!(empty.views.agent_tools.is_empty());
-    assert!(empty.views.human_tools.is_empty());
-    assert_eq!(empty.basis, None);
-
-    let original = eval(json!({ "kind": "human" }));
-    let declaration = parse(json!({"name": "review", "evals": [original.clone()]})).unwrap();
-    assert_eq!(
-        serde_json::to_value(declaration.evals[0].payload()).unwrap(),
-        original["payload"]
-    );
-}
-
-#[test]
-fn payload_instruction_is_required_string_while_owner_context_stays_dynamic() {
-    let declared = eval(json!({"kind":"human"}));
-    for invalid in [json!(42), json!(true), json!([]), json!({})] {
-        let mut declaration = declared.clone();
-        declaration["payload"]["instruction"] = invalid;
-        assert!(parse(json!({"name":"a","evals":[declaration]})).is_err());
-    }
-    let mut missing = declared.clone();
-    missing["payload"]
-        .as_object_mut()
-        .unwrap()
-        .remove("instruction");
-    assert!(parse(json!({"name":"a","evals":[missing]})).is_err());
-    let parsed = parse(json!({"name":"a","evals":[declared.clone()]})).unwrap();
-    let payload = parsed.evals[0].payload().unwrap();
-    assert_eq!(payload.instruction, "Inspect {input}.");
-    assert_eq!(payload.extra["ownerData"], declared["payload"]["ownerData"]);
-    assert_eq!(serde_json::to_value(payload).unwrap(), declared["payload"]);
-}
-
-#[test]
-fn unknown_fields_are_not_ignored() {
+fn a_name_is_declared_once_across_kinds_and_artifacts_differ_ignoring_case() {
+    let project = Project::new(&[
+        ("a.artf", "artf app = { path = \"docs/\" }\n"),
+        ("b.artf", "artf App = { path = \"rules/\" }\n"),
+    ]);
     assert!(
-        parse(json!({"name": "a", "target": "b"}))
-            .unwrap_err()
-            .contains("unknown field")
+        project.error().contains("differ ignoring case"),
+        "{}",
+        project.error()
     );
-    let mut declared = eval(json!({"kind": "human"}));
-    declared["deps"] = json!([]);
+    let project = Project::new(&[
+        ("a.artf", "artf app = { path = \"docs/\" }\n"),
+        ("b.artf", "artf app = { path = \"rules/\" }\n"),
+    ]);
+    let error = project.error();
     assert!(
-        parse(json!({"name": "a", "evals": [declared]}))
-            .unwrap_err()
-            .contains("deps")
-    );
-    let invalid_human = eval(json!({"kind": "human", "timeout_ms": 100}));
-    assert!(parse(json!({"name": "a", "evals": [invalid_human]})).is_err());
-    assert!(
-        parse(json!({"name": "a", "fingerprint": {"kind": "always", "paths": ["input"]}})).is_err()
-    );
-}
-
-#[test]
-fn identifiers_and_eval_requirements_are_strict() {
-    assert!(parse(json!({"name": "_invalid"})).is_err());
-    assert!(parse(json!({"name": "a".repeat(65)})).is_err());
-    assert!(parse(json!({"name": "a".repeat(64)})).is_ok());
-    assert!(parse(json!({"name": "a/b"})).is_err());
-    let mut declared = eval(json!({"kind": "human"}));
-    declared["id"] = json!("owner/check");
-    assert!(parse(json!({"name": "a", "evals": [declared.clone()]})).is_err());
-    declared["id"] = json!("check");
-    declared["title"] = json!(" \n");
-    assert!(parse(json!({"name": "a", "evals": [declared.clone()]})).is_err());
-    declared["title"] = json!("Check");
-    declared["payload"]["instruction"] = json!(" \t");
-    assert!(
-        parse(json!({"name": "a", "evals": [declared]}))
-            .unwrap_err()
-            .contains("payload.instruction")
-    );
-}
-
-#[test]
-fn duplicate_evals_and_basis_with_evals_are_rejected() {
-    let declared = eval(json!({"kind": "human"}));
-    let error = parse_declaration(
-        "name = 'a'\n[evals.check]\ntitle = 'Check'\nprofile = { kind = 'human' }\npayload = { instruction = 'Inspect.' }\n[evals.check]\ntitle = 'Duplicate'",
-    )
-    .unwrap_err();
-    assert!(error.contains("duplicate key"), "{error}");
-    assert!(
-        parse(json!({"name": "a", "basis": true, "evals": [declared.clone()]}))
-            .unwrap_err()
-            .contains("cannot own Evals")
-    );
-    assert!(parse(json!({"name": "a", "basis": false, "evals": [declared]})).is_ok());
-}
-
-#[test]
-fn profile_fields_and_numeric_limits_match_declarations() {
-    let profile = json!({
-        "kind": "agent",
-        "backend":"openai",
-        "model": "model",
-        "reasoning": "high",
-        "timeout_ms": 2147483647,
-        "max_tool_calls": 9007199254740991_u64,
-        "max_tokens": 1.0,
-    });
-    assert!(parse(json!({"name": "a", "evals": [eval(profile.clone())]})).is_ok());
-    let mut invalid = profile.clone();
-    invalid["timeout_ms"] = json!(2147483648_u64);
-    assert!(
-        parse(json!({"name": "a", "evals": [eval(invalid)]}))
-            .unwrap_err()
-            .contains("timeout_ms")
-    );
-    let mut invalid = profile.clone();
-    invalid["max_tool_calls"] = json!(9007199254740992_u64);
-    assert!(parse(json!({"name": "a", "evals": [eval(invalid)]})).is_err());
-    let mut invalid = profile.clone();
-    invalid["max_tokens"] = json!(0);
-    assert!(parse(json!({"name": "a", "evals": [eval(invalid)]})).is_err());
-    let mut invalid = profile.clone();
-    invalid["timeout_ms"] = json!(1.5);
-    assert!(parse(json!({"name": "a", "evals": [eval(invalid)]})).is_err());
-    let mut invalid = profile.clone();
-    invalid["model"] = json!(" ");
-    assert!(parse(json!({"name": "a", "evals": [eval(invalid)]})).is_err());
-    let mut invalid = profile;
-    invalid["extra"] = json!(true);
-    assert!(parse(json!({"name": "a", "evals": [eval(invalid)]})).is_err());
-}
-
-#[test]
-fn fixed_scripts_preserve_literal_args_but_reject_invalid_process_fields() {
-    let args = json!(["$OWNER_VAR", "{input}", "; touch marker", "line\nbreak"]);
-    let profile =
-        json!({"kind": "runtime", "command": "arbitrary-program", "args": args, "timeout_ms": 1e3});
-    let declaration = parse(json!({"name": "a", "evals": [eval(profile)]})).unwrap();
-    let Profile::Runtime {
-        args: actual,
-        timeout_ms,
-        ..
-    } = &declaration.evals[0].profile()
-    else {
-        panic!()
-    };
-    assert_eq!(serde_json::to_value(actual).unwrap(), args);
-    assert_eq!(*timeout_ms, Some(std::time::Duration::from_millis(1000)));
-    let bad_command = eval(
-        json!({"kind": "runtime", "command": format!("{}\n", crate::test_os::shell()), "args": []}),
-    );
-    assert!(parse(json!({"name": "a", "evals": [bad_command]})).is_err());
-    let bad_arg =
-        eval(json!({"kind": "runtime", "command": crate::test_os::shell(), "args": ["\u{0}"]}));
-    assert!(parse(json!({"name": "a", "evals": [bad_arg]})).is_err());
-    assert!(
-        parse(json!({
-            "name": "a",
-            "fingerprint": {"script":{"command": "fingerprint.sh", "args": [], "shell": true}},
-        }))
-        .is_err()
-    );
-}
-
-#[test]
-fn all_hook_timeouts_are_checked_without_opening_scripts() {
-    let valid = json!({
-        "name": "a",
-        "fingerprint": {
-            "script":{"command": "fingerprint.sh", "args": [],"timeout_ms": 2147483647},
-        },
-        "views": {
-            "agent_tools": {
-                "read": {
-                    "description": "Read {artifactName}",
-                    "input_schema": {"type": "object"},
-                    "timeout_ms": 1000,
-                    "protocol": "json",
-                    "command": crate::test_os::shell(),
-                    "args": ["view.sh"],
-                },
-            },
-        },
-        "evals": [
-            {
-                "id": "review",
-                "title": "Review",
-                "profile": {"kind": "agent", "backend":"openai", "model": "m", "reasoning": "high"},
-                "payload": {"instruction": "Review"},
-            },
-        ],
-    });
-    assert!(parse(valid.clone()).is_ok());
-    let mut invalid = valid.clone();
-    invalid["views"]["agent_tools"]["read"]["timeout_ms"] = json!(2147483648_u64);
-    assert!(parse(invalid).is_err());
-    let mut invalid = valid;
-    invalid["evals"][0]["profile"]["timeout_ms"] = json!("30000");
-    assert!(parse(invalid).is_err());
-}
-
-#[test]
-fn declared_paths_share_the_posix_and_windows_safe_grammar() {
-    for path in [
-        "",
-        "/absolute",
-        &crate::test_os::windows_drive("absolute"),
-        &crate::test_os::windows_drive_native("absolute"),
-        "../escape",
-        "a/../b",
-        "a/./b",
-        "a//b",
-        "a/",
-        "a\\b",
-        "a\nb",
-        "a\u{7f}b",
-    ] {
-        assert!(
-            parse(json!({
-                "name":"a",
-                "fingerprint":{"script":{"command":"entry","args":[],"files":[path]}},
-            }))
-            .is_err()
-        );
-        assert!(
-            parse(json!({
-                "name":"a",
-                "views":{
-                    "agent_tools":{
-                        "read":{
-                            "description":"Read",
-                            "input_schema":{"type":"object"},
-                            "protocol":"json",
-                            "execution_paths":[path],
-                            "command":crate::test_os::shell(),
-                            "args":[],
-                        },
-                    },
-                },
-            }))
-            .is_err()
-        );
-    }
-    let declaration = |path: &str| {
-        parse(json!({
-            "name":"a",
-            "fingerprint":{"script":{"command":"entry","args":[],"files":[path]}},
-        }))
-    };
-    for path in [
-        "file",
-        "nested/file",
-        crate::test_os::drive_relative(),
-        "1:/relative",
-        "a:b",
-    ] {
-        let parsed = declaration(path).unwrap();
-        let Some(Fingerprint::Script { files, .. }) = parsed.fingerprint else {
-            panic!("script declaration");
-        };
-        assert_eq!(files, [path], "{path:?}");
-    }
-    assert!(declaration(&"a".repeat(1024)).is_ok());
-    assert!(declaration(&"a".repeat(1025)).is_err());
-    assert!(declaration(&"🦀".repeat(512)).is_ok());
-    assert!(declaration(&"🦀".repeat(513)).is_err());
-}
-
-#[test]
-fn an_agent_eval_declares_only_the_priority_at_which_it_turns_red() {
-    let agent = || eval(json!({"kind":"agent","backend":"openai","model":"fixture"}));
-    let parsed = |declared: Value| parse(json!({"name": "a", "evals": [declared]}));
-    assert_eq!(parsed(agent()).unwrap().evals[0].red_at(), None);
-    for (text, priority) in [
-        ("P0", Priority::P0),
-        ("P1", Priority::P1),
-        ("P2", Priority::P2),
-        ("P3", Priority::P3),
-    ] {
-        let mut declared = agent();
-        declared["red_at"] = json!(text);
-        assert_eq!(parsed(declared).unwrap().evals[0].red_at(), Some(priority));
-    }
-    for invalid in [json!("P4"), json!("p1"), json!(1)] {
-        let mut declared = agent();
-        declared["red_at"] = invalid.clone();
-        assert!(parsed(declared).is_err(), "{invalid}");
-    }
-    // Every Agent eval reports the one findings result; no eval declares its own.
-    for key in ["pass_schema", "fail_schema"] {
-        let mut declared = agent();
-        declared[key] = json!({"type": "object"});
-        let error = parsed(declared).unwrap_err();
-        assert!(
-            error.contains("remove pass_schema and fail_schema"),
-            "{error}"
-        );
-    }
-    for profile in [
-        json!({"kind": "human"}),
-        json!({"kind": "runtime", "command": "check", "args": []}),
-    ] {
-        let mut declared = eval(profile);
-        declared["red_at"] = json!("P1");
-        let error = parsed(declared).unwrap_err();
-        assert!(
-            error.contains("red_at is supported only on agent"),
-            "{error}"
-        );
-    }
-}
-
-#[test]
-fn a_human_result_schema_takes_only_shapes_a_person_can_enter() {
-    let declared = |schema: Value| {
-        let mut declared = eval(json!({"kind": "human"}));
-        declared["fail_schema"] = schema;
-        parse(json!({"name": "a", "evals": [declared]}))
-    };
-    declared(json!({
-        "type": "object",
-        "properties": {
-            "changes": {"type": "array", "items": {"type": "string", "minLength": 1}},
-            "findings": {"type": "array", "items": {
-                "type": "object",
-                "properties": {"where": {"type": "string"}, "severity": {"enum": ["low", "high"]}}
-            }}
-        },
-        "required": ["changes"]
-    }))
-    .unwrap();
-    let error = declared(json!({
-        "type": "object",
-        "properties": {"ownerField": {"anyOf": [{"type": "string"}, {"type": "integer"}]}}
-    }))
-    .unwrap_err();
-    assert!(
-        error.contains("fail_schema") && error.contains("properties.ownerField"),
+        error.contains("note:") && error.contains("a.artf"),
         "{error}"
     );
-}
-
-#[test]
-fn fingerprint_scripts_are_inert_declarations() {
-    let script = json!({
-        "script":{
-            "command":"missing.sh",
-            "args":["literal"],
-            "files":["missing-input"],
-            "timeout_ms":1000,
-        },
-    });
-    let declaration = parse(json!({"name":"a","fingerprint":script})).unwrap();
-    let Some(Fingerprint::Script {
-        command,
-        args,
-        files,
-        timeout_ms,
-    }) = declaration.fingerprint
-    else {
-        panic!()
-    };
-    assert_eq!(command, "missing.sh");
-    assert_eq!(args, ["literal"]);
-    assert_eq!(files, ["missing-input"]);
-    assert_eq!(timeout_ms, Some(std::time::Duration::from_millis(1000)));
-    let minimum = json!({"script":{"command":"missing.sh","args":[]}});
-    let declaration = parse(json!({"name":"a","fingerprint":minimum})).unwrap();
-    let fingerprint = declaration.fingerprint.unwrap();
-    let Fingerprint::Script {
-        files, timeout_ms, ..
-    } = &fingerprint
-    else {
-        panic!()
-    };
-    assert!(files.is_empty());
-    assert_eq!(*timeout_ms, None);
-    // Saved definitions keep the declared shape, with every field present.
-    assert_eq!(
-        serde_json::to_value(&fingerprint).unwrap(),
-        json!({"script":{"command":"missing.sh","args":[],"files":[],"timeoutMs":null}})
-    );
-    for fingerprint in [
-        json!({"kind":"always"}),
-        json!({"kind":"file-hash"}),
-        json!({"kind":"file-hash","paths":["input"]}),
-        json!({"script":"missing.sh"}),
-        json!({"script":{"command":"x","args":[]},"files":["."]}),
-        json!({"script":{"command":"x","args":[]},"content":{}}),
-    ] {
-        assert!(parse(json!({"name":"a","fingerprint":fingerprint})).is_err());
-    }
-    for (key, value) in [
-        ("paths", json!(["input"])),
-        ("weight", json!(1)),
-        ("weight", json!(101)),
-        ("inputs", json!(["input"])),
-    ] {
-        let mut fingerprint = minimum.clone();
-        fingerprint["script"][key] = value;
-        assert!(parse(json!({"name":"a","fingerprint":fingerprint})).is_err());
-    }
-}
-
-#[test]
-fn renamed_fingerprint_keys_fail_with_the_new_shape() {
-    let shape = r#"use fingerprint = { files = ["."], ignore = [] } or [fingerprint.script]."#;
-    for (key, value) in [
-        ("stale_key", json!({"content":{}})),
-        ("stale_key", json!({"script":{"command":"x","args":[]}})),
-        ("stale", json!({"kind":"content"})),
-    ] {
-        let mut declaration = json!({"name":"a"});
-        declaration[key] = value;
-        let error = parse(declaration).unwrap_err();
-        assert!(
-            error.ends_with(&format!("{key} was renamed to fingerprint: {shape}")),
-            "{error}"
-        );
-    }
-}
-
-#[test]
-fn a_family_declaration_names_its_removal() {
-    for value in [
-        json!({"instances":"instances.json"}),
-        json!({"instances":{"one":{}}}),
-        json!(false),
-    ] {
-        let error = parse(json!({"name":"a","family":value})).unwrap_err();
-        assert!(
-            error.ends_with(
-                "family was removed in 0.9.0; declare each instance as its own Artifact."
-            ),
-            "{error}"
-        );
-    }
-}
-
-#[test]
-fn removed_template_fields_are_unknown_but_owner_payloads_stay_literal() {
-    for key in ["params", "variants", "instances", "material", "$param"] {
-        let mut declaration = json!({"name":"a"});
-        declaration[key] = json!({});
-        assert!(
-            parse(declaration).unwrap_err().contains("unknown field"),
-            "{key}"
-        );
-    }
-    let declared = json!({"id":"check","title":"Check","profile":{"kind":"human"},
-        "payload":{"instruction":"Inspect.","owner":{"$param":"/literal"}}});
-    let declaration = parse(json!({"name":"a","evals":[declared]})).unwrap();
-    assert_eq!(
-        declaration.evals[0].payload().unwrap().extra["owner"],
-        json!({"$param":"/literal"})
-    );
-}
-
-#[test]
-fn artifactsum_defaults_to_the_owner_folder() {
-    let declaration = parse(json!({"name":"a","fingerprint":{}})).unwrap();
-    let fingerprint = declaration.fingerprint.unwrap();
-    let Fingerprint::Artifactsum { files, ignore } = &fingerprint else {
-        panic!()
-    };
-    assert_eq!(files, &["."]);
-    assert!(ignore.patterns().is_empty());
-    assert_eq!(
-        serde_json::to_value(&fingerprint).unwrap(),
-        json!({"files":["."],"ignore":[]})
-    );
-    let declared = json!({"files":["src","docs/a.md"],"ignore":["*.log","build/"]});
-    let Some(Fingerprint::Artifactsum { files, ignore }) =
-        parse(json!({"name":"a","fingerprint":declared}))
-            .unwrap()
-            .fingerprint
-    else {
-        panic!()
-    };
-    assert_eq!(files, ["src", "docs/a.md"]);
-    assert_eq!(ignore.patterns(), ["*.log", "build/"]);
-    // The 0.4 dependency scope is gone in every form, with a message that says why.
-    for scope in ["none", "direct", "transitive"] {
-        let error = parse(json!({"name":"a","fingerprint":{"dependencies":scope}})).unwrap_err();
-        assert!(
-            error.contains("fingerprint.dependencies was removed in 0.5"),
-            "{error}"
-        );
-    }
-    for (key, value) in [
-        ("dependencies", json!("all")),
-        ("files", json!([])),
-        ("files", json!(["/abs"])),
-        ("files", json!(["a/../b"])),
-        ("files", json!(["a", "a"])),
-        ("ignore", json!(["!keep"])),
-        ("ignore", json!(["x", "x"])),
-        ("inputs", json!(["."])),
-        ("content", json!({})),
-        ("paths", json!(["input"])),
-    ] {
-        let mut fingerprint = json!({});
-        fingerprint[key] = value;
-        assert!(
-            parse(json!({"name":"a","fingerprint":fingerprint})).is_err(),
-            "{key}"
-        );
-    }
-}
-
-#[test]
-fn dropped_configuration_fields_are_rejected() {
-    assert!(
-        parse(json!({"name":"a","review_policy":{"maxConcurrentExecutors":1}}))
-            .unwrap_err()
-            .contains("unknown field `review_policy`")
-    );
-    for declaration in [
-        json!({"name":"a","critics":[]}),
-        json!({"name":"a","envRequirements":{}}),
-    ] {
-        assert!(parse(declaration).unwrap_err().contains("unknown field"));
-    }
-    assert!(
-        parse(json!({
-            "name":"a",
-            "views":{
-                "agent_tools":{
-                    "read":{
-                        "description":"Read",
-                        "protocol":"json",
-                        "command":"read.sh",
-                        "args":[],
-                        "observation":"content",
-                    },
-                },
-            },
-        }))
-        .is_err()
-    );
-}
-
-#[test]
-fn agent_backends_are_explicit_and_optional_reasoning_is_exact() {
-    for backend in ["openai", "anthropic", "codex"] {
-        let profile = json!({"kind":"agent","backend":backend,"model":"owner-chosen-model"});
-        assert!(parse(json!({"name":"a","evals":[eval(profile)]})).is_ok());
-    }
-    for reasoning in ["none", "minimal", "low", "medium", "high", "xhigh", "max"] {
-        let profile =
-            json!({"kind":"agent","backend":"codex","model":"gpt-6-luna","reasoning":reasoning});
-        assert!(
-            parse(json!({"name":"a","evals":[eval(profile)]})).is_ok(),
-            "{reasoning}"
-        );
-    }
-    for backend in ["chatgpt", "claude"] {
-        let profile = json!({"kind":"agent","backend":backend,"model":"owner-chosen-model"});
-        let error = parse(json!({"name":"a","evals":[eval(profile)]}))
-            .err()
-            .unwrap();
-        for named in [
-            format!(r#""{backend}" was removed in 0.5.0"#),
-            r#""openai""#.into(),
-            r#""anthropic""#.into(),
-            r#""codex""#.into(),
-        ] {
-            assert!(error.contains(&named), "{error}");
-        }
-    }
-    // Any other name is a custom provider, set up where the eval runs; its form is checked.
-    let custom = json!({"kind":"agent","backend":"local","model":"m","reasoning":"minimal"});
-    assert!(parse(json!({"name":"a","evals":[eval(custom)]})).is_ok());
-    let malformed = json!({"kind":"agent","backend":"my provider","model":"m"});
-    let error = parse(json!({"name":"a","evals":[eval(malformed)]}))
-        .err()
-        .unwrap();
-    assert!(error.contains("backend must match"), "{error}");
-    for (reasoning, ok) in [
-        ("high", true),
-        ("minimal", true),
-        ("xhigh", false),
-        ("none", false),
-    ] {
-        let gemini = json!({"kind":"agent","backend":"gemini","model":"m","reasoning":reasoning});
-        assert_eq!(
-            parse(json!({"name":"a","evals":[eval(gemini)]})).is_ok(),
-            ok,
-            "{reasoning}"
-        );
-    }
-    for profile in [
-        json!({"kind":"agent","provider":"openai","model":"m"}),
-        json!({"kind":"agent","backend":"my provider","model":"m"}),
-        json!({"kind":"agent","backend":"openai","model":"m","reasoning":"off"}),
-        json!({"kind":"agent","backend":"anthropic","model":"m","reasoning":"xhigh"}),
-        json!({"kind":"agent","backend":"codex","model":"m","reasoning":"ultra"}),
-        json!({"kind":"agent","backend":"openai","model":"m","effort":"high"}),
-    ] {
-        assert!(parse(json!({"name":"a","evals":[eval(profile)]})).is_err());
-    }
-}
-
-#[test]
-fn response_schema_contract_rejects_reserved_fields_and_open_envelopes() {
-    let mut schemas = vec![
-        json!({"type":"array"}),
-        json!({"type":"object","properties":{"reason":{"type":"bogus"}}}),
-        json!({"type":"object","additionalProperties":true}),
-        json!({"type":"object","additionalProperties":{}}),
-        json!({"type":"object","required":"reason"}),
-        json!({"type":"object","properties":[]}),
-        json!({"type":"object","$ref":"https://example.invalid/schema"}),
-    ];
-    for keyword in ["allOf", "anyOf", "oneOf", "not"] {
-        schemas.push(json!({"type":"object",keyword:[]}));
-    }
-    for field in [
-        "verdict",
-        "reference",
-        "reusedFrom",
-        "executionProvenance",
-        "attemptId",
-        "provider",
-        "model",
-        "stdout",
-        "stderr",
-        "durationMs",
-        "exitCode",
-    ] {
-        schemas.push(json!({"type":"object","properties":{field:{}}}));
-        schemas.push(json!({"type":"object","required":[field]}));
-    }
-    for schema in schemas {
-        for branch in ["pass_schema", "fail_schema"] {
-            let mut declaration = eval(json!({"kind":"human"}));
-            declaration[branch] = schema.clone();
-            assert!(
-                parse(json!({"name":"a","evals":[declaration]})).is_err(),
-                "{schema}"
-            );
-        }
-    }
-}
-
-#[test]
-fn a_result_check_names_its_removal() {
-    for (profile, check) in [
+    // What follows `:` reads unambiguously: a toolset, an Artifact and a profile never share
+    // a name.
+    for (file, text) in [
         (
-            json!({"kind":"agent","backend":"openai","model":"m"}),
-            json!({"command":crate::test_os::python_program(),"args":["check.py"]}),
+            "b.artf",
+            "tool app = { agent read = builtin(op = \"read\") }\n",
         ),
-        (json!({"kind":"human"}), json!(false)),
+        (
+            "b.artfprofiles",
+            "profile app : agent = { backend = \"openai\", model = \"m\" }\n",
+        ),
+        ("b.artf", "artf! app() = { path = \"rules/\" }\n"),
     ] {
-        let mut declared = eval(profile);
-        declared["result_check"] = check;
-        let error = parse(json!({"name":"a","evals":[declared]})).unwrap_err();
-        assert!(
-            error.contains("Eval check: result_check was removed in 0.6.0"),
-            "{error}"
-        );
+        let project = Project::new(&[
+            ("a.artf", "artf app = { path = \"docs/\" }\n"),
+            (file, text),
+        ]);
+        let error = project.error();
+        assert!(error.contains("already declared as"), "{error}");
     }
 }
 
 #[test]
-fn omitted_fingerprint_is_artifactsum_and_only_false_disables_it() {
-    let default = parse(json!({"name":"a"})).unwrap().fingerprint.unwrap();
-    let explicit = parse(json!({"name":"a","fingerprint":{}}))
-        .unwrap()
-        .fingerprint
-        .unwrap();
-    for fingerprint in [default, explicit] {
-        assert_eq!(
-            serde_json::to_value(fingerprint).unwrap(),
-            json!({"files":["."],"ignore":[]})
-        );
-    }
+fn toml_definitions_ask_for_migration() {
+    let project = Project::new(&[(
+        "app.artf",
+        "path = \"docs/\"\n[evals.check]\ntitle = \"Check\"\n",
+    )]);
     assert!(
-        parse(json!({"name":"a","fingerprint":false}))
-            .unwrap()
-            .fingerprint
-            .is_none()
+        project.error().contains("run artifactize config migrate"),
+        "{}",
+        project.error()
     );
-    for invalid in [json!(true), json!(0), json!("off"), json!([])] {
-        let error = parse(json!({"name":"a","fingerprint":invalid})).unwrap_err();
-        assert!(
-            error.contains("fingerprint must be false or an object"),
-            "{invalid}: {error}"
-        );
-    }
 }
 
 #[test]
-fn tags_are_optional_unique_nonblank_strings_with_a_bounded_list() {
-    assert!(parse(json!({"name":"a"})).unwrap().tags.is_empty());
-    for tags in [
-        json!([]),
-        json!(["type:image", "scope:combat", "한글 태그", " free text "]),
-    ] {
-        let declaration = parse(json!({"name":"a","tags":tags})).unwrap();
-        assert_eq!(serde_json::to_value(declaration.tags).unwrap(), tags);
-    }
-    let tags: Vec<_> = (0..64).map(|i| format!("tag:{i}")).collect();
-    assert!(parse(json!({"name":"a","tags":tags})).is_ok());
-    let tags: Vec<_> = (0..65).map(|i| format!("tag:{i}")).collect();
-    assert!(
-        parse(json!({"name":"a","tags":tags}))
-            .unwrap_err()
-            .contains("at most 64")
-    );
-    for tags in [
-        json!([""]),
-        json!(["  "]),
-        json!(["\u{2003}"]),
-        json!(["same", "same"]),
-        json!([1]),
-        json!("tag"),
-        json!({}),
-    ] {
-        assert!(parse(json!({"name":"a","tags":tags})).is_err(), "{tags}");
-    }
-    for control in (0..=31).chain(std::iter::once(127)) {
-        let tag = format!("tag{}value", char::from(control));
-        let error = parse(json!({"name":"a","tags":[tag]})).unwrap_err();
-        assert!(
-            error.contains("ASCII control characters"),
-            "{control}: {error}"
-        );
-    }
-}
-
-#[test]
-fn duration_timeouts_keep_integral_millisecond_json_at_every_config_edge() {
-    for (number, millis) in [
-        ("1", 1),
-        ("1.0", 1),
-        ("1e3", 1000),
-        ("2147483647", 2147483647),
-    ] {
-        for kind in ["agent", "runtime"] {
-            let profile = if kind == "agent" {
-                format!(
-                    r#"{{"kind":"agent","backend":"openai","model":"fixture","timeout_ms":{number}}}"#
-                )
-            } else {
-                format!(
-                    r#"{{"kind":"runtime","command":"fixture","args":[],"timeout_ms":{number}}}"#
-                )
-            };
-            let profile: Profile = serde_json::from_str(&profile).unwrap();
-            assert_eq!(
-                serde_json::to_value(&profile).unwrap()["timeoutMs"],
-                json!(millis)
-            );
-            let duration = match profile {
-                Profile::Agent { timeout_ms, .. } | Profile::Runtime { timeout_ms, .. } => {
-                    timeout_ms.unwrap()
-                }
-                _ => unreachable!(),
-            };
-            assert_eq!(duration, std::time::Duration::from_millis(millis));
-        }
-        let tool: CommandTool = serde_json::from_str(&format!(
-            r#"{{"description":"fixture","protocol":"plain","command":"fixture","args":[],"timeout_ms":{number}}}"#
-        ))
-        .unwrap();
-        assert_eq!(
-            serde_json::to_value(tool).unwrap()["timeoutMs"],
-            json!(millis)
-        );
-        let tool: HumanTool = serde_json::from_str(&format!(
-            r#"{{"description":"fixture","kind":"output","command":"fixture","args":[],"timeout_ms":{number}}}"#
-        ))
-        .unwrap();
-        assert_eq!(
-            serde_json::to_value(tool).unwrap()["timeoutMs"],
-            json!(millis)
-        );
-        let fingerprint: Fingerprint = serde_json::from_str(&format!(
-            r#"{{"script":{{"command":"fixture","args":[],"timeout_ms":{number}}}}}"#
-        ))
-        .unwrap();
-        assert_eq!(
-            serde_json::to_value(fingerprint).unwrap()["script"]["timeoutMs"],
-            json!(millis)
-        );
-    }
-    for invalid in ["null", "0", "-1", "1.5", "2147483648", "1e99", "\"1000\""] {
-        assert!(
-            serde_json::from_str::<Profile>(&format!(
-                r#"{{"kind":"runtime","command":"fixture","args":[],"timeout_ms":{invalid}}}"#
-            ))
-            .is_err()
-        );
-        assert!(
-            serde_json::from_str::<CommandTool>(&format!(
-                r#"{{"description":"fixture","protocol":"plain","command":"fixture","args":[],"timeout_ms":{invalid}}}"#
-            ))
-            .is_err()
-        );
-        assert!(
-            serde_json::from_str::<HumanTool>(&format!(
-                r#"{{"description":"fixture","kind":"output","command":"fixture","args":[],"timeout_ms":{invalid}}}"#
-            ))
-            .is_err()
-        );
-        assert!(
-            serde_json::from_str::<Fingerprint>(&format!(
-                r#"{{"script":{{"command":"fixture","args":[],"timeout_ms":{invalid}}}}}"#
-            ))
-            .is_err()
-        );
-    }
-}
-
-#[test]
-fn one_read_keeps_each_distinct_schema_once_and_still_checks_it() {
-    let workspace = crate::test_os::tempdir();
-    let chain = |name: &str, kind: &str, limit: u32| {
+fn identical_tools_merge_and_different_ones_with_one_name_conflict() {
+    let ping = |port: &str| {
         format!(
-            r#"name = "{name}"
-
-[views.agent_tools.view]
-description = "View {{artifactName}}."
-protocol = "json"
-command = "node"
-args = ["view.mjs"]
-input_schema = {{ type = "object", properties.depth = {{ type = "{kind}", maximum = {limit} }} }}
-
-[views.human_tools.help]
-builtin = "help"
-args = ["artifactize"]
-
-[evals.review]
-title = "Review"
-profile = {{ kind = "human" }}
-payload = {{ instruction = "Review {{{name}}}." }}
-pass_schema = {{ type = "object", properties.note = {{ type = "string" }}, additionalProperties = false }}
-"#
+            "agent ping = command(protocol = \"json\", command = \"curl\", args = [\"localhost:{port}\"], description = \"Ping.\", input_schema = {{ type = \"object\" }})"
         )
     };
-    let write = |name: &str, kind: &str, limit: u32| {
-        std::fs::create_dir_all(workspace.path().join(name)).unwrap();
-        std::fs::create_dir_all(workspace.path().join(".artifactize")).unwrap();
-        std::fs::write(
-            crate::test_declaration::source_path(
-                workspace
-                    .path()
-                    .join(".artifactize")
-                    .join(format!("{name}.artf")),
-            ),
-            chain(name, kind, limit).replacen(
-                &format!("name = \"{name}\""),
-                &format!("path = \"{name}/\""),
-                1,
-            ),
-        )
-        .unwrap();
-    };
-    for (name, limit) in [("a", 3), ("b", 3), ("c", 4)] {
-        write(name, "integer", limit);
-    }
-    let config = read_workspace_config(workspace.path()).unwrap();
-    let schema = |name: &str| match &config.artifacts[name].views.agent_tools["view"] {
-        AgentTool::Command(tool) => tool.input_schema.clone(),
-        AgentTool::Builtin(_) => unreachable!("a command tool"),
-    };
-    assert!(std::sync::Arc::ptr_eq(&schema("a"), &schema("b")));
-    assert!(!std::sync::Arc::ptr_eq(&schema("a"), &schema("c")));
-    assert_eq!(schema("c")["properties"]["depth"]["maximum"], 4);
-    let verdicts: Vec<_> = config
-        .evals
-        .iter()
-        .map(|eval| std::ptr::from_ref(eval.declaration.pass_schema().unwrap()))
-        .collect();
-    assert_eq!(verdicts.len(), 3);
-    assert!(verdicts.windows(2).all(|pair| pair[0] == pair[1]));
-    // A schema declared again is checked as the first one was.
-    write("b", "whole", 3);
-    write("c", "whole", 3);
-    let error = read_workspace_config(workspace.path()).unwrap_err();
-    assert!(error.path.ends_with(".artifactize/b.artf"), "{error}");
+    let project = Project::new(&[(
+        "app.artf",
+        &format!(
+            "tool svc = {{\n  {}\n}}\nartf app : svc & svc = {{ path = \"docs/\" }}\n",
+            ping("1")
+        ),
+    )]);
+    assert_eq!(
+        project.read().artifacts[&name("app")]
+            .views
+            .agent_tools
+            .len(),
+        1
+    );
+    let project = Project::new(&[(
+        "app.artf",
+        &format!(
+            "tool svc = {{\n  {}\n  {}\n}}\nartf app : svc = {{ path = \"docs/\" }}\n",
+            ping("1"),
+            ping("2")
+        ),
+    )]);
+    let error = project.error();
     assert!(
-        error.message.contains("Invalid tool inputSchema"),
+        error.contains("both named `svc.ping`") && error.contains("note:"),
         "{error}"
+    );
+}
+
+#[test]
+fn instructions_name_artifacts_and_runtime_evals_list_their_deps() {
+    let project = Project::new(&[
+        ("profiles.artfprofiles", PROFILES),
+        (
+            "app.artf",
+            r#"artf rules : files = { path = "rules/", basis = true }
+artf app : files = {
+  path = "docs/"
+  eval agent : reviewer = {
+    title = "Agent"
+    instruction = "Read @{artf self} against @{artf rules}."
+  }
+  // The command reads the rules it is given.
+  eval check : runtime(command = "true", args = ["@{path rules}"]) = {
+    title = "Check"
+    deps = [rules]
+  }
+}
+"#,
+        ),
+    ]);
+    let config = project.read();
+    let eval = |id: &str| {
+        config
+            .evals
+            .iter()
+            .find(|eval| eval.id.as_str() == id)
+            .unwrap()
+    };
+    assert_eq!(
+        eval("app/agent").declaration.instruction(),
+        Some("Read app against rules.")
+    );
+    assert_eq!(eval("app/check").declaration.inputs(), [name("rules")]);
+    assert!(eval("app/check").deps.contains(&name("rules")));
+    assert_eq!(eval("app/check").declaration.instruction(), None);
+    for (eval, says) in [
+        (
+            "eval agent : reviewer = { title = \"A\", instruction = \"Use @{tool self agent files.read}.\" }",
+            "There is no tool slot",
+        ),
+        (
+            "eval agent : reviewer = { title = \"A\", instruction = \"Read @{path self/a.md}.\" }",
+            "a `@{path …}` belongs in a command's arguments",
+        ),
+        (
+            "eval agent : reviewer = { title = \"A\", instruction = \"Read @{artf missing}.\" }",
+            "missing",
+        ),
+        (
+            "eval check : runtime(command = \"true\", args = []) = { title = \"C\", instruction = \"About it.\" }",
+            "takes no `instruction`",
+        ),
+        (
+            "eval agent : reviewer = { title = \"A\", instruction = \"A\", deps = [app] }",
+            "`deps` is for runtime evals",
+        ),
+    ] {
+        project.write(
+            "app.artf",
+            &format!("artf app : files = {{\n  path = \"docs/\"\n  {eval}\n}}\n"),
+        );
+        let error = project.error();
+        assert!(error.contains(says) && error.contains("line 3"), "{error}");
+    }
+}
+
+#[test]
+fn a_macro_fills_paths_and_arguments_never_prose() {
+    for prose in [
+        "title = \"@{param what} reads well\", instruction = \"Read @{artf self}.\"",
+        "title = \"Reads well\", instruction = what",
+    ] {
+        let project = Project::new(&[(
+            "app.artf",
+            &format!(
+                "artf! doc(what) = {{\n  path = \"docs/\"\n  eval reads : human = {{ {prose} }}\n}}\nartf app = doc!(what = \"the guide\")\n"
+            ),
+        )]);
+        let error = project.error();
+        assert!(error.contains("written out where it stands"), "{error}");
+    }
+}
+
+#[test]
+fn an_agent_eval_names_a_profile_of_an_artfprofiles_file() {
+    let project = Project::new(&[(
+        "app.artf",
+        "artf app = {\n  path = \"docs/\"\n  eval agent : agent(backend = \"openai\", model = \"m\") = { title = \"A\", instruction = \"A\" }\n}\n",
+    )]);
+    assert!(
+        project.error().contains("profile NAME : agent"),
+        "{}",
+        project.error()
+    );
+    project.write(
+        "app.artf",
+        "artf app = {\n  path = \"docs/\"\n  eval agent : nobody = { title = \"A\", instruction = \"A\" }\n}\n",
+    );
+    assert!(
+        project.error().contains("Unknown profile `nobody`"),
+        "{}",
+        project.error()
+    );
+}
+
+#[test]
+fn a_profile_runs_the_branch_its_environment_variable_names() {
+    let project = Project::new(&[
+        (
+            "profiles.artfprofiles",
+            r#"profile reviewer : agent = match TIER {
+  default => { backend = "openai", model = "everyday" },
+  heavy => { backend = "openai", model = "careful", reasoning = "high" },
+}
+profile translator : agent = { backend = "openai", model = "words" }
+"#,
+        ),
+        (
+            "app.artf",
+            "artf app : files = {\n  path = \"docs/\"\n  eval agent : reviewer = { title = \"A\", instruction = \"A\" }\n  eval words : translator = { title = \"W\", instruction = \"W\" }\n}\n",
+        ),
+    ]);
+    let read = |tier: Option<&str>| {
+        discovery::read_workspace_declarations_with(project.0.path(), &|name| {
+            (name == "TIER").then(|| tier.map(str::to_owned)).flatten()
+        })
+    };
+    let model = |config: &RepoConfig, id: &str| {
+        let eval = config
+            .evals
+            .iter()
+            .find(|eval| eval.id.as_str() == id)
+            .unwrap();
+        serde_json::to_value(eval.declaration.profile()).unwrap()["model"].clone()
+    };
+    let unset = read(None).unwrap();
+    assert_eq!(model(&unset, "app/agent"), "everyday");
+    assert_eq!(model(&read(Some("")).unwrap(), "app/agent"), "everyday");
+    let heavy = read(Some("heavy")).unwrap();
+    assert_eq!(model(&heavy, "app/agent"), "careful");
+    // A profile without a `match` runs the same in every environment.
+    assert_eq!(model(&heavy, "app/words"), "words");
+    // The graph a Run saves says which value chose the branches.
+    let graph = serde_json::to_value(
+        crate::query::graph(&heavy, &crate::project::selection::Selection::All).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(graph["environment"], serde_json::json!({ "TIER": "heavy" }));
+    // A value no branch names is refused rather than run as `default`.
+    let error = read(Some("haevy")).unwrap_err().to_string();
+    assert!(
+        error.contains("TIER=haevy") && error.contains("`heavy`"),
+        "{error}"
+    );
+    // Every branch is checked, the ones the environment does not select included.
+    project.write(
+        "profiles.artfprofiles",
+        "profile reviewer : agent = match TIER {\n  default => { backend = \"openai\", model = \"everyday\" },\n  heavy => { backend = \"openai\" },\n}\nprofile translator : agent = { backend = \"openai\", model = \"words\" }\n",
+    );
+    assert!(read(None).is_err());
+    project.write(
+        "profiles.artfprofiles",
+        "profile reviewer : agent = match TIER {\n  heavy => { backend = \"openai\", model = \"careful\" },\n}\nprofile translator : agent = { backend = \"openai\", model = \"words\" }\n",
+    );
+    let error = read(Some("heavy")).unwrap_err().to_string();
+    assert!(error.contains("without a `default` branch"), "{error}");
+}
+
+#[test]
+fn meta_artifacts_under_definitions_default_to_a_semantic_fingerprint() {
+    let project = Project::new(&[
+        ("design/app.artf", "artf app = { path = \"docs/\" }\n"),
+        (
+            "graph.artf",
+            "artf design : artifactize = { path = \".artifactize/design/\" }\n",
+        ),
+    ]);
+    let config = project.read();
+    assert!(matches!(
+        config.artifacts[&name("design")].fingerprint,
+        Some(Fingerprint::Graph)
+    ));
+    // Comments and layout change no meaning; a changed field does.
+    let fingerprint = || {
+        crate::graph_structure::read_scoped(
+            project.0.path(),
+            &project.read().artifacts[&name("design")],
+        )
+        .unwrap()
+        .fingerprint()
+    };
+    let before = fingerprint();
+    project.write(
+        "design/app.artf",
+        "// The app's docs.\nartf app = {\n  path = \"docs/\"\n}\n",
+    );
+    assert_eq!(fingerprint(), before);
+    project.write("design/app.artf", "artf app = { path = \"rules/\" }\n");
+    assert_ne!(fingerprint(), before);
+}
+
+#[test]
+fn expand_shows_the_binding_as_written_and_the_declaration_it_makes() {
+    let project = Project::new(&[
+        ("profiles.artfprofiles", PROFILES),
+        ("shared.artf", SHARED),
+        (
+            "crates.artf",
+            "// The core crate.\nartf core = crate!(dir = \"core\")\n",
+        ),
+    ]);
+    let [core] = expand::expand(project.0.path(), Some(&name("core")))
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert_eq!((core.line, core.macro_name.as_deref()), (2, Some("crate!")));
+    assert_eq!(core.authored, "artf core = crate!(dir = \"core\")");
+    assert!(
+        core.expanded
+            .starts_with("artf core : files & cargo = {\n  path = \"crates/core/\"\n"),
+        "{}",
+        core.expanded
+    );
+    assert!(
+        core.expanded.contains("eval style : reviewer = {"),
+        "{}",
+        core.expanded
+    );
+    // The expansion is code: it reads back as the same Artifact beside the shared definitions.
+    project.write("crates.artf", &core.expanded);
+    let config = project.read();
+    assert_eq!(
+        config.artifacts[&name("core")].path.local(),
+        Some(std::path::Path::new("crates/core"))
+    );
+    let symbols = expand::symbols(project.0.path()).unwrap();
+    let crate_macro = symbols
+        .iter()
+        .find(|symbol| symbol.name == "crate" && symbol.is_macro)
+        .unwrap();
+    let params: Vec<_> = crate_macro
+        .params
+        .as_ref()
+        .unwrap()
+        .iter()
+        .map(|param| (param.name.as_str(), param.default.as_deref()))
+        .collect();
+    assert_eq!(params, [("dir", None), ("extra_evals", Some("{}"))]);
+    assert!(symbols.iter().any(|symbol| symbol.kind == "tool"
+        && symbol.name == "files"
+        && symbol.plugin.as_deref() == Some("files")));
+    assert!(
+        symbols
+            .iter()
+            .any(|symbol| symbol.kind == "profile" && symbol.name == "reviewer")
+    );
+    // A runtime argument's path slot reads as the slot it is, not as escaped text.
+    project.write(
+        "crates.artf",
+        "artf core = {\n  path = \"crates/core/\"\n  eval build : runtime(command = \"cargo\", args = [\"--manifest-path=@{path self/Cargo.toml}\"]) = { title = \"Builds\" }\n}\n",
+    );
+    let [core] = expand::expand(project.0.path(), Some(&name("core")))
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert!(
+        core.expanded
+            .contains("args = [\"--manifest-path=@{path core/Cargo.toml}\"]"),
+        "{}",
+        core.expanded
     );
 }

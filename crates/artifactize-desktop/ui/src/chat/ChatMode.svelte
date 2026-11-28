@@ -34,7 +34,6 @@
   const { current, chat: c } = app;
   /** The gap between the floating chat and the graph's bottom. */
   const FLOAT_GAP = 12;
-  const definitions = $derived(app.definitions);
 
   const branches = $derived(c.branches ?? []);
   /** The sessions grouped by project, the projects and their sessions newest first. */
@@ -54,8 +53,8 @@
   const graph = $derived(session?.view === "graph");
   const mainMin = $derived(graph ? mainSplitMinimum(app.windowWidth) : 30);
   const live = $derived(graph && session?.unavailable === null);
-  const mainNotice = $derived((live ? definitions.notice ?? c.graph?.graph.error : null) ?? c.error);
-  const running = $derived(view?.running ?? false);
+  const mainNotice = $derived((live ? c.graph?.graph.error : null) ?? c.error);
+  const running = $derived((view?.activity ?? "idle") !== "idle");
   const stopping = $derived(session !== null && c.stopping.has(session.id));
   const submitting = $derived(session !== null && (c.sending.has(session.id) || c.choosing.has(session.id)));
   const rejected = $derived(session === null ? undefined : c.rejected.get(session.id));
@@ -86,8 +85,8 @@
   const ages = $derived(new Map(c.sessions.map((item) => [item.id, age(item.updatedAt, app.now)])));
 
   function sessionState(item: ChatSession) {
-    if (item.waitingPermission) return "waiting";
-    if (item.outcome === "running" || item.running) return "running";
+    if (item.activity === "waitingPermission") return "waiting";
+    if (item.outcome === "running" || item.activity === "running") return "running";
     return item.unseen ? (item.outcome === "completed" ? "finished" : item.outcome) : null;
   }
 
@@ -416,10 +415,8 @@
     {:else if part.block.kind === "notice"}
       <p class="notice-block" role="status">{part.block.text}</p>
     {:else if part.block.kind === "handoff"}
-      <details class="handoff">
-        <summary><Icon name="fold" />Continued from {part.block.from} to {part.block.to}</summary>
-        <pre class="handoff-summary">{part.block.summary}</pre>
-      </details>
+      <!-- One quiet line, as a notice (D-CHAT-13). -->
+      <p class="notice-block" role="status">Continued from {part.block.from} to {part.block.to}</p>
     {:else}
       {@render runCard(part.block.card)}
     {/if}
@@ -436,6 +433,7 @@
 <!-- The composer: one field, the target picker at its bottom left and Send at its bottom right. -->
 {#snippet composer(current: ChatSession)}
   {@const canSendTarget = current.target !== null && current.target.engine !== "legacyClaudeAgent"}
+  {@const switchedFrom = c.view?.session.id === current.id ? c.view.handoffFrom : null}
   <div class="composer">
     {#if !graph && current.unavailable}
       <!-- The session's branch cannot be worked on now: it says why, and sends nothing. -->
@@ -448,6 +446,11 @@
         {:else}
           <span>Migrated from legacy Antigravity Chat to the unified ACP engine; sending continues with a deterministic handoff.</span>
         {/if}
+      </div>
+    {:else if switchedFrom}
+      <!-- Switching engine or agent is said above the composer before the next message (D-CHAT-13). -->
+      <div class="legacy-banner" role="status">
+        <span>Switched from {switchedFrom}; the next message continues with a handoff.</span>
       </div>
     {/if}
     {#if rejected}
@@ -824,7 +827,8 @@
   .project-row {
     position: relative;
   }
-  .new-here {
+  /* Two classes, so the Pane row's own width and padding below never widen it over the row. */
+  .row-button.new-here {
     position: absolute;
     top: 0;
     right: 0;
@@ -1316,11 +1320,11 @@
     font: var(--text-small) var(--mono);
   }
   .age.waiting { color: var(--yellow); }
-  .thought, .handoff {
+  .thought {
     color: var(--ink-2);
     font-size: var(--text-small);
   }
-  .thought > summary, .handoff > summary {
+  .thought > summary {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -1328,17 +1332,12 @@
     list-style: none;
     min-height: var(--row-dense);
   }
-  .thought > summary::-webkit-details-marker, .handoff > summary::-webkit-details-marker { display: none; }
-  .thought-body, .handoff-summary {
+  .thought > summary::-webkit-details-marker { display: none; }
+  .thought-body {
     margin: 4px 0 0 18px;
     padding: 6px 8px;
     border-left: 2px solid var(--line-group);
     color: var(--ink-2);
-  }
-  .handoff-summary {
-    font-family: var(--mono);
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
   }
   .plan {
     padding: 6px 10px;

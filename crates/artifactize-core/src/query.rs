@@ -20,7 +20,7 @@ use crate::{
 /// The format version of the printed graph: the shape of its Artifacts, evals, relations
 /// and components. It changes when a field is removed or changes meaning, so that scripts
 /// reading the output can refuse a shape they do not know.
-const GRAPH_FORMAT_VERSION: u32 = 2;
+const GRAPH_FORMAT_VERSION: u32 = 3;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,6 +33,10 @@ pub struct GraphView<'a> {
     pub evals: Vec<&'a Eval>,
     pub relations: Vec<GraphRelation<'a>>,
     pub components: Vec<GraphComponent<'a>>,
+    /// The environment variables the project's profiles read, each with its value (`null`
+    /// while unset); a Run's saved graph records the branch every Agent eval ran with.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub environment: BTreeMap<&'a str, Option<&'a str>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -106,6 +110,12 @@ pub fn graph<'a>(
         evals,
         relations,
         components,
+        environment: config
+            .program
+            .iter()
+            .flat_map(|program| &program.environment)
+            .map(|(name, value)| (name.as_str(), value.as_deref()))
+            .collect(),
     })
 }
 

@@ -11,7 +11,7 @@ pub(crate) mod pool;
 pub(crate) mod redactor;
 pub mod trust;
 pub mod verify_bridge;
-pub mod wire;
+pub(crate) mod wire;
 
 use std::{fmt, path::PathBuf, str::FromStr};
 
@@ -302,24 +302,45 @@ impl WarmOwner {
 
 /// Persisted ACP session binding stored inside `chat_sessions.data` and guarded by atomic
 /// `generation` CAS across worktree moves, agent switches, warm pool reuse, and `session/load`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Confined to `artifactize-core` so raw ACP `remote_session_id` never crosses the public Chat API
+/// (`C-ACP-EDGE-ISOLATION`).
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AcpBinding {
-    pub agent_id: AgentId,
+pub(crate) struct AcpBinding {
+    pub(crate) agent_id: AgentId,
     #[serde(with = "crate::platform::path_serde")]
-    pub worktree: PathBuf,
-    pub checkout: repository::Identity,
+    pub(crate) worktree: PathBuf,
+    pub(crate) checkout: repository::Identity,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub remote_session_id: Option<String>,
-    pub generation: u64,
+    pub(crate) remote_session_id: Option<String>,
+    pub(crate) generation: u64,
     /// Last send confirmed durably saved with `Kind::Answer(Completed(_))`.
     #[serde(default)]
-    pub settled_send: usize,
+    pub(crate) settled_send: usize,
     /// `(resolved_executable, executable_sha256, args_hash, auth_generation)`.
     #[serde(default)]
-    pub runtime_fingerprint: String,
+    pub(crate) runtime_fingerprint: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub warm_owner: Option<WarmOwner>,
+    pub(crate) warm_owner: Option<WarmOwner>,
+}
+
+impl fmt::Debug for AcpBinding {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AcpBinding")
+            .field("agent_id", &self.agent_id)
+            .field("worktree", &self.worktree)
+            .field("checkout", &self.checkout)
+            .field(
+                "remote_session_id",
+                &self.remote_session_id.as_ref().map(|_| "<redacted>"),
+            )
+            .field("generation", &self.generation)
+            .field("settled_send", &self.settled_send)
+            .field("runtime_fingerprint", &self.runtime_fingerprint)
+            .field("warm_owner", &self.warm_owner)
+            .finish()
+    }
 }
 
 /// Structured ACP transport or setup failure mapped cleanly to `agent::error::Failure`.

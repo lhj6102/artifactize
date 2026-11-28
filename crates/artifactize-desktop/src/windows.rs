@@ -27,6 +27,11 @@ const PAGE_POLICY: &str = "default-src 'none'; script-src 'unsafe-inline'; style
 /// The pet overlay's size, in logical pixels, and its distance from the work area's corner.
 const PET_SIZE: (f64, f64) = (340.0, 420.0);
 const PET_MARGIN: f64 = 16.0;
+/// A viewer opens at this size, in logical pixels: a page with room to read, inside a common
+/// 1280×800 laptop screen.
+const VIEWER_SIZE: (f64, f64) = (1100.0, 760.0);
+/// A viewer shrinks no further: below it a page's own toolbar no longer fits.
+const VIEWER_MIN_SIZE: (f64, f64) = (480.0, 320.0);
 
 /// What the commands ask of the windows.
 enum Action {
@@ -158,8 +163,8 @@ pub(super) fn viewer<R: Runtime>(
         WebviewUrl::App(format!("index.html?viewer={session}").into()),
     )
     .title(title)
-    .inner_size(1100.0, 760.0)
-    .min_inner_size(480.0, 320.0)
+    .inner_size(VIEWER_SIZE.0, VIEWER_SIZE.1)
+    .min_inner_size(VIEWER_MIN_SIZE.0, VIEWER_MIN_SIZE.1)
     .build()
     .map(|_| ())
 }

@@ -118,16 +118,8 @@ async fn saved_definitions_and_paged_runs_survive_repository_removal() {
                     {
                         "id":"review",
                         "title":title,
-                        "profile":{"kind":"runtime","command":false_program(),"args":[]},
-                        "profile_variants":{
-                            "brief":{
-                                "kind":"runtime",
-                                "command":echo_program(),
-                                "args":["saved result"],
-                            },
-                        },
+                        "profile":{"kind":"runtime","command":echo_program(),"args":["saved result"]},
                         "payload":{"instruction":"Inspect {input}."},
-                        "pass_schema":{"type":"object"},
                     },
                 ],
             })
@@ -190,8 +182,6 @@ async fn saved_definitions_and_paged_runs_survive_repository_removal() {
             "--wait",
             "--artifacts",
             "checkout,search",
-            "--profile",
-            "brief",
             "--force",
             "--jobs",
             "2",
@@ -215,8 +205,6 @@ async fn saved_definitions_and_paged_runs_survive_repository_removal() {
             "--wait",
             "--eval",
             "checkout/review",
-            "--profile",
-            "brief",
             "--comment",
             "Checking out — étape 2",
         ],
@@ -244,7 +232,7 @@ async fn saved_definitions_and_paged_runs_survive_repository_removal() {
         audits.push(saved_run(&state, id).await);
     }
     let [selected, other, last] = audits.try_into().expect("three saved Run audits");
-    assert_eq!(selected["profile"], "brief");
+    assert!(selected["profile"].is_null());
     assert_eq!(
         selected["selection"],
         json!({"kind":"artifacts","artifactIds":["checkout","search"]})
@@ -269,10 +257,6 @@ async fn saved_definitions_and_paged_runs_survive_repository_removal() {
     assert_eq!(
         definitions["evals"][0]["declaration"]["profile"]["command"],
         echo_program()
-    );
-    assert_eq!(
-        definitions["evals"][0]["declaration"]["passSchema"],
-        json!({"type":"object"})
     );
     assert_eq!(
         last["definitions"]["artifacts"]
@@ -347,7 +331,7 @@ async fn saved_definitions_and_paged_runs_survive_repository_removal() {
                 .unwrap();
             assert_eq!(request["status"], verdict);
             if eval.ends_with("/review") {
-                assert_eq!(request["result"]["stdout"], "saved result\n");
+                assert_eq!(request["result"]["issues"], json!([]));
             }
         }
         assert_eq!(reopened["definitions"], saved["definitions"]);
@@ -372,10 +356,7 @@ async fn saved_definitions_and_paged_runs_survive_repository_removal() {
             assert_eq!(shown["result"], request["result"]);
         }
     }
-    assert_eq!(
-        selected["requests"][0]["result"]["stdout"],
-        "saved result\n"
-    );
+    assert_eq!(selected["requests"][0]["result"]["kind"], "runtime");
     assert_eq!(query(&second, &state, &["run", "list"], 0), json!([all[1]]));
     assert_eq!(
         query(&first, &state, &["run", "list", "--repo-only"], 0),

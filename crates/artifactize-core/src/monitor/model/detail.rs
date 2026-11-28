@@ -1,6 +1,5 @@
 //! Cards and detail-pane presentation for Runs, Artifacts and Evals.
 use super::*;
-use serde_json::Value;
 
 /// Where a Detail field goes, in display order. Technical is folded by default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -80,38 +79,24 @@ impl Detail {
     }
 }
 
-/// Top-level entries of a result, one line each, such as `verdict GREEN`. Saved runtime
-/// logs are left to the evidence view.
+/// A result in a few lines: its verdict, then its issues, one line each. Runtime output is
+/// left to the evidence view.
 fn result_summary(result: &crate::store::ExecutionResult) -> String {
-    let result = result.to_json();
-    let Some(object) = result.as_object() else {
-        return result
-            .to_string()
-            .lines()
-            .next()
-            .unwrap_or_default()
-            .to_owned();
-    };
-    // The verdict first, then the other entries in their saved order.
-    let mut entries: Vec<_> = object
-        .iter()
-        .filter(|(key, _)| !matches!(key.as_str(), "stdout" | "stderr"))
-        .collect();
-    entries.sort_by_key(|(key, _)| *key != "verdict");
-    let parts = entries.into_iter().map(|(key, value)| match value {
-        Value::String(text) => {
-            let line = text.lines().next().unwrap_or_default();
-            if line.len() < text.trim_end().len() {
-                format!("{key} {line} …")
-            } else {
-                format!("{key} {line}")
-            }
+    let verdict = format!("verdict {}", result.verdict().as_str());
+    let issues = result.issues().into_iter().map(|issue| {
+        let lead = match (issue.priority, issue.exit_code) {
+            (Some(priority), _) => format!("{priority} "),
+            (None, Some(code)) => format!("exit {code}: "),
+            (None, None) => String::new(),
+        };
+        let line = issue.reason.lines().next().unwrap_or_default();
+        if line.len() < issue.reason.trim_end().len() {
+            format!("{lead}{line} …")
+        } else {
+            format!("{lead}{line}")
         }
-        Value::Array(items) => format!("{key} [{} items]", items.len()),
-        Value::Object(fields) => format!("{key} {{{} fields}}", fields.len()),
-        other => format!("{key} {other}"),
     });
-    join(parts, "\n")
+    join(std::iter::once(verdict).chain(issues), "\n")
 }
 
 fn profile(profile: &crate::config::StoredProfile) -> String {
@@ -330,8 +315,8 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Card {
     pub instruction: String,
-    /// The result's own entries, without its verdict and saved output.
-    pub result: Option<serde_json::Map<String, Value>>,
+    /// What the result says must change, numbered as shown; none before a result.
+    pub issues: Option<Vec<crate::store::Issue>>,
     /// The whole result as saved, pretty-printed JSON.
     pub raw: Option<String>,
     pub exit_code: Option<i32>,
@@ -349,22 +334,6 @@ pub(crate) fn raw(result: &crate::store::ExecutionResult) -> String {
     serde_json::to_string_pretty(&result.to_json()).expect("a saved result is JSON")
 }
 
-/// A result's own entries, without its verdict and saved output, as a Card shows them.
-pub(crate) fn entries(result: &crate::store::ExecutionResult) -> serde_json::Map<String, Value> {
-    let mut entries = result.to_json().as_object().cloned().unwrap_or_default();
-    for key in [
-        "verdict",
-        "stdout",
-        "stderr",
-        "exitCode",
-        "durationMs",
-        "truncated",
-    ] {
-        entries.remove(key);
-    }
-    entries
-}
-
 pub fn card(view: &RequestView, now: OffsetDateTime) -> Card {
     use crate::config::StoredProfile;
     use crate::store::ExecutionResult;
@@ -379,12 +348,9 @@ pub fn card(view: &RequestView, now: OffsetDateTime) -> Card {
     let tokens = attempts.and_then(|attempts| attempt_tokens(attempts));
     Card {
         instruction: request.payload.instruction().to_owned(),
-        result: result.map(entries),
+        issues: result.map(ExecutionResult::issues),
         raw: result.map(raw),
-        exit_code: match result {
-            Some(ExecutionResult::Runtime(result)) => result.exit_code.value().copied(),
-            _ => None,
-        },
+        exit_code: result.and_then(ExecutionResult::exit_code),
         error: error(view),
         reused,
         took: view

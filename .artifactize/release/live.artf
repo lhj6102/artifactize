@@ -1,0 +1,63 @@
+// What a release publishes, observed where it is served: each compared read-only with the
+// latest stable origin tag by the release observer (its `KIND-config` and `KIND-behavior`
+// modes), never with this worktree.
+
+artf live-crates = {
+  path = "https://crates.io/crates/artifactize"
+
+  eval configuration : runtime(
+    command = "node",
+    args = ["@{path release-observer}", "crates-config", "@{path self}"],
+    timeout_ms = 30000,
+  ) = {
+    title = "Each newest non-yanked crate matches the latest stable origin tag"
+  }
+
+  eval behavior : runtime(
+    command = "node",
+    args = ["@{path release-observer}", "crates-behavior", "@{path self}"],
+    timeout_ms = 30000,
+  ) = {
+    title = "Each newest non-yanked crate archive answers HTTP 200"
+  }
+}
+
+artf live-release = {
+  path = "https://github.com/lhj6102/artifactize/releases/latest"
+
+  eval configuration : runtime(
+    command = "node",
+    args = ["@{path release-observer}", "release-config", "@{path self}"],
+    timeout_ms = 30000,
+  ) = {
+    title = "The latest GitHub release matches the latest stable origin tag"
+  }
+
+  eval behavior : runtime(
+    command = "node",
+    args = ["@{path release-observer}", "release-behavior", "@{path self}"],
+    timeout_ms = 30000,
+  ) = {
+    title = "The archive and checksum selected by install.sh answer HTTP 200"
+  }
+}
+
+artf live-website = {
+  path = "https://artifactize.dev"
+
+  eval configuration : runtime(
+    command = "node",
+    args = ["@{path release-observer}", "website-config", "@{path self}"],
+    timeout_ms = 30000,
+  ) = {
+    title = "The served installers equal the latest stable origin tag byte for byte"
+  }
+
+  eval behavior : runtime(
+    command = "node",
+    args = ["@{path release-observer}", "website-behavior", "@{path self}"],
+    timeout_ms = 30000,
+  ) = {
+    title = "The landing pages, docs books and installers answer HTTP 200"
+  }
+}

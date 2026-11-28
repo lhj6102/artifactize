@@ -9,7 +9,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::{ArtifactName, Eval, EvalId, ProfileVariantName, RepoConfig},
+    config::{ArtifactName, Eval, EvalId, RepoConfig},
     graph::Graph,
 };
 
@@ -172,53 +172,6 @@ fn selected_artifact<'a>(config: &'a RepoConfig, id: &str) -> Result<&'a Artifac
         .get_key_value(id)
         .map(|(id, _)| id)
         .ok_or_else(|| format!("Unknown Artifact: {id}"))
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum ProfileSelection {
-    Named(ProfileVariantName),
-    Evals(BTreeMap<EvalId, ProfileVariantName>),
-}
-
-/// Resolve complete declared profiles in owned configuration, never rewriting source files.
-pub fn select_profiles(
-    mut config: RepoConfig,
-    selection: &Selection,
-    profile: Option<&ProfileSelection>,
-    recursive: bool,
-) -> Result<RepoConfig, String> {
-    let Some(profile) = profile else {
-        return Ok(config);
-    };
-    let evals = selection.included_evals(&config, recursive)?;
-    let included: BTreeMap<_, _> = evals.iter().map(|eval| (&eval.id, *eval)).collect();
-    let mapping: Vec<(&EvalId, &ProfileVariantName)> = match profile {
-        ProfileSelection::Named(name) => evals.iter().map(|eval| (&eval.id, name)).collect(),
-        ProfileSelection::Evals(mapping) => mapping.iter().collect(),
-    };
-    let mut profiles = BTreeMap::new();
-    for (id, name) in mapping {
-        let eval = included.get(id).ok_or_else(|| {
-            format!("Profile selection is outside the submitted Eval scope: {id}")
-        })?;
-        let variant = eval
-            .declaration
-            .profile_variants()
-            .get(name)
-            .ok_or_else(|| format!("Unknown profile variant for {id}: {name}"))?;
-        profiles.insert(id.clone(), (name.clone(), variant.clone()));
-    }
-    for eval in &mut config.evals {
-        if let Some((name, _profile)) = profiles.remove(&eval.id) {
-            eval.declaration.select_profile(&name)?;
-            eval.variant = Some(name);
-        }
-    }
-    // Runtime variants can introduce or remove argv references and dependency gates.
-    crate::scope::resolve_config(&mut config).map_err(|error| error.to_string())?;
-    crate::scope::validate_eval_tools(&config).map_err(|error| error.to_string())?;
-    Ok(config)
 }
 
 /// Bound selection-file parsing/allocation before resolving any project work.

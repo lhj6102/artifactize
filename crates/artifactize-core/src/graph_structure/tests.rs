@@ -4,7 +4,7 @@ use std::fs;
 use tokio_util::sync::CancellationToken;
 
 const GRAPH: &str = "name = 'graph'\n[evals.review]\ntitle = 'Review graph'\nprofile = { kind = 'human' }\npayload = { instruction = 'Review the project structure.' }\n";
-const APP: &str = "name = 'app'\ntags = ['code']\n[evals.review]\ntitle = 'Review app'\nprofile = { kind = 'agent', backend = 'openai', model = 'model-one', reasoning = 'high', timeout_ms = 10000, max_tool_calls = 10, max_tokens = 1000 }\npayload = { instruction = 'Review {leaf} and {app}.', context = 'criteria' }\nred_at = 'P1'\n[evals.command]\ntitle = 'Runtime criteria'\nprofile = { kind = 'runtime', command = 'runtime-program', args = ['{leaf}/input.txt'], timeout_ms = 1234 }\npayload = { instruction = 'Check.' }\n";
+const APP: &str = "name = 'app'\ntags = ['code']\n[evals.review]\ntitle = 'Review app'\nprofile = { kind = 'agent', backend = 'openai', model = 'model-one', reasoning = 'high', timeout_ms = 10000, max_tool_calls = 10, max_tokens = 1000 }\npayload = { instruction = 'Review {leaf} and {app}.' }\nred_at = 'P1'\n[evals.command]\ntitle = 'Runtime criteria'\nprofile = { kind = 'runtime', command = 'runtime-program', args = ['{leaf}/input.txt'], timeout_ms = 1234 }\npayload = { instruction = 'Check.' }\n";
 
 fn fixture() -> tempfile::TempDir {
     let repo = crate::test_os::tempdir();
@@ -30,7 +30,7 @@ fn graph_fingerprint_tracks_relations_and_criteria_not_execution_or_location() {
         APP.replace("Review app", "A different title"),
         APP.replace("command = 'runtime-program'", "command = 'different-program'"),
         APP.replace("args = ['{leaf}/input.txt']", "args = ['{leaf}/input.txt', 'criterion']"),
-        APP.replace("context = 'criteria'", "context = 'different criteria'"),
+        APP.replace("tags = ['code']", "tags = ['code']\n[views.agent_tools.graph]\nbuiltin = 'graph'\nargs = []"),
         APP.replace("Review {leaf} and {app}.", "Review {app}."),
         APP.replace("red_at = 'P1'", "red_at = 'P2'"),
         APP.replace("red_at = 'P1'\n", ""),
@@ -40,7 +40,7 @@ fn graph_fingerprint_tracks_relations_and_criteria_not_execution_or_location() {
         assert_ne!(fingerprint(), baseline);
     }
     crate::test_declaration::write(repo.path(), repo.path().join("index.artf"), APP).unwrap();
-    // Options, variants and views never enter extraction, including runtime variants.
+    // Execution options and the profile's name never enter extraction.
     let excluded = APP
         .replace("['code']", "['changed-tag']")
         .replace(
@@ -54,7 +54,7 @@ fn graph_fingerprint_tracks_relations_and_criteria_not_execution_or_location() {
         .replace("timeout_ms = 1234", "timeout_ms = 5678")
         .replace("max_tool_calls = 10", "max_tool_calls = 20")
         .replace("max_tokens = 1000", "max_tokens = 2000")
-        + "\n[evals.review.profile_variants]\nalternate = { kind = 'agent', backend = 'openai', model = 'alternate' }\n[views.agent_tools.graph]\nbuiltin = 'graph'\nargs = []\n";
+        + "\n[evals.review.profile_variants]\nalternate = { kind = 'agent', backend = 'openai', model = 'alternate' }\n";
     crate::test_declaration::write(repo.path(), repo.path().join("index.artf"), excluded).unwrap();
     assert_eq!(fingerprint(), baseline);
     let leaf = crate::test_declaration::read_text(repo.path().join("child/index.artf")).unwrap();
@@ -135,7 +135,7 @@ async fn graph_agent_tool_prints_current_extracted_structure_from_any_artifact()
     .unwrap();
     let result = registry
         .call(
-            "structure_app",
+            "app-tools_structure_app",
             json!({}),
             repo.path(),
             CancellationToken::new(),
@@ -150,7 +150,9 @@ async fn graph_agent_tool_prints_current_extracted_structure_from_any_artifact()
     assert!(text.contains("graph/review: Changed graph title"));
     let human =
         crate::tools::human::Registry::for_artifact(&config, &"app".parse().unwrap()).unwrap();
-    human.preflight(&"viewer_app".parse().unwrap()).unwrap();
+    human
+        .preflight(&"app-tools_viewer_app".parse().unwrap())
+        .unwrap();
     assert_eq!(
         human.list().next().unwrap().kind,
         crate::config::HumanToolKind::Launch
@@ -168,27 +170,33 @@ async fn artifact_type_exposes_the_same_scoped_declarations_to_both_tools() {
     fs::write(repo.path().join("outside.txt"), "outside").unwrap();
     fs::write(
         scoped.join("inside.artf"),
-        "path = 'inside.txt'\ntype = 'markdown'\nbasis = true\n",
+        "artf inside : markdown = {\n  path = \"inside.txt\"\n  basis = true\n}\n",
     )
     .unwrap();
     fs::write(
         scoped.join("plain.artf"),
-        "path = 'plain.txt'\nbasis = true\n",
+        "artf plain = { path = \"plain.txt\", basis = true }\n",
     )
     .unwrap();
     fs::write(
         definitions.join("outside.artf"),
-        "path = 'outside.txt'\nbasis = true\n",
+        "artf outside = { path = \"outside.txt\", basis = true }\n",
+    )
+    .unwrap();
+    fs::write(
+        definitions.join("profiles.artfprofiles"),
+        "profile fixture : agent = { backend = \"openai\", model = \"fixture\" }\n",
     )
     .unwrap();
     fs::write(
         definitions.join("design-definitions.artf"),
-        r#"path = '.artifactize/design/'
-type = 'artifactize'
-[evals.inspect]
-title = 'Inspect design declarations'
-profile = { kind = 'agent', backend = 'openai', model = 'fixture' }
-payload.instruction = 'Inspect the declared graph.'
+        r#"artf design-definitions : artifactize = {
+  path = ".artifactize/design/"
+  eval inspect : fixture = {
+    title = "Inspect design declarations"
+    instruction = "Inspect the declared graph."
+  }
+}
 "#,
     )
     .unwrap();
@@ -196,7 +204,7 @@ payload.instruction = 'Inspect the declared graph.'
     let registry =
         crate::tools::Registry::new(&config, &"design-definitions/inspect".parse().unwrap())
             .unwrap();
-    let tool = "declarations_design-definitions";
+    let tool = "artifactize_declarations_design-definitions";
     let result = registry
         .call(tool, json!({}), repo.path(), CancellationToken::new())
         .await;
@@ -207,8 +215,12 @@ payload.instruction = 'Inspect the declared graph.'
         text.contains("inside [File]") && !text.contains("outside"),
         "{text}"
     );
-    let viewer =
-        crate::viewer::Session::open(repo.path(), &"design-definitions".parse().unwrap()).unwrap();
+    let viewer = crate::viewer::Session::open(
+        repo.path(),
+        &"design-definitions".parse().unwrap(),
+        &"artifactize.view".parse().unwrap(),
+    )
+    .unwrap();
     let graph = viewer.declarations().unwrap();
     assert_eq!(
         graph
@@ -218,12 +230,13 @@ payload.instruction = 'Inspect the declared graph.'
             .collect::<Vec<_>>(),
         ["inside", "plain"]
     );
+    // What each composes is part of what a definitions review sees, here and graph-wide.
     let wire = serde_json::to_value(graph).unwrap();
-    assert_eq!(wire["artifacts"]["inside"]["type"], "markdown");
-    assert_eq!(
-        wire["artifacts"]["plain"].get("type"),
-        Some(&serde_json::Value::Null)
-    );
+    assert_eq!(wire["artifacts"]["inside"]["toolsets"], json!(["markdown"]));
+    assert_eq!(wire["artifacts"]["plain"]["toolsets"], json!([]));
     let whole = serde_json::to_value(extract(&config)).unwrap();
-    assert!(whole["artifacts"]["inside"].get("type").is_none());
+    assert_eq!(
+        whole["artifacts"]["inside"]["toolsets"],
+        json!(["markdown"])
+    );
 }

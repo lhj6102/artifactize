@@ -1,13 +1,11 @@
 // The Detail docked at the graph's right edge, as a person reads it: its title, its chips, its
 // sections, an eval's Summary, an Artifact's tools and, on a Current, its Definition; each
 // action waits for what it shows.
-import { fill, press, typeText } from "../keys.ts";
-import { dispatchInput, visibleCenter } from "../input.ts";
+import { press } from "../keys.ts";
 import { drawsEdge } from "./graph.ts";
 import { holds, until } from "./wait.ts";
 
 const DETAIL = 'main:not([hidden]) aside[aria-label="Detail"]';
-const DIALOG = '[role="dialog"]';
 
 /** The Detail as read: its title, its chips (on an eval's tab), the evals its Artifact's tab
  * lists with their status and, for a Human eval waiting for a person, its stage under it
@@ -222,22 +220,35 @@ export class Detail {
   }
 
   // -------------------------------------------------------------------------------
-  // A Current's Definition
+  // A Current's Definition and Source
 
-  /** The Definition as read: its file, its Path field and the missing target said beside it,
-   * its Parts, the refusals said in red, and the Source with whether it offers Save. */
-  definition(name: string): Promise<{ file: string; path: string; missing: string; parts: string[]; refusals: string[]; source: string | null; saving: boolean }> {
+  /** The Definition as read: its facts by their names (`Bound`, `Macro`, `Path`, `Tools`), the
+   * missing target said beside the Path, its Parts, and how many fields it has; and the Source
+   * once unfolded: its views (`Authored`, `Expanded`) with the one chosen, its line numbers and
+   * its text. */
+  definition(name: string): Promise<{
+    facts: Record<string, string>; missing: string; parts: string[]; fields: number;
+    views: string[]; view: string; numbers: number[]; source: string | null;
+  }> {
     return this.browser.execute((detail, artifact) => {
       const root = document.querySelector(detail);
-      const path = root?.querySelector<HTMLInputElement>(`input[aria-label="Path of ${artifact}"]`);
+      const definition = root?.querySelector('section.section[aria-label="Definition"]');
+      const facts: Record<string, string> = {};
+      for (const term of definition?.querySelectorAll("dt") ?? []) {
+        const value = term.nextElementSibling;
+        facts[term.textContent?.trim() ?? ""] = (value?.querySelector(".mono") ?? value)?.textContent?.trim() ?? "";
+      }
+      const source = root?.querySelector(`[role="region"][aria-label="Source of ${artifact}"]`);
+      const tabs = [...(root?.querySelectorAll('[role="tablist"][aria-label="Source views"] [role="tab"]') ?? [])];
       return {
-        file: root?.querySelector("section.section[aria-label=\"Definition\"] dd.file")?.textContent?.trim() ?? "",
-        path: path?.value ?? "",
-        missing: path?.parentElement?.querySelector(".missing")?.textContent?.trim() ?? "",
+        facts,
+        missing: definition?.querySelector(".missing")?.textContent?.trim() ?? "",
         parts: [...(root?.querySelectorAll(`ul[aria-label="Parts of ${artifact}"] .part`) ?? [])].map((part) => part.textContent?.trim() ?? ""),
-        refusals: [...(root?.querySelectorAll('[role="alert"]') ?? [])].map((alert) => alert.textContent?.trim() ?? ""),
-        source: root?.querySelector<HTMLTextAreaElement>(`textarea[aria-label="Source of ${artifact}"]`)?.value ?? null,
-        saving: [...(root?.querySelectorAll("button") ?? [])].some((button) => button.textContent?.trim() === "Save"),
+        fields: root?.querySelectorAll('section.section[aria-label="Definition"] :is(input, textarea, select, [contenteditable="true"]), section.section[aria-label="Source"] :is(input, textarea, select, [contenteditable="true"])').length ?? 0,
+        views: tabs.map((tab) => tab.textContent?.trim() ?? ""),
+        view: tabs.find((tab) => tab.getAttribute("aria-selected") === "true")?.textContent?.trim() ?? "",
+        numbers: [...(source?.querySelectorAll(".margin li") ?? [])].map((line) => Number(line.textContent)),
+        source: source?.querySelector("pre")?.textContent ?? null,
       };
     }, DETAIL, name);
   }
@@ -247,116 +258,15 @@ export class Detail {
     return until(this.browser, () => this.definition(name), ok, what);
   }
 
-  /** Type `path` into the Path field and press Enter, until the Definition shows `outcome`:
-   * what writing it, or refusing it, shows. */
-  async writePath(name: string, path: string, outcome: (shown: Awaited<ReturnType<Detail["definition"]>>) => boolean, what: string): Promise<void> {
-    await fill(this.browser, `${DETAIL} input[aria-label="Path of ${name}"]`, path);
-    await press(this.browser, ["Enter"], async () => outcome(await this.definition(name)), what);
+  /** Click the Source's view `view` (Authored, Expanded): it shows. */
+  async sourceView(name: string, view: "Authored" | "Expanded"): Promise<void> {
+    await this.browser.$(`${DETAIL} [role="tablist"][aria-label="Source views"]`).$(`button=${view}`).click();
+    await this.definitionUntil(name, (shown) => shown.view === view, `${name}'s Source shows ${view}`);
   }
 
-  /** Press Esc in the Path field: what was typed is put back. */
-  async discardPath(name: string, outcome: (shown: Awaited<ReturnType<Detail["definition"]>>) => boolean, what: string): Promise<void> {
-    await this.browser.$(`${DETAIL} input[aria-label="Path of ${name}"]`).click();
-    await press(this.browser, ["Escape"], async () => outcome(await this.definition(name)), what);
-  }
-
-  /** Type `path` into the Path field without writing it. */
-  async typePath(name: string, path: string): Promise<void> {
-    await fill(this.browser, `${DETAIL} input[aria-label="Path of ${name}"]`, path);
-  }
-
-  /** Unfold the Source and replace its text with `text`: Save and Revert show. */
-  async editSource(name: string, text: string): Promise<void> {
-    const field = `${DETAIL} textarea[aria-label="Source of ${name}"]`;
-    if (!(await this.browser.$(field).isExisting())) await this.toggleSection("Source");
-    await fill(this.browser, field, text);
-    await holds(this.browser, async () => (await this.definition(name)).saving, "Save shows for the changed Source");
-  }
-
-  /** Click the Source's Save or Revert. */
-  async sourceAction(action: "Save" | "Revert"): Promise<void> {
-    await this.browser.$(DETAIL).$(`button=${action}`).click();
-  }
-
-  /** Click `+ Add` under Parts, type `part` and take it with Enter. */
-  async addPart(name: string, part: string): Promise<void> {
-    await this.browser.$(`${DETAIL} section[aria-label="Definition"]`).$("button*=Add").click();
-    const field = `${DETAIL} input[aria-label="Add a part to ${name}"]`;
-    await this.browser.$(field).waitForDisplayed({ timeout: 15000, timeoutMsg: "the field that adds a part" });
-    await this.browser.$(field).click();
-    await typeText(this.browser, part);
-    await press(this.browser, ["Enter"], async () => {
-      const shown = await this.definition(name);
-      return shown.parts.includes(part) || shown.refusals.length > 0;
-    }, `${part} added or refused`);
-  }
-
-  /** Click `✕` beside the part `part`. */
-  async removePart(name: string, part: string): Promise<void> {
-    await this.browser.$(`${DETAIL} button[aria-label="Remove ${part} from the parts of ${name}"]`).click();
-    await until(this.browser, () => this.definition(name), (shown) => !shown.parts.includes(part), `${part} removed from ${name}'s parts`);
-  }
-
-  /** Click the Definition's `action` (Comment, Rename, Delete). */
-  async definitionAction(action: "Comment" | "Rename" | "Delete"): Promise<void> {
-    await this.browser.$(`${DETAIL} section[aria-label="Definition"]`).$(`button=${action}`).click();
-    if (action !== "Comment") await this.browser.$(DIALOG).waitForDisplayed({ timeout: 15000, timeoutMsg: `the ${action} dialog` });
-  }
-
-  /** The open edit dialog: its title, what it says and the refusal under its field. */
-  dialog(): Promise<{ title: string; text: string; refusal: string } | null> {
-    return this.browser.execute((selector) => {
-      const dialog = document.querySelector<HTMLElement>(selector);
-      if (!dialog) return null;
-      return {
-        title: dialog.querySelector(".dialog-title")?.textContent?.trim() ?? "",
-        text: dialog.innerText.replace(/\s+/g, " ").trim(),
-        refusal: dialog.querySelector('[role="alert"]')?.textContent?.trim() ?? "",
-      };
-    }, DIALOG);
-  }
-
-  /** In the open dialog, type `values` into its fields in order (Name, then Path) and click its
-   * `button`: with `refused`, wait until it says why it refused, else until it closes. */
-  async submitDialog(values: string[], button: string, refused = false): Promise<{ title: string; text: string; refusal: string } | null> {
-    const fields = await this.browser.$$(`${DIALOG} input`).getElements();
-    for (const [index, value] of values.entries()) {
-      await fields[index].click();
-      await fields[index].setValue(value);
-    }
-    await this.browser.$(DIALOG).$(`button=${button}`).click();
-    return until(this.browser, () => this.dialog(), (shown) => refused ? !!shown?.refusal : shown === null,
-      refused ? `the ${button} dialog refused` : `the ${button} dialog closed`);
-  }
-
-  /** Click Cancel in the open dialog: it closes. */
-  async cancelDialog(): Promise<void> {
-    await this.browser.$(DIALOG).$("button=Cancel").click();
-    await holds(this.browser, async () => (await this.dialog()) === null, "the dialog closed");
-  }
-
-  /** The open comment field's text, or null. */
-  commentField(name: string): Promise<string | null> {
-    return this.browser.execute((artifact) => document.querySelector<HTMLTextAreaElement>(`textarea[aria-label="Comment on ${artifact}"]`)?.value ?? null, name);
-  }
-
-  /** In the open comment field of `name`, write `text` (lines joined by Shift+Enter) and press Enter. */
-  async writeComment(name: string, text: string): Promise<void> {
-    const field = `textarea[aria-label="Comment on ${name}"]`;
-    await holds(this.browser, async () => this.browser.$(field).isFocused(), "the comment field has the keyboard");
-    await fill(this.browser, field, "");
-    const lines = text.split("\n");
-    for (const [index, line] of lines.entries()) {
-      if (index > 0) await press(this.browser, ["Shift", "Enter"], async () => ((await this.commentField(name)) ?? "").endsWith("\n"), "a new line in the comment");
-      await typeText(this.browser, line);
-    }
-    await press(this.browser, ["Enter"], async () => (await this.commentField(name)) === null, "the comment written");
-  }
-
-  /** Click the comment drawn under the main graph's node `id`: its field opens in place. */
-  async openComment(id: string, name: string): Promise<void> {
-    const at = await visibleCenter(this.browser, await this.browser.$(`.graph .svelte-flow__node[data-id="${id}"] .comment`).getElement());
-    await dispatchInput(this.browser, { kind: "click", ...at });
-    await holds(this.browser, async () => (await this.commentField(name)) !== null, `${name}'s comment field opened`);
+  /** Click the part `part` under the Definition's Parts: its own Detail opens. */
+  async openPart(name: string, part: string): Promise<void> {
+    await this.browser.$(`${DETAIL} ul[aria-label="Parts of ${name}"]`).$(`button=${part}`).click();
+    await this.until((shown) => shown.title === `Artifact ${part}`, `${part}'s Detail opened`);
   }
 }

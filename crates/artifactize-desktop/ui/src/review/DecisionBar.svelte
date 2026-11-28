@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The decision bar (D-REV-12, J-HUMAN-CLAIM, J-HUMAN-GREEN, J-HUMAN-RED): under the reasons box,
+  // The decision bar (D-REV-12, J-HUMAN-CLAIM, J-HUMAN-GREEN, J-HUMAN-RED): under the issues box,
   // apart from it. At its left the claim: where it stands, Claim to review or Release claim, and a
   // running claim's or release's seconds and Cancel; at its right the decision: GREEN and RED as
   // tabs, why Submit cannot submit yet, and Submit naming the chosen verdict, its seconds and
@@ -14,7 +14,7 @@
 
   let { review, typed, compact = false, onsubmit }: {
     review: Review;
-    /** What the reasons field holds and has not added. */
+    /** What the issues field holds and has not added. */
     typed: string;
     /** The pet overlay's decision row: no claim, why above the row. */
     compact?: boolean;
@@ -111,7 +111,7 @@
 {/if}
 
 <style>
-  /* A bar of its own on the panel surface, 8px under the reasons box (D-REV-12). */
+  /* A bar of its own on the panel surface, 8px under the issues box (D-REV-12). */
   .bar {
     display: flex;
     flex-wrap: wrap;
