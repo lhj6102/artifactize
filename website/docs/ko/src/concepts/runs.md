@@ -27,7 +27,7 @@ Artifactize는 Run을 시작한 터미널이나 MCP 세션과 독립적으로 �
 - `artifactize verify SELECTOR --wait`는 Run이 끝날 때까지 대기한 뒤 Run 결과에 해당하는 종료 코드를 반환합니다. `artifactize run show RUN_ID --wait [--timeout-ms MS]`도 Run이 끝날 때까지 대기합니다(기본 대기 제한 시간 10분). Run이 끝나기 전에 제한 시간이 지나면 Run은 계속 실행되고 CLI 명령만 종료 코드 `3`으로 끝납니다.
 - `artifactize verify SELECTOR --watch`(또는 `artifactize run watch RUN_ID`)는 진행 이벤트(`update`, `eval_result`, `outcome`)를 이벤트마다 한 줄씩 JSON으로 출력합니다.
 - `--wait`나 `--watch` 실행 중에 `Ctrl+C`를 누르면 진행 상황을 표시하던 명령만 종료 코드 `130`으로 끝납니다. **Run 자체는 취소되지 않고 계속 실행됩니다.**
-- 아직 끝나지 않은 Run(`RUNNING` 또는 `WAITING_HUMAN`)을 멈추려면 `artifactize run cancel RUN_ID`(또는 MCP `verify_cancel`)를 실행하세요. 취소 요청이 기록되면 즉시 종료 코드 `0`으로 끝납니다. Run을 취소하면 새 작업은 시작하지 않습니다. 해당 Run에서 시작한 작업 중 아직 끝나지 않은 것만 중단합니다. 이미 저장한 결과는 그대로 남으며 Run은 `ERROR/CANCELLED`로 끝납니다. 다른 Run이 시작한 작업의 결과를 기다리던 경우에는 대기만 끝나고 원래 작업은 계속 실행됩니다. 완전히 멈췄는지 확인하려면 `run watch RUN_ID`나 `run show RUN_ID`를 이어서 실행하세요.
+- 아직 끝나지 않은 Run(`RUNNING` 또는 `WAITING_HUMAN`)을 멈추려면 `artifactize run cancel RUN_ID`(또는 MCP `verify_cancel`)를 실행하세요. 이 명령은 취소 요청을 기록하는 즉시 종료 코드 `0`으로 끝납니다. Run을 취소하면 새 작업은 시작하지 않습니다. 해당 Run에서 시작한 작업 중 아직 끝나지 않은 것만 중단합니다. 이미 저장한 결과는 그대로 남으며 Run은 `ERROR/CANCELLED`로 끝납니다. 다른 Run이 시작한 작업의 결과를 기다리던 경우에는 대기만 끝나고 원래 작업은 계속 실행됩니다. 완전히 멈췄는지 확인하려면 `run watch RUN_ID`나 `run show RUN_ID`를 이어서 실행하세요.
 - `--comment "로그인 양식 수정"`을 지정하면 `run list`와 데스크톱 앱에 표시할 메모를 남깁니다. `--request-key KEY`를 지정하면 다시 요청해도 기존 Run이 반환됩니다.
 
 ## 선행 조건이 충족되기 전에 미리 실행하기 (`--speculate`) {#speculation}

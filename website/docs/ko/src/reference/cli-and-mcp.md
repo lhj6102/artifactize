@@ -15,7 +15,7 @@
 | `status [SELECTOR]` (기본 `--all`) | `--recursive`, `--force`, `--fingerprint-jobs N` (기본값: 사용 가능한 CPU 수) | eval과 Artifact 상태, 예상 동작(`execute`, `reuse`, `wait`, `blocked`; [Run과 실행 흐름](../concepts/runs.md) 참고), 재사용할 결과가 없을 때 바뀐 입력([fingerprint와 재사용](../concepts/reuse.md#completed-result-reuse) 참고)을 보여 줍니다. | `0` 충족됨, `1` 아직 충족하지 못한 검증 요건이 있음, `2` 명령/상태 오류 |
 | `config check` | — | 프로젝트 코드를 실행하지 않고 `.artifactize/` 선언을 정적으로 검증합니다. | `0` 유효함, `2` 오류 |
 | `config graph [ARTIFACT]` | `--impact` | Artifact, eval, 순환 참조로 묶인 항목, 각 입력을 사용하는 eval을 출력합니다(`--impact`를 지정하면 해당 Artifact에 의존하는 하위 항목도 표시). | `0` |
-| `config expand [ARTIFACT]` | — | 각 Artifact(또는 지정한 Artifact 하나)의 바인딩이 펼쳐지는 내용을, 매크로와 toolset을 채워 바인딩된 파일과 줄 다음에 출력합니다. | `0`, `2` 잘못된 선언 |
+| `config expand [ARTIFACT]` | — | 각 Artifact(또는 지정한 Artifact 하나)의 바인딩을 매크로와 toolset까지 채워 펼친 결과를 출력합니다. 결과마다 앞에 바인딩한 파일과 줄을 적습니다. | `0`, `2` 잘못된 선언 |
 | `config symbols` | — | 전역 바인딩(Artifact, toolset, profile)과 매크로 시그니처를 선언된 위치와 함께 나열합니다. | `0`, `2` 잘못된 선언 |
 | `config migrate` | `--repo PATH` | [예전 정의를](declarations.md#upgrading-an-in-tree-project) `.artf` 언어로 바꿉니다. | `0` |
 | `plugin add PATH` | `--repo PATH` | 폴더에서 [뷰어 플러그인](../guides/viewer-plugins.md)을 설치합니다. | `0` |
@@ -108,7 +108,7 @@ codex mcp add artifactize -- artifactize mcp                                    
 | `verify_cancel` | **`run`** | 아직 끝나지 않은 Run의 취소를 요청합니다. |
 | `status` | 선택적 `scope` (Selection 객체, 기본 `{"kind":"all"}`) | 현재 상태를 보여 주고, `verify`를 실행했을 때 각 eval을 새로 실행할지(`execute`), 이전 결과를 재사용할지(`reuse`), 선행 조건이 충족될 때까지 대기할지(`wait`), 실행이 막힐지(`blocked`) 알려 줍니다. |
 | `config_check` | 없음 | `.artifactize/` 선언을 정적으로 검증합니다. |
-| `config_expand` | 선택적 `artifact` | 각 Artifact(또는 하나)의 바인딩이 펼쳐지는 내용을 바인딩 위치와 함께, `config expand --json`과 같은 형식으로 반환합니다. |
+| `config_expand` | 선택적 `artifact` | 각 Artifact(또는 하나)의 바인딩을 펼친 결과를 바인딩한 위치와 함께 반환합니다. 형식은 `config expand --json`과 같습니다. |
 | `config_symbols` | 없음 | 전역 바인딩과 매크로 시그니처를 `config symbols --json`과 같은 형식으로 반환합니다. |
 | `plugin_list` | 없음 | 내장 플러그인과 프로젝트에 설치한 플러그인을 CLI JSON 형식으로 페이지별로 반환합니다. |
 | `plugin_add` | `path` (폴더 절대 경로) | 플러그인을 설치합니다. `action: "added"`와 플러그인 namespace 및 상세 정보를 반환합니다. |
