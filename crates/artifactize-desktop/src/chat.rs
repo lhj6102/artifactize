@@ -779,12 +779,22 @@ impl From<ChatTrustScope> for acp::trust::TrustScope {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatLauncherFingerprint {
     pub resolved_executable: PathKey,
     pub executable_sha256: String,
     pub args_hash: String,
+}
+
+impl From<ChatLauncherFingerprint> for acp::trust::LauncherFingerprint {
+    fn from(fp: ChatLauncherFingerprint) -> Self {
+        Self {
+            resolved_executable: fp.resolved_executable.to_path(),
+            executable_sha256: fp.executable_sha256,
+            args_hash: fp.args_hash,
+        }
+    }
 }
 
 impl From<acp::trust::LauncherFingerprint> for ChatLauncherFingerprint {
@@ -1111,17 +1121,19 @@ pub async fn chat_permission_respond(
         .map_err(Failure::Action)
 }
 
-/// Record explicit machine-local Workspace Trust for an ACP agent on a worktree/repo scope.
+/// Record explicit machine-local Workspace Trust for an ACP agent on a worktree/repo scope, for
+/// the launcher `fingerprint` the trust prompt showed.
 #[tauri::command]
 #[specta::specta]
 pub async fn chat_trust_grant(
     app: tauri::State<'_, App>,
     worktree: PathKey,
     agent: String,
+    fingerprint: ChatLauncherFingerprint,
 ) -> Result<ChatTrustRecord, Failure> {
     let agent_id: acp::AgentId = agent.parse().map_err(Failure::Invalid)?;
     app.chat
-        .trust_workspace(&worktree.to_path(), &agent_id)
+        .trust_workspace(&worktree.to_path(), &agent_id, &fingerprint.into())
         .await
         .map(Into::into)
         .map_err(Failure::Action)

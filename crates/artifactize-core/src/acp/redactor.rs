@@ -57,7 +57,34 @@ impl StreamRedactor {
         std::mem::replace(&mut self.pending, tail)
     }
 
-    /// Flush the trailing sliding window at segment or turn end.
+    /// Emit what a display boundary inside the same stream (a tool call between two runs of
+    /// prose, say) may show now: everything but the tail that could still begin a known secret.
+    /// That tail stays pending, so the stream's next chunk completes or clears it and a secret
+    /// split around the boundary is never written in pieces.
+    pub(crate) fn release(&mut self) -> String {
+        if self.secrets.is_empty() {
+            return std::mem::take(&mut self.pending);
+        }
+        self.redact_pending();
+        let held = self
+            .secrets
+            .iter()
+            .filter_map(|secret| {
+                secret
+                    .char_indices()
+                    .skip(1)
+                    .map(|(end, _)| &secret[..end])
+                    .filter(|prefix| self.pending.ends_with(prefix))
+                    .map(str::len)
+                    .max()
+            })
+            .max()
+            .unwrap_or(0);
+        let tail = self.pending.split_off(self.pending.len() - held);
+        std::mem::replace(&mut self.pending, tail)
+    }
+
+    /// Flush the trailing sliding window at turn end.
     pub(crate) fn flush(&mut self) -> String {
         if self.secrets.is_empty() {
             return std::mem::take(&mut self.pending);
@@ -93,6 +120,23 @@ impl StreamRedactor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_boundary_holds_back_only_what_could_begin_a_secret() {
+        let mut redactor = StreamRedactor::new(["sk-0123456789".to_owned()]);
+        let mut written = redactor.push("Reading the file then sk-0123");
+        written.push_str(&redactor.release());
+        assert!(!written.contains("sk-"), "{written}");
+        written.push_str(" | tool | ");
+        written.push_str(&redactor.push("456789 done"));
+        written.push_str(&redactor.flush());
+        assert_eq!(written, "Reading the file then  | tool | [REDACTED] done");
+
+        let mut plain = StreamRedactor::new(["sk-0123456789".to_owned()]);
+        let mut shown = plain.push("Nothing secret here.");
+        shown.push_str(&plain.release());
+        assert_eq!(shown, "Nothing secret here.");
+    }
 
     #[test]
     fn stream_redactor_preserves_lines_and_catches_cross_chunk_secrets() {

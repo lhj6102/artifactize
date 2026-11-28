@@ -143,6 +143,9 @@ pub(crate) struct AcpTurnOutcome {
     pub result: Result<String, Failure>,
     pub generation: u64,
     pub warm_owner: Option<WarmOwner>,
+    /// Whether the agent's session ended quiescent, so a later turn may resume it with
+    /// `session/load`; a turn that ended with a Verify call still running is not.
+    pub resumable: bool,
 }
 
 /// Inputs required to execute one ACP Chat turn.
@@ -176,6 +179,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
         Err(error) => {
             return AcpTurnOutcome {
                 result: Err(Failure::from(error)),
+                resumable: false,
                 generation: input.binding.as_ref().map_or(1, |b| b.generation),
                 warm_owner: None,
             };
@@ -189,6 +193,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
         Err(error) => {
             return AcpTurnOutcome {
                 result: Err(Failure::new(Code::AgentError, error)),
+                resumable: false,
                 generation: input.binding.as_ref().map_or(1, |b| b.generation),
                 warm_owner: None,
             };
@@ -319,6 +324,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
             }
             return AcpTurnOutcome {
                 result: Err(error),
+                resumable: false,
                 generation,
                 warm_owner: None,
             };
@@ -339,6 +345,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
                 bridge.stop().await;
                 return AcpTurnOutcome {
                     result: Err(problem.into()),
+                    resumable: false,
                     generation,
                     warm_owner: None,
                 };
@@ -359,6 +366,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
                     bridge.stop().await;
                     return AcpTurnOutcome {
                         result: Err(problem.into()),
+                        resumable: false,
                         generation,
                         warm_owner: None,
                     };
@@ -402,11 +410,13 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
                     result: Ok(completed.answer),
                     generation,
                     warm_owner: Some(current_warm_owner),
+                    resumable: true,
                 }
             } else {
                 let _ = child.terminate().await;
                 AcpTurnOutcome {
                     result: Ok(completed.answer),
+                    resumable: false,
                     generation,
                     warm_owner: None,
                 }
@@ -438,6 +448,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
             final_failure.message = redactor.redact_all(&final_failure.message);
             AcpTurnOutcome {
                 result: Err(final_failure),
+                resumable: false,
                 generation,
                 warm_owner: None,
             }
@@ -1353,7 +1364,7 @@ impl TurnAccumulator {
     ) {
         match event {
             SessionEvent::AgentMessageChunk { text } => {
-                let tail_thought = thought_redactor.flush();
+                let tail_thought = thought_redactor.release();
                 self.push_thought(&tail_thought, recorder);
                 let safe = text_redactor.push(&text);
                 self.push_text(&safe, recorder);
@@ -1373,7 +1384,7 @@ impl TurnAccumulator {
                 diff,
                 output_truncated,
             } => {
-                let tail_text = text_redactor.flush();
+                let tail_text = text_redactor.release();
                 self.push_text(&tail_text, recorder);
                 self.flush_prose_segment(recorder);
                 let redacted_diff = diff.map(|d| redact_diff(d, redactor));

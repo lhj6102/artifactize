@@ -73,8 +73,11 @@ branch: string } |
 	chatSend: (id: string, text: string, selection: { engine: "direct"; backend: ChatDirectBackend; model: string; effort?: string | null } | { engine: "acp"; agent: string; config?: ChatConfigSelection[] } | { engine: "legacyClaudeAgent"; model: string; effort?: string | null } | null) => typedError<ChatSendResult, Failure>(__TAURI_INVOKE("chat_send", { id, text, selection })),
 	/**  Submit a user choice for a pending ACP permission request (`PENDING -> SELECTED`). */
 	chatPermissionRespond: (id: string, permissionId: string, optionId: string) => typedError<boolean, Failure>(__TAURI_INVOKE("chat_permission_respond", { id, permissionId, optionId })),
-	/**  Record explicit machine-local Workspace Trust for an ACP agent on a worktree/repo scope. */
-	chatTrustGrant: (worktree: PathKey, agent: string) => typedError<ChatTrustRecord, Failure>(__TAURI_INVOKE("chat_trust_grant", { worktree, agent })),
+	/**
+	 *  Record explicit machine-local Workspace Trust for an ACP agent on a worktree/repo scope, for
+	 *  the launcher `fingerprint` the trust prompt showed.
+	 */
+	chatTrustGrant: (worktree: PathKey, agent: string, fingerprint: ChatLauncherFingerprint) => typedError<ChatTrustRecord, Failure>(__TAURI_INVOKE("chat_trust_grant", { worktree, agent, fingerprint })),
 	/**  List all saved machine-local ACP Workspace Trust records. */
 	chatTrustList: () => typedError<ChatTrustRecord[], Failure>(__TAURI_INVOKE("chat_trust_list")),
 	/**  Revoke a saved Workspace Trust record and terminate any matching warm ACP children. */

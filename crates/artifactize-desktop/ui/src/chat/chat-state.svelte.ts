@@ -362,7 +362,7 @@ export class ChatModeState {
     if (!prompt || prompt.busy) return;
     this.trustPrompt = { ...prompt, busy: true, error: null };
     try {
-      await call(this.ipc.chatTrustGrant(prompt.worktree, prompt.requirement.agentId));
+      await call(this.ipc.chatTrustGrant(prompt.worktree, prompt.requirement.agentId, prompt.requirement.fingerprint));
       this.trustPrompt = null;
       if (this.selected === prompt.sessionId) {
         await this.send();

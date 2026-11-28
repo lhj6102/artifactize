@@ -612,8 +612,16 @@ impl Connection {
                 continue;
             };
 
-            let is_mode = current_opt.category == ConfigCategory::Mode
-                || inferred_cat == ConfigCategory::Mode;
+            // A mode is satisfied only by an option the agent calls a mode; another option with
+            // the same ID never stands in for it.
+            if inferred_cat == ConfigCategory::Mode && current_opt.category != ConfigCategory::Mode
+            {
+                return Err(Problem::ModeMismatch {
+                    requested: selection.value.clone(),
+                    actual: None,
+                });
+            }
+            let is_mode = current_opt.category == ConfigCategory::Mode;
             let choice_exists = current_opt
                 .choices
                 .iter()
@@ -695,7 +703,7 @@ impl Connection {
         for (id, requested) in modes {
             let actual = live
                 .iter()
-                .find(|opt| opt.id == id)
+                .find(|opt| opt.id == id && opt.category == ConfigCategory::Mode)
                 .map(|opt| opt.current_value.clone());
             if actual.as_deref() != Some(requested.as_str()) {
                 return Err(Problem::ModeMismatch { requested, actual });

@@ -1207,11 +1207,14 @@ impl Chat {
         Ok(updated)
     }
 
-    /// Record explicit machine-local Workspace Trust for an ACP agent on a worktree/repo scope.
+    /// Record explicit machine-local Workspace Trust for an ACP agent on a worktree/repo scope,
+    /// for the launcher `shown` to the person who confirmed it. A launcher that changed since is
+    /// refused, so trust never covers bytes nobody was asked about.
     pub async fn trust_workspace(
         &self,
         worktree: &Path,
         agent_id: &AgentId,
+        shown: &acp::trust::LauncherFingerprint,
     ) -> Result<TrustRecord, String> {
         let worktree =
             crate::workspace::canonical_target(worktree).map_err(|error| error.to_string())?;
@@ -1230,6 +1233,12 @@ impl Chat {
             Ok::<_, String>((spec, scope, fingerprint))
         })
         .await??;
+        if fingerprint != *shown {
+            return Err(format!(
+                "{}'s launcher changed after you were asked to trust it; send the message again to review the new one.",
+                spec.name
+            ));
+        }
         acp::trust::grant_trust(Some(&self.state), None, spec.id, scope, fingerprint).await
     }
 
@@ -1613,7 +1622,9 @@ impl Chat {
                             &mut recorder,
                         )
                         .await;
-                        let completed_send = outcome.result.is_ok().then_some(send);
+                        // Only a quiescent session counts as settled for `session/load`.
+                        let completed_send =
+                            (outcome.result.is_ok() && outcome.resumable).then_some(send);
                         if outcome.warm_owner.is_some() {
                             park_reaper = true;
                         }

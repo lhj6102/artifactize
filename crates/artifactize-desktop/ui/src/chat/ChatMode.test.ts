@@ -1054,7 +1054,9 @@ it("asks for Workspace Trust on trustRequired and retries send automatically aft
   trusted = true;
   await fireEvent.click(within(dialog).getByRole("button", { name: "Trust and continue" }));
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "Trust workspace" })).toBeNull());
-  expect(calls.some(({ cmd, args }) => cmd === "chat_trust_grant" && args.agent === "antigravity")).toBe(true);
+  // Trust is asked for the launcher the dialog showed.
+  expect(calls.some(({ cmd, args }) => cmd === "chat_trust_grant" && args.agent === "antigravity"
+    && (args.fingerprint as { executableSha256?: string } | undefined)?.executableSha256 === "deadbeef1234")).toBe(true);
   expect(calls.filter(({ cmd }) => cmd === "chat_send")).toHaveLength(2);
 });
 
