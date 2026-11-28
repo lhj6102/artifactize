@@ -524,6 +524,9 @@ pub struct View {
     pub turns: Vec<Turn>,
     pub live_config_options: Vec<ConfigOption>,
     pub verify_bridge_state: VerifyBridgeState,
+    /// The engine or agent the conversation last ran on, when the session's target is another:
+    /// the next message continues there with a Handoff.
+    pub handoff_from: Option<String>,
 }
 
 #[derive(Clone)]
@@ -1149,6 +1152,9 @@ impl Chat {
         let verify_bridge_state = session.verify_bridge_state;
         let live_permissions = store::chat::list_permissions(&self.state, id).await?;
         let conversation = Conversation::load(&path(&self.state, id))?;
+        let handoff_from = session.target.as_ref().and_then(|target| {
+            handoff_from(conversation.as_ref(), &target.engine_label(), || None)
+        });
         let mut turns = transcript::turns(conversation.as_ref(), running, &live_permissions);
         transcript::update_runs(&self.state, &session.worktree, id, &mut turns).await;
         Ok(View {
@@ -1158,6 +1164,7 @@ impl Chat {
             turns,
             live_config_options,
             verify_bridge_state,
+            handoff_from,
         })
     }
 

@@ -740,6 +740,9 @@ pub struct ChatView {
     pub turns: Vec<ChatTurn>,
     pub live_config_options: Vec<ChatConfigOption>,
     pub verify_bridge_state: ChatVerifyBridgeState,
+    /// The engine or agent the conversation last ran on, when the session's target is another:
+    /// the next message continues there with a Handoff.
+    pub handoff_from: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -1071,6 +1074,7 @@ pub async fn chat_open(app: tauri::State<'_, App>, id: SessionKey) -> Result<Cha
                     .map(Into::into)
                     .collect(),
                 verify_bridge_state: view.verify_bridge_state.into(),
+                handoff_from: view.handoff_from,
             }
         })
         .map_err(Failure::Read)

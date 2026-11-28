@@ -10,7 +10,7 @@
   import { getAppState } from "../shell/app.svelte";
   import Icon from "../shell/Icon.svelte";
   import Section from "../shell/Section.svelte";
-  import ToolLog from "../review/ToolLog.svelte";
+  import ToolRuns from "../review/ToolRuns.svelte";
 
   let {
     branch,
@@ -59,8 +59,9 @@
 </Section>
 {/if}
 {#if tools.log.length > 0}
+  <!-- Each run one line, as a review's (D-INS-4); its Cancel is the Tools section's. -->
   <Section name="Tool log">
-    <ToolLog entries={tools.log} />
+    <ToolRuns log={tools.log} tools={declared} newestOpen />
   </Section>
 {/if}
 

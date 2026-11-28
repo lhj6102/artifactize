@@ -330,8 +330,8 @@
       <Dialog.Title class="dialog-title">Install ACP agent from Registry</Dialog.Title>
       {#if s.registryConfirm}
         {@const spec = s.registryConfirm}
-        <!-- A download is installed only against the SHA-256 shown here (D-SET-9, D-OVL-8). -->
-        {@const undigested = !spec.artifactSha256 && (spec.distributionKind === "binary" || spec.distributionKind === "archive")}
+        <!-- Nothing is installed without the SHA-256 shown here (D-SET-9, D-OVL-8). -->
+        {@const undigested = !spec.artifactSha256}
         <form
           class="dialog-layout"
           onsubmit={(event) => {
@@ -368,7 +368,7 @@
               <dt>SHA-256</dt>
               <dd class="mono">{spec.artifactSha256 ?? "Not published by Registry"}</dd>
             </dl>
-            {#if spec.distributionKind === "npx" || spec.distributionKind === "uvx"}
+            {#if !undigested && (spec.distributionKind === "npx" || spec.distributionKind === "uvx")}
               <label class="consent-opt">
                 <input
                   type="checkbox"
@@ -380,7 +380,7 @@
               </label>
             {/if}
             {#if undigested}
-              <p class="consent-opt">The Registry publishes no SHA-256 for this download, so it cannot be installed.</p>
+              <p class="consent-opt">The Registry publishes no SHA-256 for it, so it cannot be installed.</p>
             {/if}
             {#if s.registryError}<p class="error" role="alert">{s.registryError}</p>{/if}
           </div>

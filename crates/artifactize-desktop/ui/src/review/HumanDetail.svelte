@@ -195,7 +195,7 @@
           </div>
         </div>
         <!-- Newest last as they happen: each tool's run, then each point. -->
-        <ToolRuns {review} />
+        <ToolRuns log={review.log} tools={review.view?.tools ?? []} cancel={review.busy?.tool ? () => review.cancel() : null} />
         {#if pointed}
           <ReviewPoints {review} ready={caret.ready} insert={(text) => caret.insert(text)} />
         {/if}

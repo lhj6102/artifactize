@@ -732,6 +732,11 @@ export type ChatView = {
 	turns: ChatTurn[],
 	liveConfigOptions: ChatConfigOption[],
 	verifyBridgeState: ChatVerifyBridgeState,
+	/**
+	 *  The engine or agent the conversation last ran on, when the session's target is another:
+	 *  the next message continues there with a Handoff.
+	 */
+	handoffFrom: string | null,
 };
 
 /**  One Run in a branch's timeline. */

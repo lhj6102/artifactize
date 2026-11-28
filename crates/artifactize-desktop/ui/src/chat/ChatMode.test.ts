@@ -87,13 +87,14 @@ const AGY_ENTRY: ChatAgentCatalogEntry = {
   registry: null,
 };
 
-function chatViewOf(s: ChatSession, running: boolean, turns: ChatTurn[]): ChatView {
+function chatViewOf(s: ChatSession, running: boolean, turns: ChatTurn[], handoffFrom: string | null = null): ChatView {
   return {
     session: s,
     activity: !running ? "idle" : s.activity === "waitingPermission" ? "waitingPermission" : "running",
     turns,
     liveConfigOptions: [],
     verifyBridgeState: "notConnected",
+    handoffFrom,
   };
 }
 
@@ -116,6 +117,7 @@ function backend() {
     send: null as ((text: string) => Promise<ChatSendResult | void>) | null,
     stop: null as (() => Promise<boolean>) | null,
     antigravitySignedIn: false,
+    handoffFrom: null as string | null,
   };
   mockIPC(
     (cmd, args) => {
@@ -131,7 +133,7 @@ function backend() {
           if (state.other && (args as { id: string }).id === state.other.id) {
             return chatViewOf(state.other, false, []);
           }
-          return chatViewOf(state.session, state.running, state.turns);
+          return chatViewOf(state.session, state.running, state.turns, state.handoffFrom);
         case "chat_mark_seen":
           state.session = { ...state.session, unseen: false };
           return null;
@@ -1100,10 +1102,14 @@ it("renders rich ACP blocks, interactive permission cards with always-persistenc
       ],
     },
   ];
+  state.handoffFrom = "Direct (codex)";
   show();
   const row = await screen.findByRole("button", { name: /Fix checkout rounding.*waiting/ });
   await fireEvent.click(row);
   const log = within(await screen.findByRole("log", { name: "Conversation" }));
+  // A handoff is one quiet line; the switch is said above the composer (D-CHAT-13).
+  expect(log.getByText("Continued from Direct (codex) to ACP (antigravity)").tagName).toBe("P");
+  expect(await screen.findByText("Switched from Direct (codex); the next message continues with a handoff.")).toBeTruthy();
   expect(log.getByText("Thought")).toBeTruthy();
   expect(log.getByText("Read failing test")).toBeTruthy();
   expect(log.getByText("Saved model fell back to default.")).toBeTruthy();
