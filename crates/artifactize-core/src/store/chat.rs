@@ -848,9 +848,9 @@ impl Receipts {
             if claimed.send(option_id.clone()).is_err() {
                 return Ok(PermissionDelivery::Cancelled);
             }
-            let delivered = written
-                .recv_timeout(DELIVERY_WRITE_LIMIT + std::time::Duration::from_secs(1))
-                .unwrap_or(false);
+            // The write side answers within its own DELIVERY_WRITE_LIMIT, or by going away;
+            // waiting on it here, not on a second clock, keeps the lock until the write ended.
+            let delivered = written.recv().unwrap_or(false);
             transaction.execute(
                 "UPDATE chat_pending_permissions SET status=?1, resolved_at=?2 \
                  WHERE session_id=?3 AND owner_token=?4 AND permission_id=?5 AND status='DELIVERING'",

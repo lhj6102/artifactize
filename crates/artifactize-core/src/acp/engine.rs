@@ -846,10 +846,11 @@ async fn execute_on_child(
     // Flush trailing redactor windows and record final assistant prose in `Kind::Message`.
     state.flush_all(&mut text_redactor, &mut thought_redactor, recorder);
 
-    // Check in-flight bridge calls BEFORE stopping the bridge: if any call is still in flight
-    // when a clean StopReason arrives, treat it as protocol desync and retire the warm child.
-    let in_flight_at_end = bridge.in_flight_calls();
+    // Disarm, then count: a call is counted before it checks the turn (verify_bridge), so one
+    // that got in is counted here and one that did not is refused. Any call still in flight when
+    // a clean StopReason arrives is a protocol desync, and the child is not kept warm.
     bridge.disarm_turn();
+    let in_flight_at_end = bridge.in_flight_calls();
 
     // Cancel any leftover pending permissions before draining or stopping: their rows first,
     // so no responder can select one the agent is then told was cancelled.
@@ -992,24 +993,26 @@ async fn admit_permission(
         RpcId::Number(n) => n.to_string(),
         RpcId::Text(s) => s.clone(),
     };
-    let admitted = input
-        .receipts
-        .insert_chat_permission(NewPermission {
-            session_id: input.session_id.clone(),
-            owner_token: input.owner.token.clone(),
-            permission_id: permission_id.clone(),
-            rpc_request_id,
-            title: title.clone(),
-            tool_kind: req.tool_kind,
-            summary: summary.clone(),
-            detail: detail.clone(),
-            options: options.clone(),
-            created_at: crate::broker::now(),
-        })
-        .await
-        .map_err(Failure::from)?;
+    // A request with no option left is cancelled at once, with no row to clean up later.
+    let admitted = !options.is_empty()
+        && input
+            .receipts
+            .insert_chat_permission(NewPermission {
+                session_id: input.session_id.clone(),
+                owner_token: input.owner.token.clone(),
+                permission_id: permission_id.clone(),
+                rpc_request_id,
+                title: title.clone(),
+                tool_kind: req.tool_kind,
+                summary: summary.clone(),
+                detail: detail.clone(),
+                options: options.clone(),
+                created_at: crate::broker::now(),
+            })
+            .await
+            .map_err(Failure::from)?;
 
-    if !admitted || options.is_empty() {
+    if !admitted {
         let _ = conn.send_permission_cancelled(req.rpc_id).await;
         recorder.event(Kind::AcpPermission(AcpPermissionEvent {
             permission_id,

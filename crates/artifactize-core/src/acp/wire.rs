@@ -556,26 +556,25 @@ impl Connection {
         let mut notices = Vec::new();
         // Each selection's category as first read: a mode stays a mode even if a later refresh
         // drops the option that named it.
-        let mut ordered: Vec<(u8, ConfigCategory, &ConfigSelection)> = requested
+        // Whether the kind is known at all: saved with the selection or read off a live option.
+        let mut ordered: Vec<(u8, ConfigCategory, bool, &ConfigSelection)> = requested
             .iter()
             .map(|sel| {
-                let category = sel
-                    .category
-                    .or_else(|| {
-                        live.iter()
-                            .find(|opt| opt.id == sel.id)
-                            .map(|opt| opt.category)
-                    })
-                    .unwrap_or_else(|| infer_category(&sel.id, None));
-                (category.apply_rank(), category, sel)
+                let known = sel.category.or_else(|| {
+                    live.iter()
+                        .find(|opt| opt.id == sel.id)
+                        .map(|opt| opt.category)
+                });
+                let category = known.unwrap_or_else(|| infer_category(&sel.id, None));
+                (category.apply_rank(), category, known.is_some(), sel)
             })
             .collect();
-        ordered.sort_by_key(|(rank, _, _)| *rank);
+        ordered.sort_by_key(|(rank, _, _, _)| *rank);
 
         let mut effective = Vec::new();
         // The modes asked for, by option ID: a later setter can replace the whole list.
         let mut modes = Vec::new();
-        for (_, first_category, selection) in ordered {
+        for (_, first_category, known, selection) in ordered {
             let refreshed = selection
                 .category
                 .or_else(|| {
@@ -604,6 +603,14 @@ impl Connection {
                         requested: selection.value.clone(),
                         actual: None,
                     });
+                }
+                // Neither saved nor advertised with a kind, it could have been the mode the
+                // person chose; the turn stops rather than run under the agent default.
+                if !known {
+                    return Err(Problem::Failed(format!(
+                        "{} no longer offers the saved option {:?}, which could have been its mode; choose the agent's options again.",
+                        self.agent_name, selection.id
+                    )));
                 }
                 notices.push(format!(
                     "Saved option {:?} is no longer advertised by {}; using the agent default.",

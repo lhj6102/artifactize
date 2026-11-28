@@ -349,15 +349,20 @@ async fn serve_stdio(
                     name,
                     arguments,
                 } => {
+                    // Counted before the turn check, as the engine disarms before it counts:
+                    // a call is either refused here or seen in flight there, never neither.
+                    let guard = InFlightGuard::enter(in_flight);
                     if !active_turn.load(Ordering::SeqCst) {
+                        drop(guard);
                         no_active_turn_error(&id)
                     } else if !is_allowlisted(&name) {
+                        drop(guard);
                         stdio_mcp::call_error(
                             &id,
                             &format!("Tool {name:?} is not allowlisted on the ACP Verify bridge."),
                         )
                     } else {
-                        let _guard = InFlightGuard::enter(in_flight);
+                        let _guard = guard;
                         let (reply_tx, receive) = oneshot::channel();
                         if calls
                             .send(BridgeCall {

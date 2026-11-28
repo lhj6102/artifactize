@@ -555,6 +555,9 @@ struct ActiveEntry {
     cancel: CancellationToken,
     owner_token: Option<String>,
     worktree: Option<PathBuf>,
+    /// A Stop came before the turn published its ownership: the turn commits the durable Stop
+    /// itself once it does (`record_owner`).
+    stopped: bool,
 }
 
 /// Resolved execution engine for a single accepted Chat turn (`T-ILLEGAL-STATES`).
@@ -612,8 +615,11 @@ impl Chat {
             active.closed = true;
             active
                 .turns
-                .iter()
-                .map(|(id, entry)| (id.clone(), entry.clone()))
+                .iter_mut()
+                .map(|(id, entry)| {
+                    entry.stopped |= entry.owner_token.is_none();
+                    (id.clone(), entry.clone())
+                })
                 .collect()
         };
         let state = self.state.clone();
@@ -1345,7 +1351,12 @@ impl Chat {
             // Claim and read the checkout in one transaction. If a move won the race, this
             // turn starts on the newly saved workspace, never the stale path read above.
             let session = receipts.claim_chat(&self.state, id, &owner).await?;
-            self.record_owner(id, owner.token.clone(), session.worktree.clone());
+            if self.record_owner(id, owner.token.clone(), session.worktree.clone()) {
+                receipts
+                    .stop_chat_by_token(id, &owner.token)
+                    .await
+                    .map_err(SendError::Failed)?;
+            }
             let prepared = async {
                 let mut session = crate::task::blocking(move || session.with_checkout()).await?;
                 if let Some(reason) = session.unavailable.take() {
@@ -1702,14 +1713,19 @@ impl Chat {
     /// Always commits the SQLite Stop transaction (`stop_requested = true` + permission
     /// cancellation) BEFORE firing the in-memory CancellationToken.
     pub async fn stop(&self, id: &SessionId) -> Result<bool, String> {
+        // Under the lock that publishes ownership: a turn not yet owned in SQLite is marked, and
+        // commits this Stop itself as it takes ownership.
         let local = self
             .active
             .state
             .lock()
             .expect("Chat active turns lock")
             .turns
-            .get(id)
-            .cloned();
+            .get_mut(id)
+            .map(|entry| {
+                entry.stopped |= entry.owner_token.is_none();
+                entry.clone()
+            });
         if let Some(entry) = local {
             if let (Some(token), Some(worktree)) = (&entry.owner_token, &entry.worktree) {
                 let receipts = Receipts::open(&self.state, worktree).await?;
@@ -1915,6 +1931,7 @@ impl Chat {
                     cancel: cancel.clone(),
                     owner_token: None,
                     worktree: None,
+                    stopped: false,
                 });
                 Ok(Active {
                     chat: self.clone(),
@@ -1925,18 +1942,20 @@ impl Chat {
         }
     }
 
-    fn record_owner(&self, id: &SessionId, token: String, worktree: PathBuf) {
-        if let Some(entry) = self
-            .active
+    /// Publish the turn's SQLite ownership; true when a Stop came before it, which the turn then
+    /// commits durably itself.
+    fn record_owner(&self, id: &SessionId, token: String, worktree: PathBuf) -> bool {
+        self.active
             .state
             .lock()
             .expect("Chat active turns lock")
             .turns
             .get_mut(id)
-        {
-            entry.owner_token = Some(token);
-            entry.worktree = Some(worktree);
-        }
+            .is_some_and(|entry| {
+                entry.owner_token = Some(token);
+                entry.worktree = Some(worktree);
+                entry.stopped
+            })
     }
 }
 
