@@ -541,6 +541,7 @@ mod tests {
         crate::test_os::make_executable(&replacement);
         std::fs::rename(&replacement, &script).unwrap();
 
+        let verified_cwd = platform::open_verified_worktree(root.path()).unwrap();
         let env = std::collections::BTreeMap::new();
         let cancel = tokio_util::sync::CancellationToken::new();
         let mut child = crate::process::spawn_verified_supervised(
@@ -549,6 +550,7 @@ mod tests {
             &sha256,
             &[],
             root.path(),
+            verified_cwd,
             &env,
             &cancel,
         )

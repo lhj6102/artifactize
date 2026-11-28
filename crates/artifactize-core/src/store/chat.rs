@@ -451,9 +451,11 @@ impl Receipts {
     /// never overwrite a concurrent `generation` bump.
     pub(crate) async fn accept_chat(
         &self,
+        state: &Path,
         session: &Session,
         selection: Option<ChatTarget>,
     ) -> Result<(ChatTarget, Option<AcpBinding>), String> {
+        let state = state.to_owned();
         let mut session = session.clone();
         self.connection
             .call(move |db| {
@@ -478,6 +480,16 @@ impl Receipts {
                         binding.warm_owner = None;
                     }
                 }
+                let switched = current.target.as_ref() != Some(&target);
+                session.previous_engine = if current.previous_engine.is_some() {
+                    current.previous_engine
+                } else if switched {
+                    current.target.as_ref().map(|prev| {
+                        crate::chat::resolved_engine_label(prev, &state, &session.worktree)
+                    })
+                } else {
+                    None
+                };
                 session.target = Some(target.clone());
                 session.view = current.view;
                 session.acp_binding = acp_binding.clone();
@@ -531,7 +543,11 @@ impl Receipts {
                     if session.previous_engine.is_none()
                         && let Some(prev) = &session.target
                     {
-                        session.previous_engine = Some(prev.engine_label());
+                        session.previous_engine = Some(crate::chat::resolved_engine_label(
+                            prev,
+                            &state,
+                            &session.worktree,
+                        ));
                     }
                     session.target = Some(target);
                     session.updated_at = crate::broker::now();
@@ -1086,6 +1102,39 @@ impl Receipts {
                 }
                 transaction.commit()?;
                 Ok::<_, Error>(next_gen)
+            })
+            .await
+            .map_err(|error| error.to_string())
+    }
+
+    /// Conditionally invalidate `session/load` eligibility (bump `generation` and clear
+    /// `remote_session_id` + `warm_owner`) ONLY when `generation == expected_generation` and
+    /// `warm_owner == Some(current_owner)`, so a stale non-quiescent eviction can never clobber a
+    /// newer turn's binding (`C-ONE-TURN-OWNERSHIP`).
+    pub(crate) async fn invalidate_acp_generation(
+        &self,
+        id: &SessionId,
+        expected_generation: u64,
+        current_owner: WarmOwner,
+    ) -> Result<bool, String> {
+        let id = id.clone();
+        self.connection
+            .call(move |db| {
+                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let mut current = saved_chat(&transaction, &id)?;
+                let mut invalidated = false;
+                if let Some(binding) = current.acp_binding.as_mut()
+                    && binding.generation == expected_generation
+                    && binding.warm_owner == Some(current_owner)
+                {
+                    binding.generation = binding.generation.saturating_add(1);
+                    binding.remote_session_id = None;
+                    binding.warm_owner = None;
+                    save(&transaction, &current)?;
+                    invalidated = true;
+                }
+                transaction.commit()?;
+                Ok::<_, Error>(invalidated)
             })
             .await
             .map_err(|error| error.to_string())

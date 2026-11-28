@@ -165,6 +165,7 @@ fn failure(message: String) -> Failure {
 pub struct Running {
     child: platform::Child,
     stderr: JoinHandle<Vec<u8>>,
+    _cwd_dir: Option<platform::PrivateTempDir>,
 }
 
 pub type ProcessChannel = Channel<tokio::process::ChildStdout, tokio::process::ChildStdin>;
@@ -234,8 +235,22 @@ impl Running {
             }
             kept
         });
-        Ok((stdout, stdin, Self { child, stderr }))
+        Ok((
+            stdout,
+            stdin,
+            Self {
+                child,
+                stderr,
+                _cwd_dir: None,
+            },
+        ))
     }
+
+    pub(crate) fn with_tempdir(mut self, dir: platform::PrivateTempDir) -> Self {
+        self._cwd_dir = Some(dir);
+        self
+    }
+
     /// Let Claude Code exit after its input closed, stop it past a grace, and return the end
     /// of what it wrote on stderr.
     pub async fn stop(self, mut channel: ProcessChannel) -> String {
@@ -250,6 +265,8 @@ impl Running {
             let _ = process::terminate(&mut self.child).await;
         }
         let _ = self.child.cleanup().await;
-        crate::task::joined(self.stderr.await).unwrap_or_default()
+        let stderr = crate::task::joined(self.stderr.await).unwrap_or_default();
+        drop(self._cwd_dir);
+        stderr
     }
 }

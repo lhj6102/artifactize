@@ -564,15 +564,20 @@ pub(crate) async fn spawn_handoff(command: &Command) -> Result<Child, Error> {
         .map_err(Error::Spawn)
 }
 
-/// Spawn an owned long-lived process (such as a warm ACP agent) from an already-opened,
-/// SHA-256-verified executable handle without re-resolving `PATH` or `cwd`
+/// Spawn an owned long-lived process (such as a warm ACP agent) from already-opened,
+/// SHA-256-verified executable and directory handles without re-resolving `PATH` or `cwd`
 /// (`C-TRUST-BEFORE-WORKTREE`).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Binds verified executable handle, verified worktree directory handle, and child launch parameters atomically"
+)]
 pub(crate) async fn spawn_verified_supervised(
     path: &std::path::Path,
     verified_file: std::fs::File,
     expected_sha256: &str,
     args: &[OsString],
     cwd: &std::path::Path,
+    verified_cwd: std::fs::File,
     env: &BTreeMap<OsString, OsString>,
     process_cancel: &CancellationToken,
 ) -> Result<Child, Error> {
@@ -586,6 +591,7 @@ pub(crate) async fn spawn_verified_supervised(
         expected_sha256,
         args,
         cwd,
+        verified_cwd,
         &environment,
     )
     .await

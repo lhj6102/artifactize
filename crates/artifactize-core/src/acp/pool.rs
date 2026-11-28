@@ -55,7 +55,7 @@ impl WarmChild {
         generation: u64,
         worktree: &Path,
     ) -> Result<Self, Problem> {
-        let verified_file = launch.open_and_reverify_before_exec(worktree)?;
+        let (verified_file, verified_cwd) = launch.open_and_reverify_before_exec(worktree)?;
         let spec = &launch.spec;
         let resolved_executable = &launch.fingerprint.resolved_executable;
         let executable_sha256 = launch.fingerprint.executable_sha256.clone();
@@ -69,6 +69,7 @@ impl WarmChild {
             &executable_sha256,
             &args,
             worktree,
+            verified_cwd,
             &env,
             &process_cancel,
         )

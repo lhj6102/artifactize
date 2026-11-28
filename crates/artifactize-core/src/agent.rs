@@ -203,6 +203,13 @@ enum Toolset<'a, 'r> {
 }
 
 impl Toolset<'_, '_> {
+    fn workspace_root(&self) -> &Path {
+        match self {
+            Self::Review(registry) => registry.root(),
+            Self::Chat(tools) => tools.root(),
+        }
+    }
+
     fn durable_start(&self, name: &str) -> bool {
         matches!(self, Self::Chat(_)) && name == "verify_start"
     }

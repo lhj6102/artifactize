@@ -25,7 +25,7 @@ use windows_sys::Win32::{
         ERROR_ACCESS_DENIED, ERROR_CANCELLED, ERROR_INVALID_PARAMETER, FILETIME,
         HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation, WAIT_TIMEOUT,
     },
-    Storage::FileSystem::FILE_SHARE_READ,
+    Storage::FileSystem::{FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_READ, FILE_SHARE_WRITE},
     System::{
         Console::{
             CTRL_BREAK_EVENT, GenerateConsoleCtrlEvent, GetStdHandle, STD_ERROR_HANDLE,
@@ -332,15 +332,44 @@ pub(crate) fn open_verified_executable(path: &Path) -> io::Result<File> {
     }
 }
 
+/// Open a verified worktree directory without following reparse points and without
+/// `FILE_SHARE_DELETE`, preventing rename or deletion of the directory until the handle closes
+/// (`C-TRUST-BEFORE-WORKTREE`).
+pub(crate) fn open_verified_worktree(path: &Path) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS);
+    let file = crate::platform::open_no_follow(&mut options, path)?;
+    if file.metadata()?.is_dir() {
+        Ok(file)
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "not a directory",
+        ))
+    }
+}
+
+/// Whether `path` currently resolves (without following reparse points) to the exact same
+/// directory identity as `dir`.
+pub(crate) fn same_directory(dir: &File, path: &Path) -> io::Result<bool> {
+    let current = open_verified_worktree(path)?;
+    Ok(super::file_identity(dir)? == super::file_identity(&current)?)
+}
+
 /// Spawn a previously hashed executable directly without re-resolving `PATH` or `cwd`, holding
-/// the read-only-shared `verified_file` handle until process creation completes so the file
-/// cannot be replaced or modified meanwhile.
+/// the read-only-shared `verified_file` handle and non-delete-shared `verified_cwd` handle until
+/// process creation completes so neither executable nor worktree directory can be replaced
+/// meanwhile.
 pub(crate) async fn spawn_verified(
     path: &Path,
     verified_file: File,
     _expected_sha256: &str,
     args: &[OsString],
     cwd: &Path,
+    verified_cwd: File,
     environment: &std::collections::BTreeMap<OsString, OsString>,
 ) -> io::Result<Child> {
     let mut command = Command::new(path);
@@ -354,6 +383,7 @@ pub(crate) async fn spawn_verified(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
     let spawned = spawn_now(command).await;
+    drop(verified_cwd);
     drop(verified_file);
     spawned
 }

@@ -139,6 +139,41 @@ impl ChatTarget {
     }
 }
 
+/// Resolve a `ChatTarget`'s display and handoff engine label, enriching `DirectBackend::Custom`
+/// with its resolved alias provider or endpoint URL without any secret API key
+/// (`C-NO-SILENT-REGRESSION`).
+pub(crate) fn resolved_engine_label(target: &ChatTarget, state: &Path, worktree: &Path) -> String {
+    match target {
+        ChatTarget::Direct {
+            backend: DirectBackend::Custom { name },
+            model,
+            ..
+        } => {
+            let backend = DirectBackend::Custom { name: name.clone() }.to_backend();
+            let detail = providers::list(Some(state), Some(worktree))
+                .ok()
+                .and_then(|listed| listed.custom.get(&backend).cloned())
+                .map(|view| match view {
+                    providers::CustomView::Alias { provider } => {
+                        format!("{name} -> {provider}")
+                    }
+                    providers::CustomView::Endpoint { api, url, .. } => {
+                        let api_name = match api {
+                            llm::EndpointApi::OpenaiResponses => "openai-responses",
+                            llm::EndpointApi::OpenaiChat => "openai-chat",
+                            llm::EndpointApi::Anthropic => "anthropic",
+                            llm::EndpointApi::Gemini => "gemini",
+                        };
+                        format!("{name} [{api_name} @ {}]", url.as_str())
+                    }
+                })
+                .unwrap_or_else(|| name.to_string());
+            format!("Direct ({detail} / {model})")
+        }
+        _ => target.engine_label(),
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum SendError {
     #[error("Choose a Chat agent or model before sending a Chat message.")]
@@ -715,7 +750,9 @@ impl Chat {
                             .clear_acp_warm_owner(&session_id, generation, warm_owner)
                             .await;
                     } else {
-                        let _ = receipts.bump_acp_generation(&session_id).await;
+                        let _ = receipts
+                            .invalidate_acp_generation(&session_id, generation, warm_owner)
+                            .await;
                     }
                     let _ = receipts.close().await;
                 }
@@ -1190,7 +1227,7 @@ impl Chat {
         let live_permissions = store::chat::list_permissions(&self.state, id).await?;
         let conversation = Conversation::load(&path(&self.state, id))?;
         let handoff_from = session.target.as_ref().and_then(|target| {
-            let next = target.engine_label();
+            let next = resolved_engine_label(target, &self.state, &session.worktree);
             handoff_from(conversation.as_ref(), &next, || {
                 session
                     .previous_engine
@@ -1330,7 +1367,9 @@ impl Chat {
                                 .clear_acp_warm_owner(&session_id, generation, warm_owner)
                                 .await;
                         } else {
-                            let _ = receipts.bump_acp_generation(&session_id).await;
+                            let _ = receipts
+                                .invalidate_acp_generation(&session_id, generation, warm_owner)
+                                .await;
                         }
                         let _ = receipts.close().await;
                     }
@@ -1436,6 +1475,8 @@ impl Chat {
                     .transpose()?
                     .unwrap_or_default();
 
+                let effective_engine_label =
+                    resolved_engine_label(&effective_target, &self.state, &session.worktree);
                 let engine = match &effective_target {
                     ChatTarget::LegacyClaudeAgent { .. } => {
                         return Err(SendError::LegacyRetired(
@@ -1448,7 +1489,7 @@ impl Chat {
                         model,
                         effort,
                     } => {
-                        let engine_label = effective_target.engine_label();
+                        let engine_label = effective_engine_label.clone();
                         let previous_label =
                             handoff_from(conversation.as_ref(), &engine_label, || {
                                 session
@@ -1459,7 +1500,13 @@ impl Chat {
                                     .or_else(|| {
                                         previous_target
                                             .as_ref()
-                                            .map(ChatTarget::engine_label)
+                                            .map(|prev| {
+                                                resolved_engine_label(
+                                                    prev,
+                                                    &self.state,
+                                                    &session.worktree,
+                                                )
+                                            })
                                             .filter(|prev| prev != &engine_label)
                                     })
                                     .or_else(|| {
@@ -1501,7 +1548,7 @@ impl Chat {
                         };
                         let prior_turns = transcript::turns(conversation.as_ref(), false, &[]);
                         let last_outcome = conversation.as_ref().and_then(transcript::last_outcome);
-                        let next_engine_label = effective_target.engine_label();
+                        let next_engine_label = effective_engine_label.clone();
                         let previous_engine_label = handoff_from(
                             conversation.as_ref(),
                             &next_engine_label,
@@ -1517,6 +1564,8 @@ impl Chat {
                                             session.acp_binding.as_ref(),
                                             session.legacy_migration_notice,
                                             agent,
+                                            &self.state,
+                                            &session.worktree,
                                         )
                                     })
                             },
@@ -1549,7 +1598,7 @@ impl Chat {
                 let mut recorder = Recorder::chat(&self.state, &file, id, send)?;
                 recorder.event(Kind::Send(Send {
                     text: Some(text.to_owned()),
-                    engine: Some(effective_target.engine_label()),
+                    engine: Some(effective_engine_label),
                     ..Send::default()
                 }));
                 let prompt = rig_core::message::Message::user(text.to_owned());
@@ -1561,7 +1610,7 @@ impl Chat {
                     unseen: false,
                 });
                 let (_target, acp_binding) = receipts
-                    .accept_chat(&session, Some(effective_target))
+                    .accept_chat(&self.state, &session, Some(effective_target))
                     .await?;
                 Ok::<_, SendError>((session, recorder, send, history, engine, acp_binding, context))
             }
@@ -1772,8 +1821,10 @@ impl Chat {
                             .await;
                     } else {
                         // Unsolicited frames arrived while parked: invalidate `session/load`
-                        // eligibility rather than leaving the remote session resumable.
-                        let _ = receipts.bump_acp_generation(&session_id).await;
+                        // eligibility only if our generation/owner still matches.
+                        let _ = receipts
+                            .invalidate_acp_generation(&session_id, generation, warm_owner)
+                            .await;
                     }
                     let _ = receipts.close().await;
                 }
@@ -2150,6 +2201,8 @@ fn previous_engine_label(
     binding: Option<&AcpBinding>,
     legacy_migration_notice: bool,
     next_agent: &AgentId,
+    state: &Path,
+    worktree: &Path,
 ) -> Option<String> {
     if let Some(prev) = previous_target {
         match prev {
@@ -2158,7 +2211,7 @@ fn previous_engine_label(
                     return Some("Legacy Antigravity".into());
                 }
             }
-            other => return Some(other.engine_label()),
+            other => return Some(resolved_engine_label(other, state, worktree)),
         }
     }
     if let Some(binding) = binding

@@ -117,6 +117,10 @@ pub struct Registry<'a> {
 }
 
 impl<'a> Registry<'a> {
+    pub(crate) fn root(&self) -> &Path {
+        &self.config.root
+    }
+
     pub fn new(config: &'a RepoConfig, eval_id: &crate::types::EvalId) -> Result<Self, String> {
         let eval = config
             .evals

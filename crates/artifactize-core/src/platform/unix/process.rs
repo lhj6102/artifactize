@@ -173,9 +173,39 @@ pub(crate) fn open_verified_executable(path: &Path) -> io::Result<File> {
     crate::platform::open_regular(path)
 }
 
+/// Open a verified worktree directory without following a link in its final component so the
+/// subsequent ACP child binds directly to the verified directory inode via `fchdir`
+/// (`C-TRUST-BEFORE-WORKTREE`).
+pub(crate) fn open_verified_worktree(path: &Path) -> io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(path)?;
+    if file.metadata()?.is_dir() {
+        Ok(file)
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "not a directory",
+        ))
+    }
+}
+
+/// Whether `path` currently resolves (without following a link in its final component) to the
+/// exact same directory inode as `dir`.
+pub(crate) fn same_directory(dir: &File, path: &Path) -> io::Result<bool> {
+    let current = open_verified_worktree(path)?;
+    Ok(super::file_identity(dir)? == super::file_identity(&current)?)
+}
+
 /// Spawn a previously hashed executable directly without re-resolving `PATH` or `cwd` and
 /// without pathname-replacement or in-place-modification TOCTOU (`C-TRUST-BEFORE-WORKTREE`).
 ///
+/// The child's working directory is bound directly to the already-verified directory descriptor
+/// `verified_cwd` via POSIX async-signal-safe `fchdir` in `pre_exec` (never re-resolving the
+/// worktree pathname).
 /// On Linux, the bytes are streamed from `verified_file` into a sealed, immutable `memfd`
 /// (`MFD_CLOEXEC | MFD_ALLOW_SEALING` + `F_SEAL_WRITE | F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_SEAL`)
 /// while recomputing and checking `expected_sha256`, then executed directly via
@@ -189,10 +219,13 @@ pub(crate) async fn spawn_verified(
     mut verified_file: File,
     expected_sha256: &str,
     args: &[OsString],
-    cwd: &Path,
+    _cwd: &Path,
+    verified_cwd: File,
     environment: &std::collections::BTreeMap<OsString, OsString>,
 ) -> io::Result<Child> {
     use sha2::{Digest, Sha256};
+
+    let cwd_fd = verified_cwd.as_raw_fd();
 
     #[cfg(target_os = "linux")]
     let (mut std_cmd, _held_fd, staged_dir): (
@@ -262,18 +295,18 @@ pub(crate) async fn spawn_verified(
         let raw_fd = memfd.as_raw_fd();
         let mut cmd = std::process::Command::new(format!("/proc/self/fd/{raw_fd}"));
         cmd.arg0(path);
-        if is_script {
-            // SAFETY: `fcntl(raw_fd, F_SETFD, 0)` is POSIX async-signal-safe and clears
-            // `FD_CLOEXEC` only in the forked child right before `execve("/proc/self/fd/<fd>")`
-            // so the shebang interpreter reads the exact sealed immutable memfd.
-            unsafe {
-                cmd.pre_exec(move || {
-                    if libc::fcntl(raw_fd, libc::F_SETFD, 0) == -1 {
-                        return Err(io::Error::last_os_error());
-                    }
-                    Ok(())
-                });
-            }
+        // SAFETY: `fchdir` and `fcntl` are POSIX async-signal-safe; `verified_cwd` and `memfd`
+        // remain open in the parent until `spawn_now` completes.
+        unsafe {
+            cmd.pre_exec(move || {
+                if libc::fchdir(cwd_fd) == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                if is_script && libc::fcntl(raw_fd, libc::F_SETFD, 0) == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
         }
         (cmd, Some(memfd), None)
     };
@@ -322,12 +355,21 @@ pub(crate) async fn spawn_verified(
         }
         let mut cmd = std::process::Command::new(&staged_path);
         cmd.arg0(path);
+        // SAFETY: `fchdir` is POSIX async-signal-safe; `verified_cwd` stays open in the parent
+        // until `spawn_now` completes.
+        unsafe {
+            cmd.pre_exec(move || {
+                if libc::fchdir(cwd_fd) == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
         (cmd, None, Some(staged_dir))
     };
 
     std_cmd
         .args(args)
-        .current_dir(cwd)
         .env_clear()
         .envs(environment.iter())
         .stdin(Stdio::piped())
@@ -336,6 +378,7 @@ pub(crate) async fn spawn_verified(
     let mut command = Command::from(std_cmd);
     command.kill_on_drop(true);
     let mut spawned = spawn_now(command).await?;
+    drop(verified_cwd);
     drop(_held_fd);
     drop(verified_file);
     spawned._staged_dir = staged_dir;

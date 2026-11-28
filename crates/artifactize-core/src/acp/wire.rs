@@ -302,6 +302,7 @@ impl Connection {
                 kept.push_back(other);
             }
         }
+        let mut drained_all = false;
         for _ in 0..UPDATE_CHANNEL_CAPACITY {
             match self.frames.try_recv() {
                 Ok(frame) => {
@@ -316,7 +317,10 @@ impl Connection {
                         kept.push_back(other);
                     }
                 }
-                Err(mpsc::error::TryRecvError::Empty) => break,
+                Err(mpsc::error::TryRecvError::Empty) => {
+                    drained_all = true;
+                    break;
+                }
                 Err(mpsc::error::TryRecvError::Disconnected) => {
                     self.buffered_frames = kept;
                     return Err(Problem::Failed(format!(
@@ -327,6 +331,23 @@ impl Connection {
             }
         }
         self.buffered_frames = kept;
+        if !drained_all {
+            match self.frames.try_recv() {
+                Err(mpsc::error::TryRecvError::Empty) => {}
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    return Err(Problem::Failed(format!(
+                        "{} exited before starting the ACP turn.",
+                        self.agent_name
+                    )));
+                }
+                Ok(_) => {
+                    return Err(Problem::Failed(format!(
+                        "{} flooded ACP output before starting the turn.",
+                        self.agent_name
+                    )));
+                }
+            }
+        }
         Ok(())
     }
 
@@ -1348,6 +1369,28 @@ async fn stdout_reader_loop(
     let mut reader = BufReader::new(stdout);
     let mut line = Vec::new();
     let mut dropped_display_deltas: usize = 0;
+    // Redact thought deltas across chunk boundaries BEFORE `try_send` so dropping a delta on a
+    // full channel can never leave half of a split secret unredacted (`C-ACP-EDGE-ISOLATION`).
+    let mut thought_redactor = redactor.clone();
+    let mut thought_session: Option<String> = None;
+
+    let try_emit_thought =
+        |tx: &mpsc::Sender<WireFrame>, sid: String, text: String, dropped: &mut usize| -> bool {
+            if text.is_empty() {
+                return true;
+            }
+            match tx.try_send(WireFrame::Update {
+                session_id: sid,
+                event: SessionEvent::AgentThoughtChunk { text },
+            }) {
+                Ok(()) => true,
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    *dropped += 1;
+                    true
+                }
+                Err(mpsc::error::TrySendError::Closed(_)) => false,
+            }
+        };
 
     loop {
         line.clear();
@@ -1367,6 +1410,12 @@ async fn stdout_reader_loop(
             }
         };
         if read == 0 {
+            let tail = thought_redactor.flush();
+            if let Some(sid) = thought_session.take()
+                && !try_emit_thought(&tx, sid, tail, &mut dropped_display_deltas)
+            {
+                return;
+            }
             let _ = tx.send(WireFrame::Eof).await;
             return;
         }
@@ -1391,6 +1440,58 @@ async fn stdout_reader_loop(
             Err(error) => {
                 let _ = tx.send(WireFrame::ProtocolError(error)).await;
                 return;
+            }
+        };
+
+        let parsed = match parsed {
+            WireFrame::Update {
+                session_id,
+                event: SessionEvent::AgentThoughtChunk { text },
+            } => {
+                if thought_session.as_deref() != Some(session_id.as_str()) {
+                    let prev_tail = thought_redactor.flush();
+                    if let Some(prev_sid) = thought_session.replace(session_id.clone())
+                        && !try_emit_thought(&tx, prev_sid, prev_tail, &mut dropped_display_deltas)
+                    {
+                        return;
+                    }
+                }
+                let safe = thought_redactor.push(&text);
+                if safe.is_empty() {
+                    continue;
+                }
+                WireFrame::Update {
+                    session_id,
+                    event: SessionEvent::AgentThoughtChunk { text: safe },
+                }
+            }
+            other => {
+                let is_boundary = matches!(
+                    other,
+                    WireFrame::Response { .. }
+                        | WireFrame::Error { .. }
+                        | WireFrame::SignedOut
+                        | WireFrame::Eof
+                );
+                let tail = if is_boundary {
+                    thought_redactor.flush()
+                } else {
+                    thought_redactor.release()
+                };
+                if !tail.is_empty()
+                    && let Some(sid) = if is_boundary {
+                        thought_session.take()
+                    } else {
+                        thought_session.clone()
+                    }
+                    && !try_emit_thought(&tx, sid, tail, &mut dropped_display_deltas)
+                {
+                    return;
+                }
+                if is_boundary {
+                    thought_session = None;
+                }
+                other
             }
         };
 

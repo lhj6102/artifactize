@@ -130,6 +130,10 @@ impl<'a> Tools<'a> {
         self.output
     }
 
+    pub(crate) fn root(&self) -> &Path {
+        self.context.repo()
+    }
+
     pub(crate) fn list(&self) -> impl Iterator<Item = &ToolDefinition> {
         self.definitions.iter()
     }

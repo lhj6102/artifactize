@@ -920,7 +920,10 @@ pub async fn probe_spec(
 /// Ensure a probe tempdir never lands inside a selected `worktree` OR inside any enclosing Git
 /// repository checkout (e.g. if `TMPDIR`/`TEMP` was pointed into a worktree), even for callers
 /// that pass `worktree: None` (`C-TRUST-BEFORE-WORKTREE`).
-fn check_probe_dir_isolated(probe_dir: &Path, worktree: Option<&Path>) -> Result<(), String> {
+pub(crate) fn check_probe_dir_isolated(
+    probe_dir: &Path,
+    worktree: Option<&Path>,
+) -> Result<(), String> {
     if let Some(worktree) = worktree {
         trust::outside_worktree(probe_dir, worktree)?;
     }
@@ -932,6 +935,83 @@ fn check_probe_dir_isolated(probe_dir: &Path, worktree: Option<&Path>) -> Result
         ));
     }
     Ok(())
+}
+
+/// Sign out an ACP agent cleanly via its ACP `logout` method inside an isolated empty private
+/// tempdir outside any Git checkout, keeping all ACP wire handling confined to `src/acp/`
+/// (`C-TRUST-BEFORE-WORKTREE`, `C-ACP-EDGE-ISOLATION`).
+pub(crate) async fn logout_spec(spec: &AgentSpec) -> Result<(), String> {
+    let probe_dir =
+        platform::private_tempdir_in("artifactize-acp-logout-", &platform::temporary_directory())
+            .map_err(|error| format!("Cannot create {} logout directory: {error}.", spec.name))?;
+    check_probe_dir_isolated(probe_dir.path(), None).map_err(|error| {
+        format!(
+            "Refusing to run {} logout inside a workspace: {error}",
+            spec.name
+        )
+    })?;
+    let resolved = trust::resolve_executable(&spec.program, None, false)?;
+    let mut args: Vec<OsString> = spec.args.iter().map(OsString::from).collect();
+    if spec.id.as_str() == "antigravity" {
+        args.push("--sandbox".into());
+        args.push("--include-default-customizations=false".into());
+    }
+    let command = process::Command {
+        program: resolved.into_os_string(),
+        args,
+        cwd: probe_dir.path().to_path_buf(),
+        env: spec.build_env(true),
+        timeout: PROBE_TIMEOUT,
+    };
+    let cancel = CancellationToken::new();
+    let mut child = process::spawn_supervised(&command, &cancel)
+        .await
+        .map_err(|error| format!("Cannot start {}: {error}.", spec.name))?;
+    let stdout = child.stdout().take().expect("logout stdout piped");
+    let stdin = child.stdin().take().expect("logout stdin piped");
+    let mut stderr = child.stderr().take().expect("logout stderr piped");
+    let stderr_task = tokio::spawn(async move { read_bounded_stderr(&mut stderr).await });
+    let known_secrets = spec.known_secrets();
+    let redactor = super::redactor::StreamRedactor::new(known_secrets.clone());
+    let mut conn = Connection::new(
+        &spec.name,
+        &spec.install_hint,
+        stdout,
+        stdin,
+        false,
+        known_secrets,
+    );
+    let result = tokio::time::timeout(PROBE_TIMEOUT, conn.logout())
+        .await
+        .unwrap_or_else(|_| {
+            Err(Problem::Failed(format!(
+                "{} did not answer ACP logout in time.",
+                spec.name
+            )))
+        });
+    drop(conn);
+    let _ = process::terminate(&mut child).await;
+    let _ = child.cleanup().await;
+    let stderr_bytes = crate::task::joined(stderr_task.await).unwrap_or_default();
+    let stderr_text = platform::output_text(&stderr_bytes);
+
+    bump_auth_generation();
+    invalidate_probe_cache(&spec.id);
+
+    match result {
+        Ok(()) => Ok(()),
+        Err(problem) => {
+            let final_problem = if stderr_text.contains(super::wire::AUTH_LINK_MARKER) {
+                Problem::SignedOut {
+                    agent: spec.name.clone(),
+                    hint: spec.install_hint.clone(),
+                }
+            } else {
+                problem
+            };
+            Err(redactor.redact_all(&crate::agent::error::Failure::from(final_problem).message))
+        }
+    }
 }
 
 async fn run_live_probe(
@@ -1029,7 +1109,7 @@ async fn run_live_probe(
         program: executable.as_os_str().to_owned(),
         args,
         cwd: probe_dir.path().to_path_buf(),
-        env: spec.build_env(false),
+        env: spec.build_env(true),
         timeout: PROBE_TIMEOUT,
     };
     let process_cancel = CancellationToken::new();
@@ -1162,7 +1242,7 @@ async fn probe_version(
         program: executable.as_os_str().to_owned(),
         args: spec.version_args.iter().map(OsString::from).collect(),
         cwd: probe_dir.to_path_buf(),
-        env: spec.build_env(false),
+        env: spec.build_env(true),
         timeout: deadline
             .saturating_duration_since(tokio::time::Instant::now())
             .min(INITIALIZE_TIMEOUT),

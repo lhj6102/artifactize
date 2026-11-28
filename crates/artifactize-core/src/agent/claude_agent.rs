@@ -340,20 +340,38 @@ struct Session<'a, 'r> {
 type Started<'a, 'r> = Conversation<'a, 'r, ChildStdout, ChildStdin>;
 
 impl<'a, 'r> Session<'a, 'r> {
-    /// Start Claude Code and its session. Claude Code runs in an isolated temporary directory
-    /// outside any Git checkout so it holds nothing of the review and reads files only through
-    /// the offered tools (`C-EVAL-ARTIFACTIZE-DRIVEN`).
+    /// Start Claude Code and its session. Claude Code runs in an isolated empty private temporary
+    /// directory outside both the reviewed workspace and any Git checkout so it holds nothing of
+    /// the review and reads files only through the offered tools (`C-EVAL-ARTIFACTIZE-DRIVEN`).
     async fn open(self, launch: &Launch<'_>) -> Result<(Started<'a, 'r>, Running), Failure> {
-        let cwd = crate::platform::temporary_directory();
-        if let Some(repo_root) = crate::repository::identify(&cwd).worktree_path {
-            return Err(Failure::from(format!(
-                "Refusing to launch isolated claude-agent eval inside Git worktree {} (temporary directory {}).",
-                crate::platform::path_text(&repo_root),
-                crate::platform::path_text(&cwd),
-            )));
-        }
-        let (channel, running) =
-            channel::start(launch, &cwd, self.limits.deadline, self.cancellation).await?;
+        let cwd_dir = crate::platform::private_tempdir_in(
+            "artifactize-claude-",
+            &crate::platform::temporary_directory(),
+        )
+        .map_err(|error| {
+            Failure::new(
+                Code::AgentError,
+                format!("Cannot create isolated directory for claude-agent eval: {error}."),
+            )
+        })?;
+        let workspace_root = self.registry.workspace_root();
+        crate::acp::catalog::check_probe_dir_isolated(cwd_dir.path(), Some(workspace_root))
+            .map_err(|error| {
+                Failure::new(
+                    Code::AgentError,
+                    format!(
+                        "Refusing to launch isolated claude-agent eval inside a workspace: {error}"
+                    ),
+                )
+            })?;
+        let (channel, running) = channel::start(
+            launch,
+            cwd_dir.path(),
+            self.limits.deadline,
+            self.cancellation,
+        )
+        .await?;
+        let running = running.with_tempdir(cwd_dir);
         let mut conversation = Conversation::new(self, channel);
         match conversation.initialize().await {
             Ok(()) => Ok((conversation, running)),

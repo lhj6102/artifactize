@@ -69,14 +69,21 @@ pub(crate) struct VerifiedAcpLaunch {
 }
 
 impl VerifiedAcpLaunch {
-    /// Open the resolved executable once without following links, hash its bytes directly from
-    /// that open handle, and re-verify Workspace Trust immediately before spawning or reusing an
-    /// ACP child in `worktree` (`C-TRUST-BEFORE-WORKTREE`). Returns the verified open file handle
-    /// so fresh spawns bind directly to the hashed file.
+    /// Open both the worktree directory and the resolved executable once without following links,
+    /// hash the executable bytes directly from its open handle, and re-verify Workspace Trust and
+    /// directory identity immediately before spawning or reusing an ACP child in `worktree`
+    /// (`C-TRUST-BEFORE-WORKTREE`). Returns `(verified_executable, verified_worktree)` so fresh
+    /// spawns bind directly to both verified handles.
     pub(crate) fn open_and_reverify_before_exec(
         &self,
         worktree: &Path,
-    ) -> Result<std::fs::File, Problem> {
+    ) -> Result<(std::fs::File, std::fs::File), Problem> {
+        let verified_cwd = platform::open_verified_worktree(worktree).map_err(|error| {
+            Problem::Failed(format!(
+                "Cannot open ACP worktree {}: {error}.",
+                platform::path_text(worktree)
+            ))
+        })?;
         let mut file = platform::open_verified_executable(&self.fingerprint.resolved_executable)
             .map_err(|error| {
                 Problem::Failed(format!(
@@ -126,7 +133,24 @@ impl VerifiedAcpLaunch {
         )
         .map_err(Problem::Failed)?
         {
-            Ok(()) if current == self.fingerprint => Ok(file),
+            Ok(()) if current == self.fingerprint => {
+                // Confirm the path still resolves to the exact directory handle opened before
+                // computing `TrustScope`, so `fchdir(verified_cwd)` enters the exact verified dir.
+                if !platform::same_directory(&verified_cwd, worktree).unwrap_or(false) {
+                    return Err(Problem::TrustRequired(Box::new(TrustRequirement {
+                        agent_id: self.spec.id.clone(),
+                        agent_name: self.spec.name.clone(),
+                        disclosure: scope.disclosure().to_owned(),
+                        scope,
+                        fingerprint: current,
+                        reason: format!(
+                            "The worktree directory changed before {} started; confirm Workspace Trust for it.",
+                            self.spec.name
+                        ),
+                    })));
+                }
+                Ok((file, verified_cwd))
+            }
             Ok(()) => Err(Problem::TrustRequired(Box::new(TrustRequirement {
                 agent_id: self.spec.id.clone(),
                 agent_name: self.spec.name.clone(),
@@ -525,7 +549,10 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
                             .clear_acp_warm_owner(&v_id, v_gen, current_warm_owner)
                             .await;
                     } else {
-                        let _ = input.receipts.bump_acp_generation(&v_id).await;
+                        let _ = input
+                            .receipts
+                            .invalidate_acp_generation(&v_id, v_gen, current_warm_owner)
+                            .await;
                     }
                 }
                 AcpTurnOutcome {
@@ -1137,16 +1164,6 @@ async fn execute_on_child(
             // again here.
             let answer = redactor.redact_all(&state.answer);
             let (bounded_answer, _) = bound_text(&answer, FINAL_ANSWER_BYTES);
-            // If intermediate events exhausted the per-turn display cap before prose was saved to
-            // `Kind::Message`, persist the bounded completed answer so later Direct turns keep full
-            // conversation history (`C-NO-SILENT-REGRESSION`).
-            if state.omitted_prose_at_cap && !bounded_answer.is_empty() {
-                recorder.message(
-                    state.turn_index(),
-                    &Message::assistant(bounded_answer.clone()),
-                    false,
-                );
-            }
             if let Err(error) = recorder.check_saved() {
                 return Err((Failure::from(error), false));
             }
@@ -1511,11 +1528,12 @@ struct TurnAccumulator {
     agent_name: String,
     segment: usize,
     pending_text: String,
+    delivered_prose_for_segment: bool,
+    recorded_prose_bytes: usize,
     answer: String,
     display_events: usize,
     persisted_bytes: usize,
     cap_noticed: bool,
-    omitted_prose_at_cap: bool,
     config_fallback_notices: usize,
 }
 
@@ -1525,11 +1543,12 @@ impl TurnAccumulator {
             agent_name,
             segment: 0,
             pending_text: String::new(),
+            delivered_prose_for_segment: false,
+            recorded_prose_bytes: 0,
             answer: String::new(),
             display_events: 0,
             persisted_bytes: 0,
             cap_noticed: false,
-            omitted_prose_at_cap: false,
             config_fallback_notices: 0,
         }
     }
@@ -1540,7 +1559,17 @@ impl TurnAccumulator {
         redactor: &StreamRedactor,
         notice: &str,
     ) {
-        if self.config_fallback_notices >= MAX_CONFIG_FALLBACK_NOTICES {
+        if self.config_fallback_notices > MAX_CONFIG_FALLBACK_NOTICES {
+            return;
+        }
+        if self.config_fallback_notices == MAX_CONFIG_FALLBACK_NOTICES {
+            self.config_fallback_notices += 1;
+            recorder.event(Kind::Notice {
+                text: format!(
+                    "{} changed non-mode settings more than {MAX_CONFIG_FALLBACK_NOTICES} times during this turn; further setting-change notices are omitted.",
+                    self.agent_name
+                ),
+            });
             return;
         }
         self.config_fallback_notices += 1;
@@ -1552,7 +1581,7 @@ impl TurnAccumulator {
         self.segment + 1
     }
 
-    fn record_display(&mut self, recorder: &mut Recorder, kind: Kind) {
+    fn record_display(&mut self, recorder: &mut Recorder, kind: Kind) -> bool {
         let approx_bytes = serde_json::to_string(&kind).map_or(256, |s| s.len());
         if self.display_events >= TURN_DISPLAY_EVENTS
             || self.persisted_bytes + approx_bytes > TURN_PERSISTED_BYTES
@@ -1566,11 +1595,12 @@ impl TurnAccumulator {
                     ),
                 });
             }
-            return;
+            return false;
         }
         self.display_events += 1;
         self.persisted_bytes += approx_bytes;
         recorder.event(kind);
+        true
     }
 
     fn push_text(&mut self, chunk: &str, recorder: &mut Recorder) {
@@ -1582,14 +1612,8 @@ impl TurnAccumulator {
             let (slice, _) = bound_text(chunk, room);
             self.answer.push_str(&slice);
         }
-        let remaining_persisted = TURN_PERSISTED_BYTES
-            .saturating_sub(self.persisted_bytes.saturating_add(self.pending_text.len()));
-        if remaining_persisted > 0 {
-            let (slice, _) = bound_text(chunk, remaining_persisted);
-            self.pending_text.push_str(&slice);
-        }
         let turn = self.turn_index();
-        self.record_display(
+        let delivered = self.record_display(
             recorder,
             Kind::Delivery(Delivery {
                 turn,
@@ -1600,6 +1624,23 @@ impl TurnAccumulator {
                 state: DeliveryState::Delta,
             }),
         );
+        if delivered {
+            self.delivered_prose_for_segment = true;
+        } else if self.delivered_prose_for_segment {
+            // Earlier chunks in this segment were already delivered under `turn`, so `transcript.rs`
+            // skips `Kind::Message` for that `turn`. Flush the already-delivered prefix now and
+            // move to a fresh `turn_index()` so undelivered prose still renders and hands off cleanly
+            // without duplicating the prefix (`C-NO-SILENT-REGRESSION`).
+            self.flush_prose_segment(recorder);
+        }
+        let prose_room = FINAL_ANSWER_BYTES.saturating_sub(
+            self.recorded_prose_bytes
+                .saturating_add(self.pending_text.len()),
+        );
+        if prose_room > 0 {
+            let (slice, _) = bound_text(chunk, prose_room);
+            self.pending_text.push_str(&slice);
+        }
     }
 
     fn push_thought(&mut self, chunk: &str, recorder: &mut Recorder) {
@@ -1623,37 +1664,17 @@ impl TurnAccumulator {
     fn flush_prose_segment(&mut self, recorder: &mut Recorder) {
         if !self.pending_text.is_empty() {
             let text = std::mem::take(&mut self.pending_text);
-            let remaining = TURN_PERSISTED_BYTES.saturating_sub(self.persisted_bytes);
-            if remaining == 0 || self.display_events >= TURN_DISPLAY_EVENTS {
-                self.omitted_prose_at_cap = true;
-                if !self.cap_noticed {
-                    self.cap_noticed = true;
-                    recorder.event(Kind::Notice {
-                        text: format!(
-                            "{} exceeded the per-turn display cap ({TURN_DISPLAY_EVENTS} events / 8 MiB); further output is omitted.",
-                            self.agent_name
-                        ),
-                    });
+            let remaining = FINAL_ANSWER_BYTES.saturating_sub(self.recorded_prose_bytes);
+            if remaining > 0 {
+                let (bounded, _) = bound_text(&text, remaining);
+                if !bounded.is_empty() {
+                    self.recorded_prose_bytes =
+                        self.recorded_prose_bytes.saturating_add(bounded.len());
+                    recorder.message(self.turn_index(), &Message::assistant(bounded), false);
                 }
-                return;
-            }
-            let (bounded, truncated) = bound_text(&text, remaining);
-            if truncated {
-                self.omitted_prose_at_cap = true;
-            }
-            self.display_events += 1;
-            self.persisted_bytes = self.persisted_bytes.saturating_add(bounded.len());
-            recorder.message(self.turn_index(), &Message::assistant(bounded), false);
-            if truncated && !self.cap_noticed {
-                self.cap_noticed = true;
-                recorder.event(Kind::Notice {
-                    text: format!(
-                        "{} exceeded the per-turn display cap ({TURN_DISPLAY_EVENTS} events / 8 MiB); further output is omitted.",
-                        self.agent_name
-                    ),
-                });
             }
             self.segment += 1;
+            self.delivered_prose_for_segment = false;
         }
     }
 
