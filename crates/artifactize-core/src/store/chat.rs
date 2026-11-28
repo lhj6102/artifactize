@@ -75,12 +75,18 @@ pub(crate) struct NewPermission {
     pub created_at: Timestamp,
 }
 
-/// Result of attempting to transition a permission from `SELECTED` to `DELIVERING` right before
-/// writing the ACP wire response.
+/// How long the reply to a permission may take to reach the agent while its delivery holds the
+/// store's write lock.
+const DELIVERY_WRITE_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// What became of one attempt to deliver a permission's choice to the agent.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum DeliverClaim {
-    /// CAS succeeded (`SELECTED -> DELIVERING`); owner may now write `selected` to wire.
-    Deliver { option_id: String },
+pub(crate) enum PermissionDelivery {
+    /// The agent was sent `selected` with this option while the turn still owned the
+    /// permission: `SELECTED -> DELIVERING -> DELIVERED` in one transaction.
+    Delivered { option_id: String },
+    /// The write failed or did not finish in time: `DELIVERING -> EXPIRED`.
+    Expired { option_id: String },
     /// Stop won or owner lost token; owner must send ACP `cancelled` instead.
     Cancelled,
     /// Permission is still `PENDING` (user has not chosen yet).
@@ -792,83 +798,87 @@ impl Receipts {
             .map_err(|error| error.to_string())
     }
 
-    /// Step 3 of Permission CAS: immediately before writing `selected` onto the ACP wire,
-    /// atomically check `Owner.token == owner_token && !stop_requested` and CAS
-    /// `SELECTED -> DELIVERING`.
-    pub(crate) async fn begin_deliver_chat_permission(
+    /// Deliver the person's choice to the agent: claim it (`SELECTED -> DELIVERING`) against the
+    /// owner token and `stop_requested`, have `write` send `selected` with the chosen option, and
+    /// record `DELIVERED` or `EXPIRED`, all in one `IMMEDIATE` transaction. The write lock is held
+    /// while the reply goes out, so a Stop either committed before the claim, which then sees it
+    /// and cancels, or waits until the delivery is recorded; never between the two.
+    pub(crate) async fn deliver_chat_permission<W, F>(
         &self,
         session_id: &SessionId,
         owner_token: &str,
         permission_id: &str,
-    ) -> Result<DeliverClaim, String> {
+        write: W,
+    ) -> Result<PermissionDelivery, String>
+    where
+        W: FnOnce(String) -> F,
+        F: std::future::Future<Output = bool>,
+    {
         let session_id = session_id.clone();
         let owner_token = owner_token.to_owned();
         let permission_id = permission_id.to_owned();
-        self.connection
-            .call(move |db| {
-                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
-                let Some(active) = owner(&transaction, &session_id)? else {
-                    return Ok::<_, Error>(DeliverClaim::Cancelled);
-                };
-                if active.token != owner_token || active.stop_requested {
-                    return Ok(DeliverClaim::Cancelled);
-                }
-                let row: Option<(String, Option<String>)> = transaction
-                    .query_row(
-                        "SELECT status, selected_option_id FROM chat_pending_permissions \
-                         WHERE session_id=?1 AND owner_token=?2 AND permission_id=?3",
-                        params![session_id, owner_token, permission_id],
-                        |row| Ok((row.get(0)?, row.get(1)?)),
-                    )
-                    .optional()?;
-                match row {
-                    Some((status, _)) if status == "PENDING" => Ok(DeliverClaim::StillPending),
-                    Some((status, Some(option_id))) if status == "SELECTED" => {
-                        let updated = transaction.execute(
-                            "UPDATE chat_pending_permissions SET status='DELIVERING' \
-                             WHERE session_id=?1 AND owner_token=?2 AND permission_id=?3 AND status='SELECTED'",
-                            params![session_id, owner_token, permission_id],
-                        )?;
-                        transaction.commit()?;
-                        if updated == 1 {
-                            Ok(DeliverClaim::Deliver { option_id })
-                        } else {
-                            Ok(DeliverClaim::Cancelled)
-                        }
-                    }
-                    _ => Ok(DeliverClaim::Cancelled),
-                }
+        let (claimed, claim) = tokio::sync::oneshot::channel::<String>();
+        let (wrote, written) = std::sync::mpsc::channel::<bool>();
+        let recorded = self.connection.call(move |db| {
+            let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let Some(active) = owner(&transaction, &session_id)? else {
+                return Ok::<_, Error>(PermissionDelivery::Cancelled);
+            };
+            if active.token != owner_token || active.stop_requested {
+                return Ok(PermissionDelivery::Cancelled);
+            }
+            let row: Option<(String, Option<String>)> = transaction
+                .query_row(
+                    "SELECT status, selected_option_id FROM chat_pending_permissions \
+                     WHERE session_id=?1 AND owner_token=?2 AND permission_id=?3",
+                    params![session_id, owner_token, permission_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            let option_id = match row {
+                Some((status, _)) if status == "PENDING" => return Ok(PermissionDelivery::StillPending),
+                Some((status, Some(option_id))) if status == "SELECTED" => option_id,
+                _ => return Ok(PermissionDelivery::Cancelled),
+            };
+            transaction.execute(
+                "UPDATE chat_pending_permissions SET status='DELIVERING' \
+                 WHERE session_id=?1 AND owner_token=?2 AND permission_id=?3 AND status='SELECTED'",
+                params![session_id, owner_token, permission_id],
+            )?;
+            if claimed.send(option_id.clone()).is_err() {
+                return Ok(PermissionDelivery::Cancelled);
+            }
+            let delivered = written
+                .recv_timeout(DELIVERY_WRITE_LIMIT + std::time::Duration::from_secs(1))
+                .unwrap_or(false);
+            transaction.execute(
+                "UPDATE chat_pending_permissions SET status=?1, resolved_at=?2 \
+                 WHERE session_id=?3 AND owner_token=?4 AND permission_id=?5 AND status='DELIVERING'",
+                params![
+                    if delivered { "DELIVERED" } else { "EXPIRED" },
+                    crate::broker::now(),
+                    session_id,
+                    owner_token,
+                    permission_id
+                ],
+            )?;
+            transaction.commit()?;
+            Ok(if delivered {
+                PermissionDelivery::Delivered { option_id }
+            } else {
+                PermissionDelivery::Expired { option_id }
             })
-            .await
-            .map_err(|error| error.to_string())
-    }
-
-    /// Finish delivery after writing the ACP wire reply: `DELIVERING -> DELIVERED` or `EXPIRED`
-    /// (on broken pipe / EOF).
-    pub(crate) async fn finish_deliver_chat_permission(
-        &self,
-        session_id: &SessionId,
-        owner_token: &str,
-        permission_id: &str,
-        delivered: bool,
-    ) -> Result<(), String> {
-        let session_id = session_id.clone();
-        let owner_token = owner_token.to_owned();
-        let permission_id = permission_id.to_owned();
-        let next = if delivered { "DELIVERED" } else { "EXPIRED" };
-        self.connection
-            .call(move |db| {
-                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
-                transaction.execute(
-                    "UPDATE chat_pending_permissions SET status=?1, resolved_at=?2 \
-                     WHERE session_id=?3 AND owner_token=?4 AND permission_id=?5 AND status='DELIVERING'",
-                    params![next, crate::broker::now(), session_id, owner_token, permission_id],
-                )?;
-                transaction.commit()?;
-                Ok::<_, Error>(())
-            })
-            .await
-            .map_err(|error| error.to_string())
+        });
+        let sent = async move {
+            if let Ok(option_id) = claim.await {
+                let delivered = tokio::time::timeout(DELIVERY_WRITE_LIMIT, write(option_id))
+                    .await
+                    .unwrap_or(false);
+                let _ = wrote.send(delivered);
+            }
+        };
+        let (recorded, ()) = tokio::join!(recorded, sent);
+        recorded.map_err(|error| error.to_string())
     }
 
     /// Uniform SQLite Stop transaction used across ALL local and remote Stop paths:
@@ -890,7 +900,7 @@ impl Receipts {
                 if updated != 0 {
                     transaction.execute(
                         "UPDATE chat_pending_permissions SET status='CANCELLED', resolved_at=?1 \
-                         WHERE session_id=?2 AND owner_token=?3 AND status IN ('PENDING','SELECTED')",
+                         WHERE session_id=?2 AND owner_token=?3 AND status IN ('PENDING','SELECTED','DELIVERING')",
                         params![crate::broker::now(), id, expected.token],
                     )?;
                 }
@@ -921,7 +931,7 @@ impl Receipts {
                 if updated != 0 {
                     transaction.execute(
                         "UPDATE chat_pending_permissions SET status='CANCELLED', resolved_at=?1 \
-                         WHERE session_id=?2 AND owner_token=?3 AND status IN ('PENDING','SELECTED')",
+                         WHERE session_id=?2 AND owner_token=?3 AND status IN ('PENDING','SELECTED','DELIVERING')",
                         params![crate::broker::now(), id, token],
                     )?;
                 }

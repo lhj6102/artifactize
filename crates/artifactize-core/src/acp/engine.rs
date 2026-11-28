@@ -30,7 +30,7 @@ use crate::{
     platform, repository, runs,
     store::{
         Receipts,
-        chat::{DeliverClaim, NewPermission, Owner},
+        chat::{NewPermission, Owner, PermissionDelivery},
     },
     types::{DeliveryBlock, SessionId},
 };
@@ -949,6 +949,8 @@ struct PendingPermissionSlot {
     summary: String,
     detail: Option<String>,
     options: Vec<super::PermissionOption>,
+    /// The ID shown for each option, paired with the agent's own, which only the reply carries.
+    agent_option_ids: Vec<(String, String)>,
 }
 
 async fn admit_permission(
@@ -963,12 +965,27 @@ async fn admit_permission(
     let title = redactor.redact_all(&req.title);
     let summary = redactor.redact_all(&req.summary);
     let detail = req.detail.as_deref().map(|d| redactor.redact_all(d));
+    // What the transcript and the store keep is redacted, IDs included; an ID that redaction
+    // makes equal to an earlier one gets its position, so each option stays its own.
+    let mut agent_option_ids: Vec<(String, String)> = Vec::new();
     let options: Vec<_> = req
         .options
         .into_iter()
-        .map(|option| super::PermissionOption {
-            name: redactor.redact_all(&option.name),
-            ..option
+        .enumerate()
+        .map(|(index, option)| {
+            let mut shown = redactor.redact_all(&option.option_id);
+            if agent_option_ids
+                .iter()
+                .any(|(earlier, _)| *earlier == shown)
+            {
+                shown = format!("{shown}#{}", index + 1);
+            }
+            agent_option_ids.push((shown.clone(), option.option_id.clone()));
+            super::PermissionOption {
+                option_id: shown,
+                name: redactor.redact_all(&option.name),
+                ..option
+            }
         })
         .collect();
     let rpc_request_id = match &req.rpc_id {
@@ -1030,6 +1047,7 @@ async fn admit_permission(
             summary,
             detail,
             options,
+            agent_option_ids,
         },
     );
     Ok(())
@@ -1043,82 +1061,73 @@ async fn process_pending_permissions(
 ) -> Result<(), Failure> {
     let ids: Vec<String> = pending.keys().cloned().collect();
     for perm_id in ids {
-        let claim = input
+        let Some((rpc_id, agent_ids)) = pending
+            .get(&perm_id)
+            .map(|slot| (slot.rpc_id.clone(), slot.agent_option_ids.clone()))
+        else {
+            continue;
+        };
+        let mut problem = None;
+        let delivery = input
             .receipts
-            .begin_deliver_chat_permission(input.session_id, &input.owner.token, &perm_id)
+            .deliver_chat_permission(
+                input.session_id,
+                &input.owner.token,
+                &perm_id,
+                |option_id| async {
+                    // The agent hears its own ID back for the option the person chose.
+                    let agent_id = agent_ids
+                        .into_iter()
+                        .find(|(shown, _)| *shown == option_id)
+                        .map_or(option_id, |(_, agent)| agent);
+                    match conn.send_permission_selected(rpc_id, &agent_id).await {
+                        Ok(()) => true,
+                        Err(error) => {
+                            problem = Some(error);
+                            false
+                        }
+                    }
+                },
+            )
             .await
             .map_err(Failure::from)?;
-        match claim {
-            DeliverClaim::StillPending => continue,
-            DeliverClaim::Deliver { option_id } => {
-                let Some(slot) = pending.remove(&perm_id) else {
-                    continue;
-                };
-                match conn.send_permission_selected(slot.rpc_id, &option_id).await {
-                    Ok(()) => {
-                        let _ = input
-                            .receipts
-                            .finish_deliver_chat_permission(
-                                input.session_id,
-                                &input.owner.token,
-                                &slot.permission_id,
-                                true,
-                            )
-                            .await;
-                        recorder.event(Kind::AcpPermission(AcpPermissionEvent {
-                            permission_id: slot.permission_id,
-                            title: slot.title,
-                            tool_kind: slot.tool_kind,
-                            summary: slot.summary,
-                            detail: slot.detail,
-                            options: slot.options,
-                            status: PermissionStatus::Delivered,
-                            selected_option_id: Some(option_id),
-                        }));
-                        recorder.notify();
-                    }
-                    Err(problem) => {
-                        let _ = input
-                            .receipts
-                            .finish_deliver_chat_permission(
-                                input.session_id,
-                                &input.owner.token,
-                                &slot.permission_id,
-                                false,
-                            )
-                            .await;
-                        recorder.event(Kind::AcpPermission(AcpPermissionEvent {
-                            permission_id: slot.permission_id,
-                            title: slot.title,
-                            tool_kind: slot.tool_kind,
-                            summary: slot.summary,
-                            detail: slot.detail,
-                            options: slot.options,
-                            status: PermissionStatus::Expired,
-                            selected_option_id: Some(option_id),
-                        }));
-                        recorder.notify();
-                        return Err(Failure::from(problem));
-                    }
-                }
+        let (status, selected_option_id) = match delivery {
+            PermissionDelivery::StillPending => continue,
+            PermissionDelivery::Delivered { option_id } => {
+                (PermissionStatus::Delivered, Some(option_id))
             }
-            DeliverClaim::Cancelled => {
-                let Some(slot) = pending.remove(&perm_id) else {
-                    continue;
-                };
-                let _ = conn.send_permission_cancelled(slot.rpc_id).await;
-                recorder.event(Kind::AcpPermission(AcpPermissionEvent {
-                    permission_id: slot.permission_id,
-                    title: slot.title,
-                    tool_kind: slot.tool_kind,
-                    summary: slot.summary,
-                    detail: slot.detail,
-                    options: slot.options,
-                    status: PermissionStatus::Cancelled,
-                    selected_option_id: None,
-                }));
-                recorder.notify();
+            PermissionDelivery::Expired { option_id } => {
+                (PermissionStatus::Expired, Some(option_id))
             }
+            PermissionDelivery::Cancelled => (PermissionStatus::Cancelled, None),
+        };
+        let Some(slot) = pending.remove(&perm_id) else {
+            continue;
+        };
+        if status == PermissionStatus::Cancelled {
+            let _ = conn.send_permission_cancelled(slot.rpc_id).await;
+        }
+        recorder.event(Kind::AcpPermission(AcpPermissionEvent {
+            permission_id: slot.permission_id,
+            title: slot.title,
+            tool_kind: slot.tool_kind,
+            summary: slot.summary,
+            detail: slot.detail,
+            options: slot.options,
+            status,
+            selected_option_id,
+        }));
+        recorder.notify();
+        if status == PermissionStatus::Expired {
+            return Err(problem.map_or_else(
+                || {
+                    Failure::from(format!(
+                        "{} did not take the permission reply in time.",
+                        input.launch.spec.name
+                    ))
+                },
+                Failure::from,
+            ));
         }
     }
     Ok(())
@@ -1393,7 +1402,7 @@ impl TurnAccumulator {
                 self.record_display(
                     recorder,
                     Kind::AcpToolCall(AcpToolCallEvent {
-                        call_id,
+                        call_id: redactor.redact_all(&call_id),
                         name: title.clone(),
                         title,
                         tool_kind,
@@ -1424,7 +1433,7 @@ impl TurnAccumulator {
                 self.record_display(
                     recorder,
                     Kind::AcpToolUpdate(AcpToolUpdateEvent {
-                        call_id,
+                        call_id: redactor.redact_all(&call_id),
                         title: title.as_deref().map(|t| redactor.redact_all(t)),
                         tool_kind,
                         status,
@@ -1502,7 +1511,7 @@ fn chosen_modes_stand(chosen: &[ConfigSelection], options: &[ConfigOption]) -> R
     for selection in chosen_modes(chosen) {
         let actual = options
             .iter()
-            .find(|option| option.id == selection.id)
+            .find(|option| option.id == selection.id && option.category == ConfigCategory::Mode)
             .map(|option| option.current_value.clone());
         if actual.as_deref() != Some(selection.value.as_str()) {
             return Err(Problem::ModeMismatch {

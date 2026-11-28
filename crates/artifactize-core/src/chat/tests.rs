@@ -418,7 +418,7 @@ fn legacy_session_wire_migrates_codex_antigravity_and_retired_claude_agent() {
 #[tokio::test]
 async fn permission_cas_enforces_stop_precedence_and_validates_options() {
     use crate::acp::{PermissionOption, PermissionOptionKind, PermissionStatus};
-    use crate::store::chat::{DeliverClaim, NewPermission, Owner};
+    use crate::store::chat::{NewPermission, Owner, PermissionDelivery};
 
     let root = crate::test_os::tempdir();
     let worktree = root.path().join("repo");
@@ -479,12 +479,15 @@ async fn permission_cas_enforces_stop_precedence_and_validates_options() {
             .await
             .is_err()
     );
+    // Nothing is written to the agent for a choice nobody made yet.
     assert_eq!(
         receipts
-            .begin_deliver_chat_permission(&session.id, &owner.token, "perm-1")
+            .deliver_chat_permission(&session.id, &owner.token, "perm-1", |_| async {
+                panic!("nothing is written before a choice")
+            })
             .await
             .unwrap(),
-        DeliverClaim::StillPending
+        PermissionDelivery::StillPending
     );
 
     // Valid selection transitions PENDING -> SELECTED, then Stop cancels SELECTED before delivery.
@@ -502,10 +505,12 @@ async fn permission_cas_enforces_stop_precedence_and_validates_options() {
     );
     assert_eq!(
         receipts
-            .begin_deliver_chat_permission(&session.id, &owner.token, "perm-1")
+            .deliver_chat_permission(&session.id, &owner.token, "perm-1", |_| async {
+                panic!("nothing is written after a Stop")
+            })
             .await
             .unwrap(),
-        DeliverClaim::Cancelled
+        PermissionDelivery::Cancelled
     );
     let rows = store::chat::list_permissions(&state, &session.id)
         .await
