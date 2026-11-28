@@ -6,7 +6,10 @@
 
 use std::{
     path::Path,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
@@ -226,6 +229,22 @@ pub enum WireFrame {
     ProtocolError(String),
 }
 
+/// Lock-free signals shared between the stdout reader task and [`Connection`] so quiescence and
+/// queued prompt-completion detection never miss buffered or redactor-held frames.
+#[derive(Default)]
+struct ReaderSignals {
+    /// Monotonically incremented for every non-whitespace stdout line read from the child,
+    /// including late thought chunks held inside the reader's redaction window.
+    rx_lines: AtomicU64,
+    /// True whenever the reader's thought redactor holds unemitted trailing bytes.
+    thought_pending: AtomicBool,
+    /// Active `session/prompt` request ID (0 when no prompt is active).
+    active_prompt_id: AtomicU64,
+    /// Set to true as soon as the stdout reader observes the active prompt's `Response`/`Error`,
+    /// or `Eof`/`SignedOut`/`ProtocolError`, so permission delivery never overtakes prompt end.
+    prompt_end_queued: AtomicBool,
+}
+
 /// Owned ACP JSON-RPC 2.0 stdio client with strict FIFO stdout reader barrier.
 pub struct Connection {
     id: u64,
@@ -236,6 +255,8 @@ pub struct Connection {
     frames: mpsc::Receiver<WireFrame>,
     buffered_frames: std::collections::VecDeque<WireFrame>,
     reader_task: JoinHandle<()>,
+    signals: Arc<ReaderSignals>,
+    parked_rx_lines: Option<u64>,
     next_request_id: u64,
     replaying: Option<LoadPhase>,
     capabilities: Option<AgentCapabilities>,
@@ -256,11 +277,13 @@ impl Connection {
         let id = NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = mpsc::channel(UPDATE_CHANNEL_CAPACITY);
         let redactor = StreamRedactor::new(known_secrets);
+        let signals = Arc::new(ReaderSignals::default());
         let reader_task = tokio::spawn(stdout_reader_loop(
             stdout,
             tx,
             hide_always_options,
             redactor.clone(),
+            signals.clone(),
         ));
         Self {
             id,
@@ -271,6 +294,8 @@ impl Connection {
             frames: rx,
             buffered_frames: std::collections::VecDeque::new(),
             reader_task,
+            signals,
+            parked_rx_lines: None,
             next_request_id: 0,
             replaying: None,
             capabilities: None,
@@ -278,13 +303,40 @@ impl Connection {
         }
     }
 
+    /// Snapshot the stdout reader's received-line counter when parking a warm child so any later
+    /// line — even a partial thought chunk held in the reader's redaction window — disqualifies
+    /// warm reuse (`C-ONE-TURN-OWNERSHIP`).
+    pub fn mark_quiescent(&mut self) {
+        self.parked_rx_lines = Some(self.signals.rx_lines.load(Ordering::SeqCst));
+    }
+
     /// Whether the parked child has stayed completely silent since the previous turn ended:
-    /// reader task alive, no queued or buffered unsolicited frames/requests, and channel open.
+    /// reader task alive, no queued or buffered unsolicited frames/requests, no pending bytes in
+    /// the reader's redaction window, no new stdout lines since parking, and channel open.
     pub fn is_quiescent(&self) -> bool {
         !self.reader_task.is_finished()
             && self.buffered_frames.is_empty()
             && self.frames.is_empty()
             && !self.frames.is_closed()
+            && !self.signals.thought_pending.load(Ordering::SeqCst)
+            && self
+                .parked_rx_lines
+                .is_none_or(|seen| self.signals.rx_lines.load(Ordering::SeqCst) == seen)
+    }
+
+    /// Whether a prompt-ending frame (`Response`/`Error` for the active `session/prompt`, or
+    /// `Eof`/`SignedOut`/`ProtocolError`) has already been read by the stdout reader task and is
+    /// waiting in the FIFO queue (`C-ONE-TURN-OWNERSHIP`).
+    pub fn is_prompt_end_queued(&self) -> bool {
+        self.signals.prompt_end_queued.load(Ordering::SeqCst)
+    }
+
+    /// Clear active prompt tracking once the turn loop exits.
+    pub fn clear_active_prompt(&mut self) {
+        self.signals.active_prompt_id.store(0, Ordering::SeqCst);
+        self.signals
+            .prompt_end_queued
+            .store(false, Ordering::SeqCst);
     }
 
     /// Drain any config/mode updates already queued on stdout for `session_id` before approving
@@ -980,14 +1032,26 @@ impl Connection {
     }
 
     pub async fn start_prompt(&mut self, session_id: &str, text: &str) -> Result<u64, Problem> {
-        self.send_request(
-            "session/prompt",
-            json!({
-                "sessionId": session_id,
-                "prompt": [{ "type": "text", "text": text }],
-            }),
-        )
-        .await
+        let next_id = self.next_request_id + 1;
+        self.signals
+            .prompt_end_queued
+            .store(false, Ordering::SeqCst);
+        self.signals
+            .active_prompt_id
+            .store(next_id, Ordering::SeqCst);
+        let result = self
+            .send_request(
+                "session/prompt",
+                json!({
+                    "sessionId": session_id,
+                    "prompt": [{ "type": "text", "text": text }],
+                }),
+            )
+            .await;
+        if result.is_err() {
+            self.clear_active_prompt();
+        }
+        result
     }
 
     /// Receive the next FIFO frame while a prompt is active. Automatically answers unknown
@@ -1422,6 +1486,7 @@ async fn stdout_reader_loop(
     tx: mpsc::Sender<WireFrame>,
     hide_always_options: bool,
     redactor: StreamRedactor,
+    signals: Arc<ReaderSignals>,
 ) {
     let mut reader = BufReader::new(stdout);
     let mut line = Vec::new();
@@ -1458,6 +1523,7 @@ async fn stdout_reader_loop(
         {
             Ok(count) => count,
             Err(error) => {
+                signals.prompt_end_queued.store(true, Ordering::SeqCst);
                 let _ = tx
                     .send(WireFrame::ProtocolError(format!(
                         "Cannot read ACP output: {error}."
@@ -1468,15 +1534,21 @@ async fn stdout_reader_loop(
         };
         if read == 0 {
             let tail = thought_redactor.flush();
+            signals
+                .thought_pending
+                .store(thought_redactor.has_pending(), Ordering::SeqCst);
             if let Some(sid) = thought_session.take()
                 && !try_emit_thought(&tx, sid, tail, &mut dropped_display_deltas)
             {
                 return;
             }
+            signals.prompt_end_queued.store(true, Ordering::SeqCst);
             let _ = tx.send(WireFrame::Eof).await;
             return;
         }
         if line.len() as u64 > LINE_BYTES {
+            signals.rx_lines.fetch_add(1, Ordering::SeqCst);
+            signals.prompt_end_queued.store(true, Ordering::SeqCst);
             let _ = tx
                 .send(WireFrame::ProtocolError(
                     "ACP agent wrote an oversized message (> 32 MiB).".into(),
@@ -1487,7 +1559,9 @@ async fn stdout_reader_loop(
         if line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
+        signals.rx_lines.fetch_add(1, Ordering::SeqCst);
         if line.starts_with(AUTH_LINK_MARKER.as_bytes()) {
+            signals.prompt_end_queued.store(true, Ordering::SeqCst);
             let _ = tx.send(WireFrame::SignedOut).await;
             return;
         }
@@ -1495,10 +1569,21 @@ async fn stdout_reader_loop(
             Ok(Some(frame)) => frame,
             Ok(None) => continue,
             Err(error) => {
+                signals.prompt_end_queued.store(true, Ordering::SeqCst);
                 let _ = tx.send(WireFrame::ProtocolError(error)).await;
                 return;
             }
         };
+
+        let active_prompt = signals.active_prompt_id.load(Ordering::SeqCst);
+        if active_prompt != 0
+            && matches!(
+                &parsed,
+                WireFrame::Response { id, .. } | WireFrame::Error { id, .. } if *id == active_prompt
+            )
+        {
+            signals.prompt_end_queued.store(true, Ordering::SeqCst);
+        }
 
         let parsed = match parsed {
             WireFrame::Update {
@@ -1507,6 +1592,9 @@ async fn stdout_reader_loop(
             } => {
                 if thought_session.as_deref() != Some(session_id.as_str()) {
                     let prev_tail = thought_redactor.flush();
+                    signals
+                        .thought_pending
+                        .store(thought_redactor.has_pending(), Ordering::SeqCst);
                     if let Some(prev_sid) = thought_session.replace(session_id.clone())
                         && !try_emit_thought(&tx, prev_sid, prev_tail, &mut dropped_display_deltas)
                     {
@@ -1514,6 +1602,9 @@ async fn stdout_reader_loop(
                     }
                 }
                 let safe = thought_redactor.push(&text);
+                signals
+                    .thought_pending
+                    .store(thought_redactor.has_pending(), Ordering::SeqCst);
                 if safe.is_empty() {
                     continue;
                 }
@@ -1535,6 +1626,9 @@ async fn stdout_reader_loop(
                 } else {
                     thought_redactor.release()
                 };
+                signals
+                    .thought_pending
+                    .store(thought_redactor.has_pending(), Ordering::SeqCst);
                 if !tail.is_empty()
                     && let Some(sid) = if is_boundary {
                         thought_session.take()

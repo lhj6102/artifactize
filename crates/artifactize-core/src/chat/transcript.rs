@@ -338,7 +338,10 @@ impl Fold {
                                     call_id: Some(wire_id),
                                     name: name.to_owned(),
                                     title: None,
-                                    arguments: call.function.arguments.to_string(),
+                                    arguments: details::display_arguments(
+                                        name,
+                                        &call.function.arguments,
+                                    ),
                                     result: None,
                                     tool_kind,
                                     status: ToolStatus::Running,

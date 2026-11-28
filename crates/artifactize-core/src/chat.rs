@@ -2000,7 +2000,7 @@ impl Chat {
                 let spec = catalog::resolve_spec(&agent, Some(&self.state), Some(worktree))?;
                 // Preserve each ACP option's category when saved so an agent later re-advertising
                 // a former mode option ID as non-mode can never silently downgrade it
-                // (`C-NO-SILENT-REGRESSION`).
+                // (`C-NO-SILENT-REGRESSION`). Never fill a missing category from a live probe.
                 if config.iter().any(|selection| selection.category.is_none()) {
                     let prev_config = match previous {
                         Some(ChatTarget::Acp {
@@ -2018,18 +2018,15 @@ impl Chat {
                                 .find(|item| item.id == selection.id)
                                 .and_then(|item| item.category);
                         }
-                    }
-                    if config.iter().any(|selection| selection.category.is_none())
-                        && let catalog::AgentAvailability::Ready { config_options, .. } =
-                            catalog::probe_spec(&spec, Some(worktree), false).await
-                    {
-                        for selection in &mut config {
-                            if selection.category.is_none() {
-                                selection.category = config_options
-                                    .iter()
-                                    .find(|opt| opt.id == selection.id)
-                                    .map(|opt| opt.category);
-                            }
+                        if selection.category.is_none() {
+                            selection.category = match selection.id.as_str() {
+                                "model" => Some(ConfigCategory::Model),
+                                "mode" => Some(ConfigCategory::Mode),
+                                "thought_level" | "thinking" | "thinking_level" | "effort" => {
+                                    Some(ConfigCategory::ThoughtLevel)
+                                }
+                                _ => None,
+                            };
                         }
                     }
                     if let Some(missing) = config.iter().find(|selection| selection.category.is_none())

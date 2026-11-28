@@ -91,12 +91,25 @@ impl VerifiedAcpLaunch {
                     platform::path_text(&self.fingerprint.resolved_executable)
                 ))
             })?;
-        let current = LauncherFingerprint::compute_from_file(
-            self.fingerprint.resolved_executable.clone(),
-            &mut file,
-            &self.spec.args,
-        )
-        .map_err(Problem::Failed)?;
+        // Re-canonicalize the executable path AFTER opening and confirm the open handle matches
+        // that exact canonical location, blocking ancestor-symlink swaps into the worktree
+        // (`C-TRUST-BEFORE-WORKTREE`).
+        let live_executable = platform::canonicalize(&self.fingerprint.resolved_executable)
+            .map_err(|error| {
+                Problem::Failed(format!(
+                    "Cannot resolve ACP executable {}: {error}.",
+                    platform::path_text(&self.fingerprint.resolved_executable)
+                ))
+            })?;
+        if !platform::same_file(&file, &live_executable).unwrap_or(false) {
+            return Err(Problem::Failed(format!(
+                "ACP executable {} changed while verifying its location.",
+                platform::path_text(&self.fingerprint.resolved_executable)
+            )));
+        }
+        let current =
+            LauncherFingerprint::compute_from_file(live_executable, &mut file, &self.spec.args)
+                .map_err(Problem::Failed)?;
         if self.spec.reject_worktree_executable {
             trust::outside_worktree(&current.resolved_executable, worktree)
                 .map_err(Problem::Failed)?;
@@ -164,12 +177,6 @@ impl VerifiedAcpLaunch {
             }))),
             Err(requirement) => Err(Problem::TrustRequired(Box::new(requirement))),
         }
-    }
-
-    /// Re-hash the executable bytes on disk and re-verify Workspace Trust immediately before
-    /// reusing a warm ACP child in `worktree` (`C-TRUST-BEFORE-WORKTREE`).
-    pub(crate) fn reverify_before_exec(&self, worktree: &Path) -> Result<(), Problem> {
-        self.open_and_reverify_before_exec(worktree).map(|_| ())
     }
 }
 
@@ -449,17 +456,27 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
     // or fresh spawn (`C-TRUST-BEFORE-WORKTREE`, `C-ONE-TURN-OWNERSHIP`).
     let (mut child, is_fresh_child) = match child {
         Some(warm) => {
-            if let Err(problem) = input.launch.reverify_before_exec(input.worktree) {
-                let _ = warm.terminate().await;
-                bridge.stop().await;
-                return AcpTurnOutcome {
-                    result: Err(problem.into()),
-                    resumable: false,
-                    generation,
-                    warm_owner: None,
+            let (_verified_file, verified_cwd) =
+                match input.launch.open_and_reverify_before_exec(input.worktree) {
+                    Ok(verified) => verified,
+                    Err(problem) => {
+                        let _ = warm.terminate().await;
+                        bridge.stop().await;
+                        return AcpTurnOutcome {
+                            result: Err(problem.into()),
+                            resumable: false,
+                            generation,
+                            warm_owner: None,
+                        };
+                    }
                 };
-            }
-            if warm.connection.is_quiescent() {
+            // Confirm both live quiescence AND that `input.worktree` is still the exact directory
+            // inode the warm child entered at spawn (a replaced directory retires the warm child
+            // so native tools never run in an orphaned/renamed directory: `C-CHAT-ACP-UNIFIED`).
+            let same_cwd = platform::file_identity(&verified_cwd)
+                .is_ok_and(|current_id| current_id == warm.cwd_identity);
+            drop(verified_cwd);
+            if warm.connection.is_quiescent() && same_cwd {
                 (warm, false)
             } else {
                 // Unsolicited frames arrived while the child was parked: retire it and start fresh.
@@ -981,7 +998,7 @@ async fn execute_on_child_inner(
             () = timeout_fut => {
                 break Err(Failure::timeout());
             }
-            () = input.permission_notify.notified(), if !pending_perms.is_empty() => {
+            () = input.permission_notify.notified(), if !pending_perms.is_empty() && !child.connection.is_prompt_end_queued() => {
                 if let Err(error) = process_pending_permissions(
                     input,
                     &mut child.connection,
@@ -998,6 +1015,7 @@ async fn execute_on_child_inner(
                     break Err(Failure::cancelled());
                 }
                 if !pending_perms.is_empty()
+                    && !child.connection.is_prompt_end_queued()
                     && let Err(error) = process_pending_permissions(
                         input,
                         &mut child.connection,
@@ -1111,6 +1129,8 @@ async fn execute_on_child_inner(
             }
         }
     };
+
+    child.connection.clear_active_prompt();
 
     // Flush trailing redactor windows and record final assistant prose in `Kind::Message`.
     state.flush_all(&mut text_redactor, &mut thought_redactor, recorder);
@@ -1365,6 +1385,9 @@ async fn process_pending_permissions(
 ) -> Result<(), Failure> {
     let ids: Vec<String> = pending.keys().cloned().collect();
     for perm_id in ids {
+        if conn.is_prompt_end_queued() {
+            break;
+        }
         let Some((rpc_id, agent_ids)) = pending
             .get(&perm_id)
             .map(|slot| (slot.rpc_id.clone(), slot.agent_option_ids.clone()))

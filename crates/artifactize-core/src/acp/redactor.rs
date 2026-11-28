@@ -48,6 +48,11 @@ impl StreamRedactor {
         self.redact_streaming(false)
     }
 
+    /// Whether any trailing characters are currently buffered awaiting subsequent chunks.
+    pub(crate) fn has_pending(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
     /// Flush the trailing sliding window at turn end.
     pub(crate) fn flush(&mut self) -> String {
         if self.secrets.is_empty() {

@@ -409,8 +409,8 @@ fn parse_bridge_call(
     send: usize,
     name: &str,
     arguments: Value,
+    raw_args_hash: String,
 ) -> Result<verify_tools::Call, String> {
-    let args_hash = canonical_args_hash(&arguments);
     let map = match arguments {
         Value::Object(map) => map,
         _ => return Err("Tool arguments must be an object.".into()),
@@ -420,7 +420,7 @@ fn parse_bridge_call(
     if call.project.is_some() {
         return Err("Chat Verify tools are scoped to this session's worktree.".into());
     }
-    call.remap_acp_chat_key(session_id, send, args_hash)?;
+    call.remap_acp_chat_key(session_id, send, raw_args_hash)?;
     Ok(call)
 }
 
@@ -492,12 +492,20 @@ async fn serve_stdio(
                         )
                     } else {
                         _in_flight_guard = Some(guard);
-                        // Redact and parse at the edge first: neither unredacted known secrets nor
-                        // rejected/unparsed JSON payloads ever leave `src/acp/` into tool execution,
-                        // Run receipts, or `Block::Tool.arguments` (`C-ACP-EDGE-ISOLATION`).
+                        // Hash the raw agent-supplied arguments first so distinct requests whose
+                        // differing values redact to the same text still trigger a key-conflict
+                        // error (`C-ONE-TURN-OWNERSHIP`), then redact and parse at the edge so
+                        // neither unredacted known secrets nor unparsed JSON payloads ever leave
+                        // `src/acp/` (`C-ACP-EDGE-ISOLATION`).
+                        let raw_args_hash = canonical_args_hash(&arguments);
                         let redacted_value = redact_json_value(&arguments, redactor);
-                        let parsed =
-                            parse_bridge_call(session_id, send, &name, redacted_value.clone());
+                        let parsed = parse_bridge_call(
+                            session_id,
+                            send,
+                            &name,
+                            redacted_value.clone(),
+                            raw_args_hash,
+                        );
                         let (summary, redacted_args) = if parsed.is_ok() {
                             let redacted_args = redactor.redact_all(&redacted_value.to_string());
                             let summary_full = format!("{name} {redacted_args}");

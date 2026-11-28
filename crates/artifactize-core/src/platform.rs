@@ -50,7 +50,7 @@ pub(crate) use os::{
     kill_saved_group, kill_saved_session, open_verified_executable, open_verified_worktree,
     path_from_bytes, private_named_dir, private_options, private_tempdir_in, process_start_time,
     release_free_memory, remove_tree, resolve_system_aliases, restrict_executable_file,
-    restrict_file, running_process_start_time, same_directory, spawn_gated, spawn_now,
+    restrict_file, running_process_start_time, same_directory, same_file, spawn_gated, spawn_now,
     spawn_verified, spawn_windowless, sync_dir, transient_file_access, venv_bin_dir,
 };
 pub(crate) use os::{PRIVATE_DIRECTORY, PRIVATE_FILE};

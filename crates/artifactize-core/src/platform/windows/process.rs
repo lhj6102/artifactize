@@ -353,6 +353,13 @@ pub(crate) fn open_verified_worktree(path: &Path) -> io::Result<File> {
 }
 
 /// Whether `path` currently resolves (without following reparse points) to the exact same
+/// regular file identity as `file`.
+pub(crate) fn same_file(file: &File, path: &Path) -> io::Result<bool> {
+    let current = open_verified_executable(path)?;
+    Ok(super::file_identity(file)? == super::file_identity(&current)?)
+}
+
+/// Whether `path` currently resolves (without following reparse points) to the exact same
 /// directory identity as `dir`.
 pub(crate) fn same_directory(dir: &File, path: &Path) -> io::Result<bool> {
     let current = open_verified_worktree(path)?;

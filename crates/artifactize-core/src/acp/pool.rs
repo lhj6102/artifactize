@@ -36,6 +36,7 @@ pub struct WarmChild {
     pub generation: u64,
     pub executable_sha256: String,
     pub runtime_fingerprint: String,
+    pub(crate) cwd_identity: platform::FileIdentity,
     pub remote_session_id: Option<String>,
     pub connection: Connection,
     child: platform::Child,
@@ -56,6 +57,12 @@ impl WarmChild {
         worktree: &Path,
     ) -> Result<Self, Problem> {
         let (verified_file, verified_cwd) = launch.open_and_reverify_before_exec(worktree)?;
+        let cwd_identity = platform::file_identity(&verified_cwd).map_err(|error| {
+            Problem::Failed(format!(
+                "Cannot inspect ACP worktree {}: {error}.",
+                platform::path_text(worktree)
+            ))
+        })?;
         let spec = &launch.spec;
         let resolved_executable = &launch.fingerprint.resolved_executable;
         let executable_sha256 = launch.fingerprint.executable_sha256.clone();
@@ -116,6 +123,7 @@ impl WarmChild {
             generation,
             executable_sha256,
             runtime_fingerprint,
+            cwd_identity,
             remote_session_id: None,
             connection,
             child,
@@ -130,6 +138,7 @@ impl WarmChild {
         self.quiescent = true;
         self.remote_session_id = remote_session_id;
         self.last_used = Instant::now();
+        self.connection.mark_quiescent();
     }
 
     /// Terminate the process tree via `platform`/`process` (`P-ONE-LAYER`) and return captured stderr.
