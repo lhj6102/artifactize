@@ -486,16 +486,17 @@ impl Connection {
                         session_id: update_sid,
                         event,
                     } if update_sid == session_id => match event {
-                        SessionEvent::ModeChanged { mode_id } => {
-                            observed_mode = Some(mode_id);
+                        SessionEvent::ModeChanged { ref mode_id } => {
+                            observed_mode = Some(mode_id.clone());
+                            self.config_updates.push(event);
                         }
-                        SessionEvent::ConfigOptionsUpdated { options } => {
-                            if let Some(opt) = options
+                        // The newest list says which mode is current, or that none is.
+                        SessionEvent::ConfigOptionsUpdated { ref options } => {
+                            observed_mode = options
                                 .iter()
                                 .find(|opt| opt.category == ConfigCategory::Mode)
-                            {
-                                observed_mode = Some(opt.current_value.clone());
-                            }
+                                .map(|opt| opt.current_value.clone());
+                            self.config_updates.push(event);
                         }
                         _ => {}
                     },

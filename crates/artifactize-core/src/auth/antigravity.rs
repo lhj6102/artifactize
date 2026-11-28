@@ -119,9 +119,10 @@ pub async fn status() -> Status {
     }
 }
 
-pub async fn models() -> Result<Vec<ListedModel>, String> {
+/// The models Antigravity offers, probed as for `repo`: an executable inside it is never run.
+pub async fn models(repo: Option<&std::path::Path>) -> Result<Vec<ListedModel>, String> {
     let spec = antigravity_spec();
-    match probe_spec(&spec, None, true).await {
+    match probe_spec(&spec, repo, true).await {
         AgentAvailability::Ready { models, .. } => Ok(models),
         AgentAvailability::Missing { reason } => Err(reason),
         AgentAvailability::NotSetUp { reason, .. } => Err(format!(

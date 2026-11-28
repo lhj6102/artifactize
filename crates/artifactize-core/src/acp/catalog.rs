@@ -958,12 +958,31 @@ async fn run_live_probe(
 
     let version_str = detected_version.map(|v| v.to_string());
     match result {
-        Ok((models, config_options)) => AgentAvailability::Ready {
-            executable: executable.to_path_buf(),
-            version: version_str,
-            models,
-            config_options,
-        },
+        // What the agent advertised reaches Settings and a session's default target: redacted.
+        Ok((models, config_options)) => {
+            let redactor = super::redactor::StreamRedactor::new(spec.known_secrets());
+            AgentAvailability::Ready {
+                executable: executable.to_path_buf(),
+                version: version_str,
+                models: models
+                    .into_iter()
+                    .map(|model| ListedModel {
+                        display_name: redactor.redact_all(&model.display_name),
+                        efforts: model
+                            .efforts
+                            .iter()
+                            .map(|effort| redactor.redact_all(effort))
+                            .collect(),
+                        default_effort: model
+                            .default_effort
+                            .as_deref()
+                            .map(|effort| redactor.redact_all(effort)),
+                        ..model
+                    })
+                    .collect(),
+                config_options: super::engine::redact_options(&config_options, &redactor),
+            }
+        }
         Err(problem) => {
             let classified = if stderr_text.contains(super::wire::AUTH_LINK_MARKER) {
                 Problem::SignedOut {

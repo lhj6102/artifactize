@@ -1476,7 +1476,10 @@ impl TurnAccumulator {
 
 /// The agent's options as the Chat view and the transcript may hold them: every name, value and
 /// description it sent redacted.
-fn redact_options(options: &[ConfigOption], redactor: &StreamRedactor) -> Vec<ConfigOption> {
+pub(super) fn redact_options(
+    options: &[ConfigOption],
+    redactor: &StreamRedactor,
+) -> Vec<ConfigOption> {
     options
         .iter()
         .map(|option| ConfigOption {

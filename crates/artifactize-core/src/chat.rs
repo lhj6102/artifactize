@@ -1754,12 +1754,17 @@ impl Chat {
     /// The desktop's quit prompt names every running Chat. Deliver the same Stop to those
     /// turns even when another process owns them, before the desktop window closes.
     pub async fn stop_running(&self) -> Result<(), StopRunningError> {
+        // Under the lock that publishes ownership: a turn not yet owned in SQLite is marked, and
+        // commits this Stop itself as it takes ownership (`record_owner`).
         let local: Vec<(SessionId, ActiveEntry)> = {
-            let active = self.active.state.lock().expect("Chat active turns lock");
+            let mut active = self.active.state.lock().expect("Chat active turns lock");
             active
                 .turns
-                .iter()
-                .map(|(id, entry)| (id.clone(), entry.clone()))
+                .iter_mut()
+                .map(|(id, entry)| {
+                    entry.stopped |= entry.owner_token.is_none();
+                    (id.clone(), entry.clone())
+                })
                 .collect()
         };
         let mut failed = Vec::new();
