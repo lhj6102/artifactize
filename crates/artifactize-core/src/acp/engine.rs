@@ -368,12 +368,31 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
         }
     }
 
-    let redactor = StreamRedactor::new(input.launch.spec.known_secrets());
+    let bridge_capability = match agent::uuid() {
+        Ok(token) => token,
+        Err(error) => {
+            if let Some(warm) = child {
+                let _ = warm.terminate().await;
+            }
+            return AcpTurnOutcome {
+                result: Err(Failure::from(error)),
+                resumable: false,
+                generation,
+                warm_owner: None,
+            };
+        }
+    };
+    // Include this turn's one-time Verify bridge capability token in the redactor so an agent
+    // echoing it in streamed output or errors can never persist it unredacted (`C-ACP-EDGE-ISOLATION`).
+    let mut known_secrets = input.launch.spec.known_secrets();
+    known_secrets.push(bridge_capability.clone());
+    let redactor = StreamRedactor::new(known_secrets);
 
     // Open a fresh one-turn Verify MCP bridge (disarmed until `session/prompt`).
     let bridge = match VerifyBridge::start(
         input.session_id.clone(),
         input.send,
+        bridge_capability,
         redactor.clone(),
         stdio_mcp::Server::new(input.tools.verify_only_list()),
     ) {
@@ -493,11 +512,16 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
                 for victim in evicted {
                     let v_id = victim.session_id.clone();
                     let v_gen = victim.generation;
+                    let stayed_quiescent = victim.connection.is_quiescent();
                     let _ = victim.terminate().await;
-                    let _ = input
-                        .receipts
-                        .clear_acp_warm_owner(&v_id, v_gen, current_warm_owner)
-                        .await;
+                    if stayed_quiescent {
+                        let _ = input
+                            .receipts
+                            .clear_acp_warm_owner(&v_id, v_gen, current_warm_owner)
+                            .await;
+                    } else {
+                        let _ = input.receipts.bump_acp_generation(&v_id).await;
+                    }
                 }
                 AcpTurnOutcome {
                     result: Ok(completed.answer),
@@ -776,9 +800,21 @@ async fn execute_on_child(
         )
     };
 
-    // 5. Re-check any mode or config updates already queued on stdout before arming the bridge
-    //    or sending `session/prompt`, then issue `session/prompt` while observing local/remote
-    //    Stop and turn timeout (`C-NO-SILENT-REGRESSION`, `C-ONE-TURN-OWNERSHIP`).
+    // 5. Check SQLite Stop FIRST, then synchronously drain any mode or config updates already
+    //    queued on stdout with NO `.await` between the mode verification and `start_prompt` so
+    //    a mode change arriving during SQLite I/O aborts before `session/prompt` is sent
+    //    (`C-NO-SILENT-REGRESSION`, `C-ONE-TURN-OWNERSHIP`).
+    if cancel.is_cancelled()
+        || input
+            .receipts
+            .chat_turn_active(input.session_id, input.owner)
+            .await
+            != Ok(true)
+    {
+        cancel.cancel();
+        bridge.stop().await;
+        return Err((Failure::cancelled(), false));
+    }
     if let Err(problem) = child
         .connection
         .drain_pending_config_updates(&opened.session_id, &mut live_raw)
@@ -794,12 +830,8 @@ async fn execute_on_child(
         reconcile_non_mode_options(&input.launch.spec.name, &live_raw, &mut chosen);
     if !pre_prompt_notices.is_empty() {
         for notice in pre_prompt_notices {
-            state.record_display(
-                recorder,
-                Kind::Notice {
-                    text: redactor.redact_all(&notice),
-                },
-            );
+            let text = bound_text(&redactor.redact_all(&notice), 512).0;
+            recorder.event(Kind::Notice { text });
         }
         live_options = redact_options(&live_raw, &redactor);
         let _ = input
@@ -811,18 +843,18 @@ async fn execute_on_child(
                 bridge.state(),
             )
             .await;
-    }
-
-    if cancel.is_cancelled()
-        || input
-            .receipts
-            .chat_turn_active(input.session_id, input.owner)
-            .await
-            != Ok(true)
-    {
-        cancel.cancel();
-        bridge.stop().await;
-        return Err((Failure::cancelled(), false));
+        // Re-check synchronously after the metadata SQLite await so no mode change slipped in.
+        if let Err(problem) = child
+            .connection
+            .drain_pending_config_updates(&opened.session_id, &mut live_raw)
+        {
+            bridge.stop().await;
+            return Err((Failure::from(problem), true));
+        }
+        if let Err(problem) = chosen_modes_stand(&chosen, &live_raw) {
+            bridge.stop().await;
+            return Err((Failure::from(problem), false));
+        }
     }
     let mut cas_poll = tokio::time::interval(CAS_POLL_INTERVAL);
     cas_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -955,17 +987,15 @@ async fn execute_on_child(
                             break Err(Failure::from(problem));
                         }
                         if let SessionEvent::ConfigOptionsUpdated { options } = &event {
+                            // Config fallback notices are bounded and always recorded even if
+                            // intermediate display events hit the per-turn cap (`C-NO-SILENT-REGRESSION`).
                             for notice in reconcile_non_mode_options(
                                 &input.launch.spec.name,
                                 options,
                                 &mut chosen,
                             ) {
-                                state.record_display(
-                                    recorder,
-                                    Kind::Notice {
-                                        text: redactor.redact_all(&notice),
-                                    },
-                                );
+                                let text = bound_text(&redactor.redact_all(&notice), 512).0;
+                                recorder.event(Kind::Notice { text });
                             }
                             live_options = redact_options(options, &redactor);
                             let _ = input.receipts.update_chat_turn_meta(

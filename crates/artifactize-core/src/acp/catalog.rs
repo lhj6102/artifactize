@@ -857,7 +857,20 @@ pub async fn probe_spec(
         return entry.availability.clone();
     }
 
-    let availability = run_live_probe(spec, &resolved).await;
+    if let Some(worktree) = worktree
+        && let Err(error) = trust::outside_worktree(probe_dir.path(), worktree)
+    {
+        return AgentAvailability::Failed {
+            executable: Some(resolved.clone()),
+            version: None,
+            error: format!(
+                "Refusing to probe {} inside the workspace: {error}",
+                spec.name
+            ),
+        };
+    }
+
+    let availability = run_live_probe(spec, &resolved, worktree).await;
     drop(probe_dir);
     if let Ok(mut cache) = probe_cache().lock() {
         cache.insert(
@@ -871,7 +884,11 @@ pub async fn probe_spec(
     availability
 }
 
-async fn run_live_probe(spec: &AgentSpec, executable: &Path) -> AgentAvailability {
+async fn run_live_probe(
+    spec: &AgentSpec,
+    executable: &Path,
+    worktree: Option<&Path>,
+) -> AgentAvailability {
     let cancel = CancellationToken::new();
     let deadline = tokio::time::Instant::now() + PROBE_TIMEOUT;
 
@@ -888,6 +905,18 @@ async fn run_live_probe(spec: &AgentSpec, executable: &Path) -> AgentAvailabilit
             };
         }
     };
+    if let Some(worktree) = worktree
+        && let Err(error) = trust::outside_worktree(version_dir.path(), worktree)
+    {
+        return AgentAvailability::Failed {
+            executable: Some(executable.to_path_buf()),
+            version: None,
+            error: format!(
+                "Refusing to run {} version probe inside the workspace: {error}",
+                spec.name
+            ),
+        };
+    }
     let detected_version =
         probe_version(spec, executable, version_dir.path(), deadline, &cancel).await;
     drop(version_dir);
@@ -931,6 +960,18 @@ async fn run_live_probe(spec: &AgentSpec, executable: &Path) -> AgentAvailabilit
             };
         }
     };
+    if let Some(worktree) = worktree
+        && let Err(error) = trust::outside_worktree(probe_dir.path(), worktree)
+    {
+        return AgentAvailability::Failed {
+            executable: Some(executable.to_path_buf()),
+            version: detected_version.map(|v| v.to_string()),
+            error: format!(
+                "Refusing to run {} model probe inside the workspace: {error}",
+                spec.name
+            ),
+        };
+    }
 
     let mut args: Vec<OsString> = spec.args.iter().map(OsString::from).collect();
     // For Antigravity empty-tempdir probes, disable default customizations cleanly.

@@ -291,7 +291,8 @@ impl Connection {
 
     /// Non-blockingly drain any config/mode updates already queued on stdout for `session_id`
     /// before approving configuration or sending `session/prompt` (`C-NO-SILENT-REGRESSION`).
-    /// Non-config frames are preserved in FIFO order in `buffered_frames`.
+    /// Non-config frames are preserved in FIFO order in `buffered_frames`, strictly bounded by
+    /// `UPDATE_CHANNEL_CAPACITY` (`C-ACP-EDGE-ISOLATION`).
     pub(crate) fn drain_pending_config_updates(
         &mut self,
         session_id: &str,
@@ -303,15 +304,23 @@ impl Connection {
                 kept.push_back(other);
             }
         }
-        loop {
+        for _ in 0..UPDATE_CHANNEL_CAPACITY {
             match self.frames.try_recv() {
                 Ok(frame) => {
                     if let Some(other) = self.apply_or_keep_config_frame(session_id, live, frame)? {
+                        if kept.len() >= UPDATE_CHANNEL_CAPACITY {
+                            self.buffered_frames = kept;
+                            return Err(Problem::Failed(format!(
+                                "{} flooded ACP output before starting the turn.",
+                                self.agent_name
+                            )));
+                        }
                         kept.push_back(other);
                     }
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
+                    self.buffered_frames = kept;
                     return Err(Problem::Failed(format!(
                         "{} exited before starting the ACP turn.",
                         self.agent_name

@@ -212,6 +212,7 @@ impl VerifyBridge {
     pub(crate) fn start(
         session_id: SessionId,
         send: usize,
+        capability: String,
         redactor: StreamRedactor,
         tools: stdio_mcp::Server,
     ) -> Result<Self, Failure> {
@@ -222,7 +223,6 @@ impl VerifyBridge {
             .map_err(bridge_error)?
             .port()
             .to_string();
-        let capability = crate::agent::uuid()?;
         let (call_tx, calls) = mpsc::channel(QUEUED_CALLS);
         let active_turn = Arc::new(AtomicBool::new(false));
         let connected = Arc::new(AtomicBool::new(false));
@@ -342,6 +342,7 @@ async fn serve(
     shutdown: CancellationToken,
 ) {
     let slots = Arc::new(Semaphore::new(MAX_BRIDGE_CONNECTIONS));
+    let capability_consumed = Arc::new(AtomicBool::new(false));
     let mut connections = JoinSet::new();
     loop {
         tokio::select! {
@@ -356,6 +357,7 @@ async fn serve(
                     continue;
                 };
                 let capability = capability.clone();
+                let capability_consumed = capability_consumed.clone();
                 let session_id = session_id.clone();
                 let redactor = redactor.clone();
                 let tools = tools.clone();
@@ -372,7 +374,12 @@ async fn serve(
                         () = shutdown.cancelled() => return,
                         res = tokio::time::timeout(CONNECT_TIMEOUT, stream.read_exact(&mut presented)) => res,
                     };
-                    if matches!(read, Ok(Ok(_))) && presented == capability.as_bytes() {
+                    // Strictly consume the one-time capability token on first valid authentication
+                    // so no second peer can ever authenticate with it (`C-ONE-TURN-OWNERSHIP`).
+                    if matches!(read, Ok(Ok(_)))
+                        && presented == capability.as_bytes()
+                        && !capability_consumed.swap(true, Ordering::SeqCst)
+                    {
                         let _ = serve_stdio(
                             stream,
                             &session_id,
@@ -661,6 +668,7 @@ mod tests {
         let bridge = VerifyBridge::start(
             session,
             1,
+            "one-time-cap-token".to_owned(),
             StreamRedactor::new(Vec::<String>::new()),
             stdio_mcp::Server::new(std::iter::empty()),
         )

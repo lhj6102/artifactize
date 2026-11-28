@@ -221,27 +221,39 @@ pub(crate) async fn list_permissions(
 }
 
 /// Compute a lightweight SQLite watermark across `(chat_sessions, chat_active_turns,
-/// chat_pending_permissions)` for `watch.rs`.
+/// chat_pending_permissions)` for `watch.rs`, hashing raw row JSON so internal ACP bindings and
+/// turn ownership tokens never cross the public Chat API (`C-ACP-EDGE-ISOLATION`).
 pub(crate) async fn watermark(
     state: &Path,
     id: &SessionId,
 ) -> Result<Option<ChatWatermark>, String> {
+    use sha2::{Digest, Sha256};
+
+    fn hash_text(text: &str) -> String {
+        Sha256::digest(text.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
     let id = id.clone();
     read(state, move |db| {
         let session_updated_at: Option<String> = db
             .query_row(
                 "SELECT updated_at || '|' || data FROM chat_sessions WHERE id=?1",
                 [&id],
-                |row| row.get(0),
+                |row| row.get::<_, String>(0),
             )
-            .optional()?;
+            .optional()?
+            .map(|raw| hash_text(&raw));
         let active_turn_hash: Option<String> = db
             .query_row(
                 "SELECT data FROM chat_active_turns WHERE session_id=?1",
                 [&id],
-                |row| row.get(0),
+                |row| row.get::<_, String>(0),
             )
-            .optional()?;
+            .optional()?
+            .map(|raw| hash_text(&raw));
         let mut stmt = db.prepare(
             "SELECT permission_id, status, COALESCE(selected_option_id,'') \
              FROM chat_pending_permissions WHERE session_id=?1 ORDER BY created_at, permission_id",

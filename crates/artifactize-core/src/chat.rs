@@ -1750,14 +1750,21 @@ impl Chat {
             for child in expired {
                 let session_id = child.session_id.clone();
                 let generation = child.generation;
+                let stayed_quiescent = child.connection.is_quiescent();
                 let _ = child.terminate().await;
                 if let Some(warm_owner) = current_owner
                     && let Ok(session) = store::chat::load(&state, &session_id).await
                     && let Ok(receipts) = Receipts::open(&state, &session.worktree).await
                 {
-                    let _ = receipts
-                        .clear_acp_warm_owner(&session_id, generation, warm_owner)
-                        .await;
+                    if stayed_quiescent {
+                        let _ = receipts
+                            .clear_acp_warm_owner(&session_id, generation, warm_owner)
+                            .await;
+                    } else {
+                        // Unsolicited frames arrived while parked: invalidate `session/load`
+                        // eligibility rather than leaving the remote session resumable.
+                        let _ = receipts.bump_acp_generation(&session_id).await;
+                    }
                     let _ = receipts.close().await;
                 }
             }
