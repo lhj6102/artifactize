@@ -167,11 +167,13 @@ pub fn init<R: tauri::Runtime>()
     }
     // Beside the owner file; or, for the journey runner, which starts an app again with the
     // same variables, in its folder under this app's own identity.
-    let file = owner.map(|path| path.with_extension("exit.json")).or_else(|| {
-        artifactize_core::platform::environment::var("ARTIFACTIZE_E2E_EXIT_DIR").map(|folder| {
-            std::path::PathBuf::from(folder).join(format!("{pid}-{start_time}.exit.json"))
-        })
-    });
+    let file = owner
+        .map(|path| path.with_extension("exit.json"))
+        .or_else(|| {
+            artifactize_core::platform::environment::var("ARTIFACTIZE_E2E_EXIT_DIR").map(|folder| {
+                std::path::PathBuf::from(folder).join(format!("{pid}-{start_time}.exit.json"))
+            })
+        });
     let exit = ExitReceipt {
         file,
         identity: identity.clone(),
