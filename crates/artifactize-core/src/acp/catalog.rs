@@ -964,8 +964,11 @@ async fn run_live_probe(
             AgentAvailability::Ready {
                 executable: executable.to_path_buf(),
                 version: version_str,
+                // A slug is an ID the person picks by: one that carries a known secret is left
+                // out rather than shown.
                 models: models
                     .into_iter()
+                    .filter(|model| redactor.redact_all(model.slug.as_str()) == model.slug.as_str())
                     .map(|model| ListedModel {
                         display_name: redactor.redact_all(&model.display_name),
                         efforts: model

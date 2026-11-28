@@ -69,12 +69,29 @@ impl VerifiedAcpLaunch {
         let current =
             LauncherFingerprint::compute(&self.fingerprint.resolved_executable, &self.spec.args)
                 .map_err(Problem::Failed)?;
+        // The scope is read again from the checkout the worktree holds now: another repository
+        // put in its place is not covered by the consent given for the one prepared.
+        let identity = repository::identify(worktree);
+        let scope = TrustScope::for_worktree(worktree, &identity).map_err(Problem::Failed)?;
+        if scope != self.scope {
+            return Err(Problem::TrustRequired(Box::new(TrustRequirement {
+                agent_id: self.spec.id.clone(),
+                agent_name: self.spec.name.clone(),
+                disclosure: scope.disclosure().to_owned(),
+                scope,
+                fingerprint: current,
+                reason: format!(
+                    "The worktree's checkout changed before {} started; confirm Workspace Trust for it.",
+                    self.spec.name
+                ),
+            })));
+        }
         match trust::check_trust(
             Some(&self.state),
             Some(worktree),
             &self.spec.id,
             &self.spec.name,
-            &self.scope,
+            &scope,
             &current,
         )
         .map_err(Problem::Failed)?
@@ -1483,7 +1500,7 @@ pub(super) fn redact_options(
     options
         .iter()
         .map(|option| ConfigOption {
-            id: option.id.clone(),
+            id: redactor.redact_all(&option.id),
             name: redactor.redact_all(&option.name),
             category: option.category,
             current_value: redactor.redact_all(&option.current_value),

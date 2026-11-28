@@ -238,7 +238,7 @@ pub struct Connection {
     capabilities: Option<AgentCapabilities>,
     /// Option and mode changes the agent reported while a configuration request waited for its
     /// answer, for [`Self::apply_config_options`] to take into account.
-    config_updates: Vec<SessionEvent>,
+    config_updates: Vec<(String, SessionEvent)>,
 }
 
 impl Connection {
@@ -488,7 +488,7 @@ impl Connection {
                     } if update_sid == session_id => match event {
                         SessionEvent::ModeChanged { ref mode_id } => {
                             observed_mode = Some(mode_id.clone());
-                            self.config_updates.push(event);
+                            self.config_updates.push((update_sid, event));
                         }
                         // The newest list says which mode is current, or that none is.
                         SessionEvent::ConfigOptionsUpdated { ref options } => {
@@ -496,7 +496,7 @@ impl Connection {
                                 .iter()
                                 .find(|opt| opt.category == ConfigCategory::Mode)
                                 .map(|opt| opt.current_value.clone());
-                            self.config_updates.push(event);
+                            self.config_updates.push((update_sid, event));
                         }
                         _ => {}
                     },
@@ -660,7 +660,7 @@ impl Connection {
                     if let Some(opt) = live.iter_mut().find(|opt| opt.id == current_opt.id) {
                         opt.current_value = selection.value.clone();
                     }
-                    self.absorb_config_updates(&mut live);
+                    self.absorb_config_updates(&session.session_id, &mut live);
                 } else if session.uses_legacy_modes && is_mode {
                     let confirmed = self
                         .set_legacy_mode(&session.session_id, &selection.value)
@@ -674,7 +674,7 @@ impl Connection {
                     if let Some(opt) = live.iter_mut().find(|opt| opt.id == current_opt.id) {
                         opt.current_value = selection.value.clone();
                     }
-                    self.absorb_config_updates(&mut live);
+                    self.absorb_config_updates(&session.session_id, &mut live);
                 } else {
                     live = self
                         .set_config_option(&session.session_id, &current_opt.id, &selection.value)
@@ -725,10 +725,14 @@ impl Connection {
         })
     }
 
-    /// Take in what the agent reported while a legacy setter waited: a replaced option list, or
-    /// a mode it switched to.
-    fn absorb_config_updates(&mut self, live: &mut Vec<ConfigOption>) {
-        for event in std::mem::take(&mut self.config_updates) {
+    /// Take in what the agent reported for `session_id` while a legacy setter waited: a replaced
+    /// option list, or a mode it switched to. Another session's updates say nothing of this one.
+    fn absorb_config_updates(&mut self, session_id: &str, live: &mut Vec<ConfigOption>) {
+        let updates = std::mem::take(&mut self.config_updates);
+        for (_, event) in updates
+            .into_iter()
+            .filter(|(update_session, _)| update_session == session_id)
+        {
             match event {
                 SessionEvent::ConfigOptionsUpdated { options } => *live = options,
                 SessionEvent::ModeChanged { mode_id } => {
@@ -976,11 +980,11 @@ impl Connection {
                         return Err(Problem::Failed(self.redactor.redact_all(&msg)));
                     }
                     WireFrame::Update {
+                        session_id,
                         event:
                             event @ (SessionEvent::ConfigOptionsUpdated { .. }
                             | SessionEvent::ModeChanged { .. }),
-                        ..
-                    } => self.config_updates.push(event),
+                    } => self.config_updates.push((session_id, event)),
                     WireFrame::Update { .. }
                     | WireFrame::Response { .. }
                     | WireFrame::Error { .. } => {}
