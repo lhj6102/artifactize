@@ -456,8 +456,8 @@
     {#if rejected}
       <div class="rejected">
         <span class="failed" role="status">{rejected.reason}</span>
-        <button class="button small" onclick={() => void c.copy(rejected.text)}>Copy</button>
-        <button class="button small" disabled={typed !== ""} onclick={() => { c.restore(current.id); c.panes.composer?.focus({ preventScroll: true }); }}>Restore</button>
+        <button class="button small quiet" onclick={() => void c.copy(rejected.text)}>Copy</button>
+        <button class="button small quiet" disabled={typed !== ""} onclick={() => { c.restore(current.id); c.panes.composer?.focus({ preventScroll: true }); }}>Restore</button>
       </div>
     {/if}
     <div class="box" class:off={current.unavailable !== null} class:pointer-edit={c.composerPointer}>
@@ -480,10 +480,10 @@
         {#if stopping}
           <span class="stopping" role="status"><span class="tone-running"><Icon name="running" /></span>Stopping…</span>
         {:else if running}
-          <button class="button icon-button" disabled={current.unavailable !== null} aria-label="Stop (Esc)" aria-keyshortcuts="Escape" onclick={() => void c.stop()}><Icon name="stop" /></button>
+          <button class="button icon-button" disabled={current.unavailable !== null} title="Stop (Esc)" aria-label="Stop (Esc)" aria-keyshortcuts="Escape" onclick={() => void c.stop()}><Icon name="stop" /></button>
         {:else}
           {#if !canSendTarget}<span class="need-model" id="chat-need-model">{current.legacyMigrationNotice ? "Switch target to send" : "Choose a model to send"}</span>{/if}
-          <button class="button icon-button primary" aria-label="Send (Enter)" aria-describedby={canSendTarget ? undefined : "chat-need-model"} aria-keyshortcuts="Enter" disabled={!canSendTarget || typed.trim() === "" || current.unavailable !== null || submitting} onclick={() => void c.send()}><Icon name="send" /></button>
+          <button class="button icon-button primary" title="Send (Enter)" aria-label="Send (Enter)" aria-describedby={canSendTarget ? undefined : "chat-need-model"} aria-keyshortcuts="Enter" disabled={!canSendTarget || typed.trim() === "" || current.unavailable !== null || submitting} onclick={() => void c.send()}><Icon name="send" /></button>
         {/if}
       </div>
     </div>
@@ -1020,6 +1020,10 @@
     outline: none;
     box-shadow: inset 0 0 0 2px var(--focus);
   }
+  .views button[aria-selected="true"]:focus-visible {
+    outline: none;
+    box-shadow: inset 0 -2px 0 var(--current-mark), inset 0 0 0 2px var(--focus);
+  }
   /* Find in the conversation: the find tool's field in its place (D-CHAT-11). */
   .find {
     display: flex;
@@ -1379,7 +1383,7 @@
   .perm-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .perm-title { font-weight: 600; color: var(--ink); }
   .perm-status { color: var(--ink-2); }
-  .perm-status.waiting { color: var(--yellow); font-weight: 500; }
+  .perm-status.waiting { color: var(--yellow); }
   .perm-summary { margin: 0; color: var(--ink-2); overflow-wrap: anywhere; }
   .perm-detail {
     margin: 0;

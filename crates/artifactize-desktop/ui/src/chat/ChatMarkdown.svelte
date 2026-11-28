@@ -19,7 +19,7 @@
       <p>{#each block.parts as part, at (at)}{#if part.kind === "link"}<a href={part.url} draggable="false" onclick={(event) => { event.preventDefault(); void c.openLink(part.url); }} onauxclick={(event) => { event.preventDefault(); if (event.button === 1) void c.openLink(part.url); }}>{part.text}</a>{:else if part.kind === "code"}<code>{part.text}</code>{:else}{part.text}{/if}{/each}</p>
     {:else if block.kind === "code"}
       <div class="code-block">
-        <div class="code-actions"><button class="button small" onclick={() => void c.copy(block.text)}>Copy</button></div>
+        <div class="code-actions"><button class="button small quiet" onclick={() => void c.copy(block.text)}>Copy</button></div>
         <pre><code>{block.text}</code></pre>
       </div>
     {:else if block.start === null}
